@@ -18,16 +18,16 @@ export interface EnemyTemplate {
 }
 
 /**
- * 普通怪物模板
+ * 普通怪物模板 - 降低难度，适合初期
  */
 export const NORMAL_ENEMIES: EnemyTemplate[] = [
   {
     id: 'goblin',
     name: '小妖',
-    hp: 6,
-    attack: 2,
-    defense: 1,
-    speed: 1,
+    hp: 4,
+    attack: 1,
+    defense: 0,
+    speed: 0,
     wuxing: Wuxing.WOOD,
     wuxingLevel: 1,
     skills: [],
@@ -35,10 +35,10 @@ export const NORMAL_ENEMIES: EnemyTemplate[] = [
   {
     id: 'wolf',
     name: '狼妖',
-    hp: 8,
-    attack: 3,
-    defense: 1,
-    speed: 2,
+    hp: 5,
+    attack: 2,
+    defense: 0,
+    speed: 1,
     wuxing: Wuxing.METAL,
     wuxingLevel: 1,
     skills: [],
@@ -46,10 +46,10 @@ export const NORMAL_ENEMIES: EnemyTemplate[] = [
   {
     id: 'snake',
     name: '蛇妖',
-    hp: 5,
+    hp: 3,
     attack: 2,
     defense: 0,
-    speed: 3,
+    speed: 2,
     wuxing: Wuxing.WATER,
     wuxingLevel: 1,
     skills: [],
@@ -57,10 +57,10 @@ export const NORMAL_ENEMIES: EnemyTemplate[] = [
   {
     id: 'fox',
     name: '狐妖',
-    hp: 7,
-    attack: 2,
+    hp: 4,
+    attack: 1,
     defense: 1,
-    speed: 2,
+    speed: 1,
     wuxing: Wuxing.FIRE,
     wuxingLevel: 1,
     skills: [],
@@ -138,12 +138,13 @@ export function generateEnemies(
   nodeType: 'normal' | 'elite' | 'final',
   round: number
 ): Combatant[] {
-  const scaling = 1 + round * 0.15;
+  // 前两轮不加成，之后每轮 +10%
+  const scaling = round <= 2 ? 1 : 1 + (round - 2) * 0.1;
   const enemies: Combatant[] = [];
 
   if (nodeType === 'normal') {
-    // 普通战斗：1-2 个小怪
-    const count = Math.random() < 0.5 ? 1 : 2;
+    // 普通战斗：第一轮只有1个，之后1-2个
+    const count = round === 1 ? 1 : (Math.random() < 0.5 ? 1 : 2);
     for (let i = 0; i < count; i++) {
       const template = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
       enemies.push(createCombatantFromTemplate(template, i, scaling));

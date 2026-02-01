@@ -1,5 +1,5 @@
-import { Equipment, PlayerEquipment } from './Equipment.js';
-import { WuxingLevel } from './Wuxing.js';
+import { Equipment, PlayerEquipment, EquipmentType, Rarity } from './Equipment.js';
+import { Wuxing, WuxingLevel } from './Wuxing.js';
 
 /**
  * 背包容量
@@ -82,17 +82,47 @@ export interface PlayerVisibleInfo {
 }
 
 /**
+ * 初始武器 - 木棍
+ */
+const STARTER_WEAPON: Equipment = {
+  id: 'starter_weapon',
+  name: '木棍',
+  type: EquipmentType.WEAPON,
+  rarity: Rarity.COMMON,
+  wuxing: Wuxing.WOOD,
+  wuxingLevel: 1,
+  attack: 3,
+  speed: 1,
+  upgradeLevel: 0,
+};
+
+/**
+ * 初始铠甲 - 布衣
+ */
+const STARTER_ARMOR: Equipment = {
+  id: 'starter_armor',
+  name: '布衣',
+  type: EquipmentType.ARMOR,
+  rarity: Rarity.COMMON,
+  wuxing: Wuxing.EARTH,
+  wuxingLevel: 1,
+  defense: 2,
+  speed: 0,
+  upgradeLevel: 0,
+};
+
+/**
  * 创建初始玩家状态
  */
 export function createInitialPlayerState(id: string, name: string): PlayerState {
   return {
     id,
     name,
-    hp: 10,
-    maxHp: 10,
+    hp: 15,
+    maxHp: 15,
     equipment: {
-      weapon: null,
-      armor: null,
+      weapon: { ...STARTER_WEAPON },
+      armor: { ...STARTER_ARMOR },
       treasures: [],
     },
     inventory: {

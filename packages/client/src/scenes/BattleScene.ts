@@ -34,7 +34,7 @@ interface DisplayCombatant {
 }
 
 /**
- * 战斗场景
+ * 战斗场景 - 水墨画风格 UI
  */
 export class BattleScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
@@ -43,6 +43,42 @@ export class BattleScene extends Phaser.Scene {
 
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
+
+  // UI 常量 - 统一管理
+  private readonly UI = {
+    // 战斗区域
+    battleFieldY: 340,
+    playerX: 200,
+    enemyStartX: 500,
+    enemySpacing: 120,
+
+    // 状态栏
+    statusBarY: 80,
+    statusBarHeight: 60,
+
+    // HP 条尺寸
+    hpBarWidth: 80,
+    hpBarHeight: 10,
+    hpBarOffsetY: -55,
+
+    // 战斗单位
+    playerSize: 50,
+    enemySize: 40,
+
+    // 颜色主题 - 水墨画风格
+    colors: {
+      bgDark: 0x0d1117,
+      bgMid: 0x161b22,
+      inkBlack: 0x1c2128,
+      inkGrey: 0x30363d,
+      paperWhite: 0xf0e6d3,
+      paperCream: 0xe8dcc8,
+      goldAccent: 0xd4a853,
+      redAccent: 0xc94a4a,
+      greenAccent: 0x3fb950,
+      blueAccent: 0x58a6ff,
+    },
+  };
 
   constructor() {
     super({ key: 'BattleScene' });
@@ -57,8 +93,11 @@ export class BattleScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.cameras.main;
 
-    // 背景
-    this.add.rectangle(width / 2, height / 2, width, height, 0x1a1a2e);
+    // 创建背景层
+    this.createBackground();
+
+    // 创建顶部信息栏
+    this.createTopBar();
 
     // 创建战斗场地
     this.createBattleField();
@@ -66,39 +105,119 @@ export class BattleScene extends Phaser.Scene {
     // 初始化战斗单位
     this.initCombatants();
 
-    // 创建 UI
-    this.createUI();
-
     // 开始战斗
-    this.time.delayedCall(1000, () => this.runBattle());
+    this.time.delayedCall(800, () => this.runBattle());
+  }
+
+  private createBackground(): void {
+    const { width, height } = this.cameras.main;
+    const { colors } = this.UI;
+
+    // 深色渐变背景
+    const bgGraphics = this.add.graphics();
+
+    // 主背景
+    bgGraphics.fillStyle(colors.bgDark, 1);
+    bgGraphics.fillRect(0, 0, width, height);
+
+    // 添加微妙的纹理 - 水墨晕染效果
+    for (let i = 0; i < 8; i++) {
+      const x = Phaser.Math.Between(0, width);
+      const y = Phaser.Math.Between(100, height);
+      const radius = Phaser.Math.Between(100, 300);
+      bgGraphics.fillStyle(colors.inkBlack, 0.3);
+      bgGraphics.fillCircle(x, y, radius);
+    }
+
+    // 顶部装饰线
+    bgGraphics.lineStyle(2, colors.goldAccent, 0.3);
+    bgGraphics.lineBetween(50, 120, width - 50, 120);
+
+    // 底部装饰线
+    bgGraphics.lineBetween(50, height - 60, width - 50, height - 60);
+  }
+
+  private createTopBar(): void {
+    const { width } = this.cameras.main;
+    const { colors, statusBarY } = this.UI;
+
+    // 顶部状态栏背景
+    const topBarBg = this.add.graphics();
+    topBarBg.fillStyle(colors.inkBlack, 0.8);
+    topBarBg.fillRoundedRect(20, 15, width - 40, 90, 8);
+    topBarBg.lineStyle(1, colors.goldAccent, 0.4);
+    topBarBg.strokeRoundedRect(20, 15, width - 40, 90, 8);
+
+    // 战斗标题
+    const titleText = this.nodeType === 'final' ? '最终决战' :
+                      this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
+
+    const titleStyle = {
+      fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
+      fontSize: '32px',
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    };
+
+    this.add.text(width / 2, 45, titleText, titleStyle).setOrigin(0.5);
+
+    // 回合数 - 左侧
+    this.add.text(50, 45, `第 ${this.round} 轮`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '18px',
+      color: '#8b949e',
+    }).setOrigin(0, 0.5);
+
+    // 玩家状态 - 右侧
+    this.createPlayerStatusBar(width - 50, 60);
+  }
+
+  private createPlayerStatusBar(x: number, y: number): void {
+    const player = gameState.getPlayerState();
+    const { colors } = this.UI;
+
+    // HP 显示
+    const hpText = this.add.text(x, y - 15, `❤️ ${player.hp}/${player.maxHp}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '16px',
+      color: '#f85149',
+    }).setOrigin(1, 0.5);
+
+    // 攻防显示
+    const statsText = this.add.text(x, y + 15, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#8b949e',
+    }).setOrigin(1, 0.5);
   }
 
   private createBattleField(): void {
     const { width, height } = this.cameras.main;
+    const { colors, battleFieldY } = this.UI;
 
-    const graphics = this.add.graphics();
-    graphics.fillStyle(0x2a2a4a, 1);
+    // 战斗区域背景 - 椭圆形战场
+    const fieldGraphics = this.add.graphics();
 
-    const centerX = width / 2;
-    const centerY = height / 2 + 50;
-    const fieldWidth = 500;
-    const fieldHeight = 250;
+    // 地面阴影
+    fieldGraphics.fillStyle(0x000000, 0.3);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + 80, 600, 120);
 
-    graphics.beginPath();
-    graphics.moveTo(centerX, centerY - fieldHeight / 2);
-    graphics.lineTo(centerX + fieldWidth / 2, centerY);
-    graphics.lineTo(centerX, centerY + fieldHeight / 2);
-    graphics.lineTo(centerX - fieldWidth / 2, centerY);
-    graphics.closePath();
-    graphics.fill();
+    // 战场主体
+    fieldGraphics.fillStyle(colors.inkGrey, 0.4);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + 70, 580, 100);
 
-    graphics.lineStyle(2, 0x4a4a6a);
-    graphics.strokePath();
+    // 战场边缘高光
+    fieldGraphics.lineStyle(2, colors.goldAccent, 0.2);
+    fieldGraphics.strokeEllipse(width / 2, battleFieldY + 70, 580, 100);
+
+    // VS 分隔线
+    fieldGraphics.lineStyle(1, colors.paperCream, 0.15);
+    fieldGraphics.lineBetween(width / 2, battleFieldY - 100, width / 2, battleFieldY + 120);
   }
 
   private initCombatants(): void {
-    const { width, height } = this.cameras.main;
-    const centerY = height / 2 + 50;
+    const { width } = this.cameras.main;
+    const { battleFieldY, playerX, enemyStartX, enemySpacing } = this.UI;
 
     this.displayCombatants.clear();
     this.engineCombatants = [];
@@ -115,14 +234,19 @@ export class BattleScene extends Phaser.Scene {
       maxHp: playerCombatant.maxHp,
       wuxing: playerCombatant.attackWuxing?.wuxing || Wuxing.FIRE,
       isPlayer: true,
-      x: width / 2 - 150,
-      y: centerY,
+      x: playerX,
+      y: battleFieldY,
     };
     this.displayCombatants.set(playerCombatant.id, playerDisplay);
 
     // 生成敌人
     const nodeTypeStr = this.getNodeTypeString();
     const enemies = generateEnemies(nodeTypeStr, this.round);
+
+    // 计算敌人位置 - 均匀分布在右侧
+    const enemyCount = enemies.length;
+    const totalEnemyWidth = (enemyCount - 1) * enemySpacing;
+    const startX = enemyStartX + (width - enemyStartX - 100 - totalEnemyWidth) / 2;
 
     enemies.forEach((enemy, i) => {
       this.engineCombatants.push(enemy);
@@ -134,15 +258,17 @@ export class BattleScene extends Phaser.Scene {
         maxHp: enemy.maxHp,
         wuxing: enemy.attackWuxing?.wuxing || Wuxing.WOOD,
         isPlayer: false,
-        x: width / 2 + 100 + i * 80,
-        y: centerY - 30 + i * 40,
+        x: startX + i * enemySpacing,
+        y: battleFieldY + (i % 2 === 0 ? -20 : 20), // 交错排列
       };
       this.displayCombatants.set(enemy.id, enemyDisplay);
     });
 
-    // 创建精灵
+    // 创建精灵 - 使用动画入场
+    let delay = 0;
     this.displayCombatants.forEach(c => {
-      c.sprite = this.createCombatantSprite(c);
+      c.sprite = this.createCombatantSprite(c, delay);
+      delay += 100;
     });
   }
 
@@ -189,64 +315,118 @@ export class BattleScene extends Phaser.Scene {
     return 'normal';
   }
 
-  private createCombatantSprite(combatant: DisplayCombatant): Phaser.GameObjects.Container {
-    const container = this.add.container(combatant.x, combatant.y);
+  private createCombatantSprite(combatant: DisplayCombatant, delay: number = 0): Phaser.GameObjects.Container {
+    const { colors, hpBarWidth, hpBarHeight, hpBarOffsetY, playerSize, enemySize } = this.UI;
 
+    const container = this.add.container(combatant.x, combatant.y + 50);
+    container.setAlpha(0);
+
+    // 战斗单位主体
+    const bodySize = combatant.isPlayer ? playerSize : enemySize;
     const bodyColor = WUXING_COLORS[combatant.wuxing];
-    const bodySize = combatant.isPlayer ? 35 : 30;
-    const body = this.add.circle(0, 0, bodySize, bodyColor);
-    body.setStrokeStyle(2, 0xffffff, 0.5);
 
-    const nameText = this.add.text(0, -50, combatant.name, {
-      fontFamily: 'Arial',
-      fontSize: '14px',
+    // 外圈光环
+    const aura = this.add.circle(0, 0, bodySize + 8, bodyColor, 0.2);
+
+    // 主体圆形
+    const body = this.add.circle(0, 0, bodySize, bodyColor);
+    body.setStrokeStyle(3, colors.paperWhite, 0.6);
+
+    // 五行符号 - 中心
+    const wuxingSymbol = this.getWuxingSymbol(combatant.wuxing);
+    const symbolText = this.add.text(0, 0, wuxingSymbol, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: combatant.isPlayer ? '28px' : '22px',
       color: '#ffffff',
     }).setOrigin(0.5);
 
-    const hpBarBg = this.add.rectangle(0, -35, 50, 8, 0x333333);
-    hpBarBg.setStrokeStyle(1, 0x555555);
+    // 名称标签 - 上方
+    const nameY = hpBarOffsetY - 25;
+    const nameBg = this.add.rectangle(0, nameY, 100, 22, colors.inkBlack, 0.8);
+    nameBg.setStrokeStyle(1, bodyColor, 0.5);
 
-    const hpBar = this.add.rectangle(-25 + 25, -35, 50, 6, 0x22c55e);
+    const nameText = this.add.text(0, nameY, combatant.name, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    // HP 条背景
+    const hpBarBg = this.add.rectangle(0, hpBarOffsetY, hpBarWidth + 4, hpBarHeight + 4, colors.inkBlack);
+    hpBarBg.setStrokeStyle(1, colors.inkGrey);
+
+    // HP 条本体 - 从左对齐
+    const hpBar = this.add.rectangle(
+      -hpBarWidth / 2,
+      hpBarOffsetY,
+      hpBarWidth,
+      hpBarHeight,
+      colors.greenAccent
+    );
     hpBar.setOrigin(0, 0.5);
     hpBar.setName('hpBar');
 
-    container.add([body, nameText, hpBarBg, hpBar]);
+    // HP 数值文字
+    const hpText = this.add.text(0, hpBarOffsetY, `${combatant.hp}`, {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    hpText.setName('hpText');
 
+    // 玩家标识
     if (combatant.isPlayer) {
-      const playerMark = this.add.text(0, 50, '▲', {
-        fontFamily: 'Arial',
-        fontSize: '20px',
-        color: '#22c55e',
+      const playerMarker = this.add.text(0, bodySize + 20, '▲ 玩家', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '12px',
+        color: colors.goldAccent.toString(16).padStart(6, '0'),
       }).setOrigin(0.5);
-      container.add(playerMark);
+      container.add(playerMarker);
     }
+
+    container.add([aura, body, symbolText, nameBg, nameText, hpBarBg, hpBar, hpText]);
+
+    // 入场动画
+    this.tweens.add({
+      targets: container,
+      y: combatant.y,
+      alpha: 1,
+      duration: 400,
+      delay: delay,
+      ease: 'Back.easeOut',
+    });
+
+    // 光环呼吸动画
+    this.tweens.add({
+      targets: aura,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      alpha: 0.1,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     this.updateHpBar(combatant);
 
     return container;
   }
 
-  private createUI(): void {
-    const { width } = this.cameras.main;
-
-    const titleText = this.nodeType === 'final' ? '最终决战' :
-                      this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
-    this.add.text(width / 2, 30, titleText, {
-      fontFamily: 'Arial',
-      fontSize: '28px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    this.add.text(20, 30, `第 ${this.round} 轮`, {
-      fontFamily: 'Arial',
-      fontSize: '18px',
-      color: '#aaaaaa',
-    });
+  private getWuxingSymbol(wuxing: Wuxing): string {
+    switch (wuxing) {
+      case Wuxing.METAL: return '金';
+      case Wuxing.WOOD: return '木';
+      case Wuxing.WATER: return '水';
+      case Wuxing.FIRE: return '火';
+      case Wuxing.EARTH: return '土';
+      default: return '?';
+    }
   }
 
   private async runBattle(): Promise<void> {
-    await this.showCenterText('战斗开始！', '#ffffff');
+    await this.showCenterText('战斗开始！', '#f0e6d3');
 
     // 创建战斗引擎并运行
     const config: BattleConfig = {
@@ -274,7 +454,7 @@ export class BattleScene extends Phaser.Scene {
     await this.delay(300);
 
     if (result.winnerId) {
-      await this.showCenterText('胜利！', '#22c55e');
+      await this.showCenterText('胜利！', '#3fb950');
       await this.handleVictory();
     } else {
       await this.delay(500);
@@ -285,15 +465,8 @@ export class BattleScene extends Phaser.Scene {
   private async playEvent(event: BattleEvent): Promise<void> {
     switch (event.type) {
       case 'battle_start':
-        // 已经显示过开始文字
-        break;
-
       case 'round_start':
-        // 可选：显示回合数
-        break;
-
       case 'turn_start':
-        // 可选：高亮当前行动者
         break;
 
       case 'skill_trigger':
@@ -312,17 +485,14 @@ export class BattleScene extends Phaser.Scene {
           const actor = event.actorId ? this.displayCombatants.get(event.actorId) : null;
 
           if (target) {
-            // 播放攻击动画
             if (actor && actor.id !== target.id) {
               await this.playAttackAnimation(actor, target);
             }
 
-            // 显示五行效果
             if (event.wuxingEffect === 'conquer') {
               this.showWuxingEffect(target, '克制', true);
             }
 
-            // 更新显示 HP
             target.hp = Math.max(0, target.hp - event.value);
             this.showDamage(target, event.value, event.isCritical || false);
             this.updateHpBar(target);
@@ -360,7 +530,7 @@ export class BattleScene extends Phaser.Scene {
         if (event.actorId) {
           const actor = this.displayCombatants.get(event.actorId);
           if (actor) {
-            this.showStatus(actor, '冻结!', '#3b82f6');
+            this.showStatus(actor, '冻结!', '#58a6ff');
             await this.delay(400);
           }
         }
@@ -377,7 +547,6 @@ export class BattleScene extends Phaser.Scene {
 
       case 'round_end':
       case 'battle_end':
-        // 无需特殊处理
         break;
     }
   }
@@ -386,10 +555,8 @@ export class BattleScene extends Phaser.Scene {
     const nodeTypeStr = this.getNodeTypeString();
     const loot = generateLoot(nodeTypeStr, this.round);
 
-    // 显示掉落
     await this.showLootScreen(loot.items);
 
-    // 自动拾取
     let fragmentsGained = 0;
     for (const item of loot.items) {
       if (!gameState.isInventoryFull()) {
@@ -400,13 +567,11 @@ export class BattleScene extends Phaser.Scene {
       }
     }
 
-    // 显示溢出提示
     if (fragmentsGained > 0) {
-      await this.showCenterText(`${fragmentsGained} 件物品炼化`, '#fbbf24');
+      await this.showCenterText(`${fragmentsGained} 件物品炼化`, '#d4a853');
       await this.delay(500);
     }
 
-    // 跳转到地图
     this.scene.start('MapScene', {
       mode: this.mode,
       round: this.round + 1,
@@ -415,51 +580,81 @@ export class BattleScene extends Phaser.Scene {
 
   private async showLootScreen(items: Equipment[]): Promise<void> {
     const { width, height } = this.cameras.main;
+    const { colors } = this.UI;
 
-    // 半透明背景
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7);
+    // 半透明遮罩
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.85);
+
+    // 战利品面板背景
+    const panelWidth = 400;
+    const panelHeight = 300;
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(colors.inkBlack, 0.95);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+    panelBg.lineStyle(2, colors.goldAccent, 0.6);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
     // 标题
-    const title = this.add.text(width / 2, 80, '战利品', {
-      fontFamily: 'Arial',
-      fontSize: '32px',
-      color: '#fbbf24',
+    const title = this.add.text(width / 2, height / 2 - 110, '⚔️ 战利品 ⚔️', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '28px',
+      color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 显示物品
+    // 装饰线
+    const decorLine = this.add.graphics();
+    decorLine.lineStyle(1, colors.goldAccent, 0.4);
+    decorLine.lineBetween(width / 2 - 120, height / 2 - 80, width / 2 + 120, height / 2 - 80);
+
+    // 物品列表
     const itemTexts: Phaser.GameObjects.Text[] = [];
+    const startY = height / 2 - 50;
+
     items.forEach((item, i) => {
       const rarityColor = this.getRarityColor(item.rarity);
-      const text = this.add.text(width / 2, 150 + i * 40, `${item.name} (${WUXING_NAMES[item.wuxing]})`, {
-        fontFamily: 'Arial',
-        fontSize: '20px',
+      const wuxingName = WUXING_NAMES[item.wuxing];
+
+      const text = this.add.text(width / 2, startY + i * 35, `${item.name}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '18px',
         color: rarityColor,
       }).setOrigin(0.5);
-      itemTexts.push(text);
-    });
 
-    // 等待点击继续
-    await new Promise<void>(resolve => {
-      const continueText = this.add.text(width / 2, height - 80, '点击继续', {
-        fontFamily: 'Arial',
-        fontSize: '18px',
-        color: '#aaaaaa',
+      const subText = this.add.text(width / 2, startY + i * 35 + 18, `${wuxingName}属性`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '12px',
+        color: '#8b949e',
       }).setOrigin(0.5);
 
-      this.tweens.add({
-        targets: continueText,
-        alpha: 0.5,
-        duration: 500,
-        yoyo: true,
-        repeat: -1,
-      });
+      itemTexts.push(text, subText);
+    });
 
+    // 继续提示
+    const continueText = this.add.text(width / 2, height / 2 + 100, '点击继续', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '16px',
+      color: '#8b949e',
+    }).setOrigin(0.5);
+
+    // 闪烁动画
+    this.tweens.add({
+      targets: continueText,
+      alpha: 0.4,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // 等待点击
+    await new Promise<void>(resolve => {
       this.input.once('pointerup', () => {
         overlay.destroy();
+        panelBg.destroy();
         title.destroy();
-        itemTexts.forEach(t => t.destroy());
+        decorLine.destroy();
         continueText.destroy();
+        itemTexts.forEach(t => t.destroy());
         resolve();
       });
     });
@@ -469,9 +664,9 @@ export class BattleScene extends Phaser.Scene {
     switch (rarity) {
       case 'legendary': return '#ff8c00';
       case 'epic': return '#a855f7';
-      case 'rare': return '#3b82f6';
-      case 'uncommon': return '#22c55e';
-      default: return '#ffffff';
+      case 'rare': return '#58a6ff';
+      case 'uncommon': return '#3fb950';
+      default: return '#f0e6d3';
     }
   }
 
@@ -480,80 +675,114 @@ export class BattleScene extends Phaser.Scene {
     text: string,
     color: string = '#ffffff',
     fontSize: number = 24,
-    offsetY: number = -70
+    offsetY: number = -100
   ): void {
     if (!combatant.sprite) return;
 
     const floatText = this.add.text(combatant.x, combatant.y + offsetY, text, {
-      fontFamily: 'Arial',
+      fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${fontSize}px`,
       color: color,
       fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: 3,
+      strokeThickness: 4,
     }).setOrigin(0.5);
+
+    // 弹出+上浮动画
+    this.tweens.add({
+      targets: floatText,
+      y: floatText.y - 40,
+      scaleX: { from: 0.5, to: 1 },
+      scaleY: { from: 0.5, to: 1 },
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
 
     this.tweens.add({
       targets: floatText,
-      y: floatText.y - 50,
+      y: floatText.y - 80,
       alpha: 0,
-      duration: 1000,
+      duration: 600,
+      delay: 400,
       ease: 'Power2',
       onComplete: () => floatText.destroy(),
     });
   }
 
   private showDamage(combatant: DisplayCombatant, damage: number, isCrit: boolean = false): void {
-    const color = isCrit ? '#ff6b6b' : '#ef4444';
-    const size = isCrit ? 32 : 24;
+    const color = isCrit ? '#ff6b6b' : '#f85149';
+    const size = isCrit ? 32 : 26;
     const text = isCrit ? `${damage}!` : `-${damage}`;
     this.showFloatingText(combatant, text, color, size);
+
+    // 受击震动效果
+    if (combatant.sprite) {
+      this.tweens.add({
+        targets: combatant.sprite,
+        x: combatant.x + 8,
+        duration: 50,
+        yoyo: true,
+        repeat: 2,
+      });
+    }
   }
 
   private showHeal(combatant: DisplayCombatant, amount: number): void {
-    this.showFloatingText(combatant, `+${amount}`, '#22c55e', 24);
+    this.showFloatingText(combatant, `+${amount}`, '#3fb950', 24);
   }
 
   private showMiss(combatant: DisplayCombatant): void {
-    this.showFloatingText(combatant, 'MISS', '#aaaaaa', 20);
+    this.showFloatingText(combatant, 'MISS', '#8b949e', 20);
   }
 
   private showSkillTrigger(combatant: DisplayCombatant, skillName: string): void {
-    this.showFloatingText(combatant, `【${skillName}】`, '#fbbf24', 18, -90);
+    this.showFloatingText(combatant, `【${skillName}】`, '#d4a853', 16, -120);
   }
 
-  private showStatus(combatant: DisplayCombatant, status: string, color: string = '#3b82f6'): void {
-    this.showFloatingText(combatant, status, color, 18, -90);
+  private showStatus(combatant: DisplayCombatant, status: string, color: string = '#58a6ff'): void {
+    this.showFloatingText(combatant, status, color, 18, -120);
   }
 
   private showWuxingEffect(combatant: DisplayCombatant, effectName: string, isConquer: boolean): void {
-    const color = isConquer ? '#ff9500' : '#22c55e';
-    this.showFloatingText(combatant, effectName, color, 20, -90);
+    const color = isConquer ? '#ff9500' : '#3fb950';
+    this.showFloatingText(combatant, effectName, color, 18, -120);
   }
 
-  private showCenterText(text: string, color: string = '#ffffff'): Promise<void> {
+  private showCenterText(text: string, color: string = '#f0e6d3'): Promise<void> {
     return new Promise(resolve => {
       const { width, height } = this.cameras.main;
 
+      // 背景遮罩
+      const mask = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.5);
+
       const centerText = this.add.text(width / 2, height / 2, text, {
-        fontFamily: 'Arial',
+        fontFamily: '"Noto Serif SC", serif',
         fontSize: '48px',
         color: color,
         fontStyle: 'bold',
         stroke: '#000000',
-        strokeThickness: 4,
+        strokeThickness: 6,
       }).setOrigin(0.5).setAlpha(0);
 
       this.tweens.add({
         targets: centerText,
         alpha: 1,
-        scale: { from: 0.5, to: 1.2 },
+        scaleX: { from: 0.3, to: 1.1 },
+        scaleY: { from: 0.3, to: 1.1 },
         duration: 300,
-        yoyo: true,
-        hold: 500,
+        ease: 'Back.easeOut',
         onComplete: () => {
-          centerText.destroy();
-          resolve();
+          this.tweens.add({
+            targets: [centerText, mask],
+            alpha: 0,
+            duration: 400,
+            delay: 600,
+            onComplete: () => {
+              centerText.destroy();
+              mask.destroy();
+              resolve();
+            },
+          });
         },
       });
     });
@@ -561,31 +790,61 @@ export class BattleScene extends Phaser.Scene {
 
   private showGameOver(): void {
     const { width, height } = this.cameras.main;
+    const { colors } = this.UI;
 
+    // 全屏遮罩
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    this.add.text(width / 2, height / 2 - 50, '失败', {
-      fontFamily: 'Arial',
-      fontSize: '64px',
-      color: '#ef4444',
+    // 失败面板
+    const panelWidth = 400;
+    const panelHeight = 250;
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(colors.inkBlack, 0.95);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+    panelBg.lineStyle(2, colors.redAccent, 0.6);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+
+    // 失败标题
+    this.add.text(width / 2, height / 2 - 60, '败 北', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '56px',
+      color: '#f85149',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 + 20, '西游路漫漫，来日再战', {
-      fontFamily: 'Arial',
-      fontSize: '24px',
-      color: '#ffffff',
+    // 副标题
+    this.add.text(width / 2, height / 2, '西游路漫漫，来日再战', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '18px',
+      color: '#8b949e',
     }).setOrigin(0.5);
 
-    const returnBtn = this.add.text(width / 2, height / 2 + 100, '返回主菜单', {
-      fontFamily: 'Arial',
-      fontSize: '20px',
-      color: '#aaaaaa',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    // 返回按钮
+    const btnWidth = 160;
+    const btnHeight = 45;
+    const btnY = height / 2 + 70;
 
-    returnBtn.on('pointerover', () => returnBtn.setColor('#ffffff'));
-    returnBtn.on('pointerout', () => returnBtn.setColor('#aaaaaa'));
-    returnBtn.on('pointerup', () => {
+    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.inkGrey);
+    btnBg.setStrokeStyle(2, colors.paperCream, 0.5);
+    btnBg.setInteractive({ useHandCursor: true });
+
+    const btnText = this.add.text(width / 2, btnY, '返回主菜单', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '18px',
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(colors.goldAccent);
+      btnText.setColor('#0d1117');
+    });
+
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(colors.inkGrey);
+      btnText.setColor('#f0e6d3');
+    });
+
+    btnBg.on('pointerup', () => {
       gameState.reset();
       this.scene.start('MenuScene');
     });
@@ -597,24 +856,38 @@ export class BattleScene extends Phaser.Scene {
     const originalX = attacker.x;
     const originalY = attacker.y;
 
+    // 冲刺
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
-        x: defender.x,
+        x: defender.x - (attacker.isPlayer ? 60 : -60),
         y: defender.y,
-        duration: 150,
-        ease: 'Power2',
+        duration: 120,
+        ease: 'Power3.easeIn',
         onComplete: () => resolve(),
       });
     });
 
+    // 攻击闪光
+    if (defender.sprite) {
+      const flash = this.add.circle(defender.x, defender.y, 60, 0xffffff, 0.6);
+      this.tweens.add({
+        targets: flash,
+        alpha: 0,
+        scale: 1.5,
+        duration: 200,
+        onComplete: () => flash.destroy(),
+      });
+    }
+
+    // 返回
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
         x: originalX,
         y: originalY,
         duration: 150,
-        ease: 'Power2',
+        ease: 'Power2.easeOut',
         onComplete: () => resolve(),
       });
     });
@@ -623,12 +896,16 @@ export class BattleScene extends Phaser.Scene {
   private async playDeathAnimation(combatant: DisplayCombatant): Promise<void> {
     if (!combatant.sprite) return;
 
+    // 闪烁 + 缩小消失
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: combatant.sprite,
         alpha: 0,
-        scale: 0.5,
-        duration: 300,
+        scaleX: 0,
+        scaleY: 0,
+        angle: combatant.isPlayer ? -45 : 45,
+        duration: 400,
+        ease: 'Power2.easeIn',
         onComplete: () => {
           combatant.sprite?.destroy();
           resolve();
@@ -639,19 +916,37 @@ export class BattleScene extends Phaser.Scene {
 
   private updateHpBar(combatant: DisplayCombatant): void {
     if (!combatant.sprite) return;
+    const { colors, hpBarWidth } = this.UI;
 
     const hpBar = combatant.sprite.getByName('hpBar') as Phaser.GameObjects.Rectangle;
-    if (hpBar) {
-      const hpPercent = combatant.hp / combatant.maxHp;
-      hpBar.setSize(50 * hpPercent, 6);
+    const hpText = combatant.sprite.getByName('hpText') as Phaser.GameObjects.Text;
 
+    if (hpBar) {
+      const hpPercent = Math.max(0, combatant.hp / combatant.maxHp);
+      const newWidth = hpBarWidth * hpPercent;
+
+      // 平滑动画
+      this.tweens.add({
+        targets: hpBar,
+        width: newWidth,
+        duration: 200,
+        ease: 'Power2.easeOut',
+      });
+
+      // 颜色变化
+      let barColor: number;
       if (hpPercent < 0.25) {
-        hpBar.setFillStyle(0xef4444);
+        barColor = colors.redAccent;
       } else if (hpPercent < 0.5) {
-        hpBar.setFillStyle(0xeab308);
+        barColor = 0xeab308;
       } else {
-        hpBar.setFillStyle(0x22c55e);
+        barColor = colors.greenAccent;
       }
+      hpBar.setFillStyle(barColor);
+    }
+
+    if (hpText) {
+      hpText.setText(`${combatant.hp}`);
     }
   }
 
