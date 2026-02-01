@@ -170,7 +170,7 @@ export class InventoryScene extends Phaser.Scene {
     sectionBg.lineBetween(dividerX, sectionY + 15, dividerX, sectionY + sectionHeight - 15);
 
     // === 右侧：法宝 ===
-    const treasureStartX = width * 0.38;
+    const treasureStartX = width * 0.35;
     const treasures = gameState.getTreasures();
 
     // 法宝标题
@@ -181,17 +181,14 @@ export class InventoryScene extends Phaser.Scene {
       fontStyle: 'bold',
     });
 
-    // 6个法宝槽位，排成2行3列
-    const treasureSlotSize = slotSize * 0.9;
-    const treasureCols = 3;
-    const treasureSpacing = treasureSlotSize * 1.15;
-    const treasureRowY = equipY - treasureSlotSize * 0.3;
+    // 6个法宝槽位，一行显示
+    const availableTreasureWidth = width * 0.62;
+    const treasureSpacing = availableTreasureWidth / MAX_TREASURES;
+    const treasureSlotSize = Math.min(treasureSpacing * 0.85, slotSize * 0.9);
 
     for (let i = 0; i < MAX_TREASURES; i++) {
-      const col = i % treasureCols;
-      const row = Math.floor(i / treasureCols);
-      const x = treasureStartX + treasureSlotSize * 0.6 + col * treasureSpacing;
-      const y = treasureRowY + row * treasureSpacing;
+      const x = treasureStartX + treasureSpacing * 0.5 + i * treasureSpacing;
+      const y = equipY;
 
       this.createSlot(x, y, {
         type: 'treasure',
@@ -686,23 +683,17 @@ export class InventoryScene extends Phaser.Scene {
     this.hideCancelButton();
 
     if (this.popupMode === 'select-synthesize') {
-      // 先计算成功率用于显示
-      const rateInfo = SynthesisSystem.calculateSuccessRate(firstIndex, secondIndex, this.useFragmentsToggle);
       const result = SynthesisSystem.synthesize(firstIndex, secondIndex, this.useFragmentsToggle);
 
       if (result.isSpecial && result.result) {
         this.showSpecialSynthesisNotification(result.result);
       } else {
-        // 在消息中显示成功率（debug用）
-        const rateMsg = `[成功率: ${rateInfo.rateStr}] `;
-        this.showTopMessage(rateMsg + result.message, result.success ? '#3fb950' : '#f85149');
+        this.showTopMessage(result.message, result.success ? '#3fb950' : '#f85149');
         this.time.delayedCall(1500, () => this.scene.restart());
       }
     } else {
-      // 吞噬成功率固定 15%
       const result = SynthesisSystem.devour(firstIndex, secondIndex);
-      const rateMsg = '[成功率: 15%] ';
-      this.showTopMessage(rateMsg + result.message, result.success ? '#3fb950' : '#f85149');
+      this.showTopMessage(result.message, result.success ? '#3fb950' : '#f85149');
       this.time.delayedCall(1500, () => this.scene.restart());
     }
 

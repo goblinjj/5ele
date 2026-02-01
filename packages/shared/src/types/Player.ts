@@ -124,7 +124,7 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     },
     trapCards: [],
     isReady: false,
-    dropRate: 10.0,  // 1000% 掉率，测试用
+    dropRate: 1.0,  // 100% 掉率
     monsterScaling: 0.20,  // 每轮怪物成长 20%
     monsterCountBonus: 0,  // 默认无额外怪物
   };
