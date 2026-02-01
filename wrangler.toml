@@ -1,0 +1,6 @@
+name = "xiyou-roguelike"
+compatibility_date = "2026-02-01"
+pages_build_output_dir = "./packages/client/dist"
+
+[build]
+command = "pnpm install && pnpm run build"
