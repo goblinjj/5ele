@@ -3,7 +3,7 @@ import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
 /**
- * 地图场景 - 横屏优化 (1280x720)
+ * 地图场景 - 响应式布局（基于屏幕百分比）
  */
 export class MapScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
@@ -51,99 +51,105 @@ export class MapScene extends Phaser.Scene {
 
     for (let i = 0; i < 6; i++) {
       const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(100, height);
-      const radius = Phaser.Math.Between(80, 200);
+      const y = Phaser.Math.Between(height * 0.15, height);
+      const radius = Phaser.Math.Between(width * 0.06, width * 0.15);
       bgGraphics.fillStyle(this.colors.inkBlack, 0.4);
       bgGraphics.fillCircle(x, y, radius);
     }
   }
 
   private createHeader(): void {
-    const { width } = this.cameras.main;
+    const { width, height } = this.cameras.main;
 
-    // 顶部栏
+    // 顶部栏 - 高度 10%
+    const headerHeight = height * 0.1;
     const headerBg = this.add.graphics();
     headerBg.fillStyle(this.colors.inkBlack, 0.9);
-    headerBg.fillRect(0, 0, width, 80);
+    headerBg.fillRect(0, 0, width, headerHeight);
 
     // 回合数
-    this.add.text(width / 2, 40, `第 ${this.currentRound} / ${this.maxRounds} 轮`, {
+    const fontSize = Math.max(16, Math.min(24, width * 0.02));
+    this.add.text(width / 2, headerHeight / 2, `第 ${this.currentRound} / ${this.maxRounds} 轮`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '24px',
+      fontSize: `${fontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
   }
 
   private createPlayerStatus(): void {
-    const { width } = this.cameras.main;
-    const y = 130;
+    const { width, height } = this.cameras.main;
+    const y = height * 0.17;
+    const statHeight = height * 0.08;
 
     // 属性背景
     const statsBg = this.add.graphics();
     statsBg.fillStyle(this.colors.inkGrey, 0.5);
-    statsBg.fillRoundedRect(20, y - 30, width - 40, 60, 8);
+    statsBg.fillRoundedRect(width * 0.02, y - statHeight / 2, width * 0.96, statHeight, 8);
 
     const player = gameState.getPlayerState();
+    const fontSize = Math.max(10, Math.min(14, width * 0.012));
 
     // HP 条
-    const hpBarWidth = 120;
+    const hpBarWidth = width * 0.1;
     const hpPercent = player.hp / player.maxHp;
-    const hpX = 50;
+    const hpX = width * 0.04;
 
-    this.add.rectangle(hpX + hpBarWidth / 2, y, hpBarWidth + 4, 20, this.colors.inkBlack);
+    this.add.rectangle(hpX + hpBarWidth / 2, y, hpBarWidth + 4, 18, this.colors.inkBlack);
 
     const hpBar = this.add.rectangle(
       hpX,
       y,
       hpBarWidth * hpPercent,
-      16,
+      14,
       hpPercent > 0.5 ? this.colors.greenAccent : hpPercent > 0.25 ? 0xeab308 : this.colors.redAccent
     );
     hpBar.setOrigin(0, 0.5);
 
     this.add.text(hpX + hpBarWidth / 2, y, `${player.hp}/${player.maxHp}`, {
       fontFamily: 'monospace',
-      fontSize: '12px',
+      fontSize: `${fontSize - 2}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     // 攻防
-    this.add.text(200, y - 8, `⚔️ ${gameState.getTotalAttack()}`, {
+    const atkDefX = width * 0.18;
+    this.add.text(atkDefX, y - 8, `⚔️ ${gameState.getTotalAttack()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${fontSize}px`,
       color: '#f85149',
     }).setOrigin(0, 0.5);
 
-    this.add.text(200, y + 12, `🛡️ ${gameState.getTotalDefense()}`, {
+    this.add.text(atkDefX, y + 8, `🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${fontSize}px`,
       color: '#58a6ff',
     }).setOrigin(0, 0.5);
 
     // 五行显示
     const weapon = gameState.getWeapon();
     const armor = gameState.getArmor();
-    let wuxingX = 320;
+    let wuxingX = width * 0.3;
+    const circleSize = Math.max(10, Math.min(15, width * 0.012));
 
     if (weapon && weapon.wuxing !== undefined) {
       const color = WUXING_COLORS[weapon.wuxing];
-      this.add.circle(wuxingX, y, 15, color).setStrokeStyle(1, 0xffffff, 0.5);
+      this.add.circle(wuxingX, y, circleSize, color).setStrokeStyle(1, 0xffffff, 0.5);
       this.add.text(wuxingX, y, `${weapon.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: '12px',
+        fontSize: `${fontSize - 2}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
-      wuxingX += 40;
+      wuxingX += circleSize * 3;
     }
 
     if (armor && armor.wuxing !== undefined) {
       const color = WUXING_COLORS[armor.wuxing];
-      this.add.circle(wuxingX, y, 15, color).setStrokeStyle(1, 0xffffff, 0.5);
+      this.add.circle(wuxingX, y, circleSize, color).setStrokeStyle(1, 0xffffff, 0.5);
       this.add.text(wuxingX, y, `${armor.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: '12px',
+        fontSize: `${fontSize - 2}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
     }
@@ -151,9 +157,9 @@ export class MapScene extends Phaser.Scene {
     // 碎片
     const fragments = gameState.getFragmentCount();
     if (fragments > 0) {
-      this.add.text(width - 40, y, `💎 ${fragments}`, {
+      this.add.text(width * 0.96, y, `💎 ${fragments}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '16px',
+        fontSize: `${fontSize}px`,
         color: '#a855f7',
       }).setOrigin(1, 0.5);
     }
@@ -162,18 +168,19 @@ export class MapScene extends Phaser.Scene {
   private createInventoryButton(): void {
     const { width, height } = this.cameras.main;
 
-    const btnWidth = 140;
-    const btnHeight = 50;
+    const btnWidth = Math.max(100, Math.min(140, width * 0.12));
+    const btnHeight = Math.max(36, Math.min(50, height * 0.07));
     const btnX = width / 2;
-    const btnY = height - 80;
+    const btnY = height * 0.9;
 
     const bg = this.add.rectangle(btnX, btnY, btnWidth, btnHeight, this.colors.inkGrey);
     bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
+    const fontSize = Math.max(12, Math.min(18, width * 0.015));
     const text = this.add.text(btnX, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: `${fontSize}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -272,28 +279,29 @@ export class MapScene extends Phaser.Scene {
   private displayNodes(): void {
     const { width, height } = this.cameras.main;
 
-    // 标题
-    this.add.text(width / 2, 200, '选择下一步', {
+    // 标题 - 28%
+    const titleSize = Math.max(16, Math.min(24, width * 0.02));
+    this.add.text(width / 2, height * 0.28, '选择下一步', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '24px',
+      fontSize: `${titleSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 横向排列节点卡片
-    const cardWidth = 340;
-    const spacing = 380;
+    // 响应式卡片尺寸
+    const cardWidth = Math.max(180, Math.min(320, width * 0.26));
+    const cardHeight = Math.max(120, Math.min(180, height * 0.28));
+    const spacing = cardWidth * 1.1;
     const startX = width / 2 - (this.nodeOptions.length - 1) * spacing / 2;
-    const y = height / 2 + 60;
+    const y = height * 0.55;
 
     this.nodeOptions.forEach((node, index) => {
-      this.createNodeCard(startX + index * spacing, y, node, index);
+      this.createNodeCard(startX + index * spacing, y, node, index, cardWidth, cardHeight);
     });
   }
 
-  private createNodeCard(x: number, y: number, node: GameNode, index: number): void {
-    const cardWidth = 340;
-    const cardHeight = 200;
+  private createNodeCard(x: number, y: number, node: GameNode, index: number, cardWidth: number, cardHeight: number): void {
+    const { width, height } = this.cameras.main;
     const nodeColor = this.getNodeColor(node.type);
 
     const container = this.add.container(x, y + 30);
@@ -308,28 +316,32 @@ export class MapScene extends Phaser.Scene {
     container.add(bgGraphics);
 
     // 顶部图标
-    const iconBg = this.add.circle(0, -50, 40, nodeColor, 0.3);
+    const iconSize = Math.max(25, Math.min(40, cardWidth * 0.12));
+    const iconBg = this.add.circle(0, -cardHeight * 0.22, iconSize, nodeColor, 0.3);
     iconBg.setStrokeStyle(2, nodeColor, 0.6);
     container.add(iconBg);
 
-    const icon = this.add.text(0, -50, this.getNodeIcon(node.type), {
-      fontSize: '36px',
+    const iconFontSize = Math.max(20, Math.min(36, cardWidth * 0.1));
+    const icon = this.add.text(0, -cardHeight * 0.22, this.getNodeIcon(node.type), {
+      fontSize: `${iconFontSize}px`,
     }).setOrigin(0.5);
     container.add(icon);
 
     // 名称居中
-    const nameText = this.add.text(0, 15, node.name, {
+    const nameFontSize = Math.max(14, Math.min(22, cardWidth * 0.065));
+    const nameText = this.add.text(0, cardHeight * 0.08, node.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '22px',
+      fontSize: `${nameFontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     container.add(nameText);
 
     // 描述居中
-    const descText = this.add.text(0, 50, node.description, {
+    const descFontSize = Math.max(10, Math.min(14, cardWidth * 0.04));
+    const descText = this.add.text(0, cardHeight * 0.25, node.description, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${descFontSize}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
     container.add(descText);
@@ -337,9 +349,10 @@ export class MapScene extends Phaser.Scene {
     // 额外信息
     const infoText = this.getNodeInfo(node.type);
     if (infoText) {
-      const info = this.add.text(0, 80, infoText, {
+      const infoFontSize = Math.max(9, Math.min(12, cardWidth * 0.035));
+      const info = this.add.text(0, cardHeight * 0.38, infoText, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: `${infoFontSize}px`,
         color: this.getNodeInfoColor(node.type),
       }).setOrigin(0.5);
       container.add(info);
@@ -459,19 +472,21 @@ export class MapScene extends Phaser.Scene {
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
 
+    const panelWidth = Math.min(300, width * 0.6);
+    const panelHeight = Math.min(160, height * 0.25);
     const panelBg = this.add.graphics();
     panelBg.fillStyle(this.colors.inkBlack, 0.95);
-    panelBg.fillRoundedRect(width / 2 - 150, height / 2 - 80, 300, 160, 12);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
     panelBg.lineStyle(2, this.colors.greenAccent, 0.6);
-    panelBg.strokeRoundedRect(width / 2 - 150, height / 2 - 80, 300, 160, 12);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    const icon = this.add.text(width / 2, height / 2 - 30, '🏕️', {
+    const icon = this.add.text(width / 2, height / 2 - panelHeight * 0.2, '🏕️', {
       fontSize: '48px',
     }).setOrigin(0.5);
 
-    const text = this.add.text(width / 2, height / 2 + 30, '休息中...\n生命值已恢复', {
+    const text = this.add.text(width / 2, height / 2 + panelHeight * 0.15, '休息中...\n生命值已恢复', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#3fb950',
       align: 'center',
     }).setOrigin(0.5);
@@ -507,19 +522,21 @@ export class MapScene extends Phaser.Scene {
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
 
+    const panelWidth = Math.min(300, width * 0.6);
+    const panelHeight = Math.min(160, height * 0.25);
     const panelBg = this.add.graphics();
     panelBg.fillStyle(this.colors.inkBlack, 0.95);
-    panelBg.fillRoundedRect(width / 2 - 150, height / 2 - 80, 300, 160, 12);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
     panelBg.lineStyle(2, isGood ? this.colors.greenAccent : this.colors.redAccent, 0.6);
-    panelBg.strokeRoundedRect(width / 2 - 150, height / 2 - 80, 300, 160, 12);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    const icon = this.add.text(width / 2, height / 2 - 30, emoji, {
+    const icon = this.add.text(width / 2, height / 2 - panelHeight * 0.2, emoji, {
       fontSize: '48px',
     }).setOrigin(0.5);
 
-    const text = this.add.text(width / 2, height / 2 + 30, message, {
+    const text = this.add.text(width / 2, height / 2 + panelHeight * 0.15, message, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: color,
       align: 'center',
     }).setOrigin(0.5);

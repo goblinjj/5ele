@@ -78,109 +78,120 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createHeader(): void {
-    const { width } = this.cameras.main;
+    const { width, height } = this.cameras.main;
+    const headerHeight = height * 0.1;
 
     // 标题背景
     const headerBg = this.add.graphics();
     headerBg.fillStyle(this.colors.inkBlack, 0.9);
-    headerBg.fillRect(0, 0, width, 70);
+    headerBg.fillRect(0, 0, width, headerHeight);
 
     // 标题
-    this.add.text(width / 2, 35, '背包管理', {
+    const titleSize = Math.max(16, Math.min(24, width * 0.02));
+    this.add.text(width / 2, headerHeight / 2, '背包管理', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '24px',
+      fontSize: `${titleSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     // 玩家状态
     const player = gameState.getPlayerState();
-    this.add.text(150, 35, `❤️ ${player.hp}/${player.maxHp}   ⚔️ ${gameState.getTotalAttack()}   🛡️ ${gameState.getTotalDefense()}`, {
+    const statsFontSize = Math.max(10, Math.min(14, width * 0.012));
+    this.add.text(width * 0.12, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${statsFontSize}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
     // 碎片数量
     const fragments = gameState.getFragmentCount();
-    this.add.text(width - 100, 35, `💎 ${fragments}`, {
+    this.add.text(width * 0.92, headerHeight / 2, `💎 ${fragments}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${statsFontSize + 2}px`,
       color: '#a855f7',
     }).setOrigin(1, 0.5);
   }
 
   private createEquipmentSection(): void {
-    const startX = 80;
-    const startY = 100;
+    const { width, height } = this.cameras.main;
+    const startX = width * 0.06;
+    const startY = height * 0.15;
+    const slotSize = Math.max(45, Math.min(60, width * 0.05));
+    const fontSize = Math.max(10, Math.min(14, width * 0.012));
+    const labelFontSize = Math.max(9, Math.min(12, width * 0.01));
 
     // 分区标题
     this.add.text(startX, startY, '装备栏', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${fontSize}px`,
       color: '#8b949e',
     });
 
     // 武器
-    this.add.text(startX, startY + 35, '武器', {
+    this.add.text(startX, startY + height * 0.05, '武器', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: '#6e7681',
     });
-    this.createSlot(startX + 30, startY + 85, {
+    this.createSlot(startX + slotSize * 0.5, startY + height * 0.12, {
       type: 'weapon',
       index: 0,
       equipment: gameState.getWeapon(),
-    });
+    }, slotSize);
 
     // 铠甲
-    this.add.text(startX + 90, startY + 35, '铠甲', {
+    this.add.text(startX + slotSize * 1.5, startY + height * 0.05, '铠甲', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: '#6e7681',
     });
-    this.createSlot(startX + 120, startY + 85, {
+    this.createSlot(startX + slotSize * 2, startY + height * 0.12, {
       type: 'armor',
       index: 0,
       equipment: gameState.getArmor(),
-    });
+    }, slotSize);
 
     // 法宝
-    this.add.text(startX, startY + 150, '法宝', {
+    this.add.text(startX, startY + height * 0.22, '法宝', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: '#6e7681',
     });
 
     const treasures = gameState.getTreasures();
-    const slotSize = 65;
+    const treasureCols = 3;
 
     for (let i = 0; i < MAX_TREASURES; i++) {
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      const x = startX + 30 + col * slotSize;
-      const y = startY + 200 + row * slotSize;
+      const col = i % treasureCols;
+      const row = Math.floor(i / treasureCols);
+      const x = startX + slotSize * 0.5 + col * slotSize * 1.1;
+      const y = startY + height * 0.3 + row * slotSize * 1.1;
 
       this.createSlot(x, y, {
         type: 'treasure',
         index: i,
         equipment: treasures[i] || null,
-      });
+      }, slotSize);
     }
   }
 
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
-    const startX = 350;
-    const startY = 100;
-    const slotSize = 65;
-    const cols = 12;
+    const startX = width * 0.28;
+    const startY = height * 0.15;
+    const slotSize = Math.max(45, Math.min(60, width * 0.05));
+    const fontSize = Math.max(10, Math.min(14, width * 0.012));
+
+    // 计算可用宽度内能放多少列
+    const availableWidth = width * 0.68;
+    const cols = Math.min(12, Math.floor(availableWidth / (slotSize * 1.1)));
 
     // 分区标题
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
     this.add.text(startX, startY, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${fontSize}px`,
       color: '#8b949e',
     });
 
@@ -189,24 +200,26 @@ export class InventoryScene extends Phaser.Scene {
     for (let i = 0; i < INVENTORY_SIZE; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = startX + 30 + col * slotSize;
-      const y = startY + 50 + row * slotSize;
+      const x = startX + slotSize * 0.5 + col * slotSize * 1.1;
+      const y = startY + height * 0.08 + row * slotSize * 1.1;
 
       this.createSlot(x, y, {
         type: 'inventory',
         index: i,
         equipment: inventory[i],
-      });
+      }, slotSize);
     }
   }
 
-  private createSlot(x: number, y: number, slotInfo: SlotInfo): void {
+  private createSlot(x: number, y: number, slotInfo: SlotInfo, slotSize: number = 55): void {
     const container = this.add.container(x, y);
     const equipment = slotInfo.equipment;
+    const iconRadius = slotSize * 0.33;
+    const fontSize = Math.max(9, slotSize * 0.2);
 
     // 槽位背景
     const bgColor = slotInfo.type === 'inventory' ? this.colors.inkGrey : this.colors.inkBlack;
-    const bg = this.add.rectangle(0, 0, 55, 55, bgColor, 0.8);
+    const bg = this.add.rectangle(0, 0, slotSize, slotSize, bgColor, 0.8);
     const borderColor = equipment ? this.getRarityBorderColor(equipment.rarity) : 0x484f58;
     bg.setStrokeStyle(2, borderColor, equipment ? 0.8 : 0.3);
     bg.setInteractive({ useHandCursor: true });
@@ -214,29 +227,29 @@ export class InventoryScene extends Phaser.Scene {
 
     if (equipment) {
       const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
-      const icon = this.add.circle(0, -3, 18, color);
+      const icon = this.add.circle(0, -slotSize * 0.06, iconRadius, color);
       icon.setStrokeStyle(2, 0xffffff, 0.4);
       container.add(icon);
 
       const levelStr = equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-';
-      const levelText = this.add.text(0, -3, levelStr, {
+      const levelText = this.add.text(0, -slotSize * 0.06, levelStr, {
         fontFamily: 'monospace',
-        fontSize: '12px',
+        fontSize: `${fontSize}px`,
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       container.add(levelText);
 
       const typeIcon = this.getTypeIcon(equipment.type);
-      const typeText = this.add.text(0, 18, typeIcon, {
-        fontSize: '10px',
+      const typeText = this.add.text(0, slotSize * 0.32, typeIcon, {
+        fontSize: `${fontSize * 0.9}px`,
       }).setOrigin(0.5);
       container.add(typeText);
 
       if (equipment.upgradeLevel > 0) {
-        const upgradeText = this.add.text(20, -20, `+${equipment.upgradeLevel}`, {
+        const upgradeText = this.add.text(slotSize * 0.35, -slotSize * 0.35, `+${equipment.upgradeLevel}`, {
           fontFamily: 'monospace',
-          fontSize: '9px',
+          fontSize: `${fontSize * 0.8}px`,
           color: '#3fb950',
           fontStyle: 'bold',
         }).setOrigin(0.5);
@@ -244,8 +257,8 @@ export class InventoryScene extends Phaser.Scene {
       }
 
       if (equipment.skill) {
-        const skillMark = this.add.text(-20, -20, '✦', {
-          fontSize: '12px',
+        const skillMark = this.add.text(-slotSize * 0.35, -slotSize * 0.35, '✦', {
+          fontSize: `${fontSize}px`,
           color: '#d4a853',
         }).setOrigin(0.5);
         container.add(skillMark);
@@ -475,7 +488,8 @@ export class InventoryScene extends Phaser.Scene {
 
     if (success) {
       this.showTopMessage(`装备了 ${equipment.name}`, '#3fb950');
-      this.time.delayedCall(800, () => this.scene.restart());
+      // 立即刷新界面
+      this.scene.restart();
     } else {
       this.showTopMessage('装备失败', '#f85149');
     }
@@ -513,7 +527,8 @@ export class InventoryScene extends Phaser.Scene {
 
     if (success) {
       this.showTopMessage(`卸下了 ${equipment.name}`, '#3fb950');
-      this.time.delayedCall(800, () => this.scene.restart());
+      // 立即刷新界面
+      this.scene.restart();
     } else {
       this.showTopMessage('卸下失败', '#f85149');
     }
@@ -530,9 +545,9 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const fragments = gameState.getFragmentCount();
 
-    // 显示选择提示和碎片开关
-    this.showTopMessage(`选择另一件装备进行合成 ${fragments > 0 ? `(碎片: ${fragments})` : ''}`, '#d4a853', false);
-    this.showCancelButton(fragments > 0);
+    // 显示选择提示和碎片开关（始终显示开关）
+    this.showTopMessage(`选择另一件装备进行合成 (碎片: ${fragments})`, '#d4a853', false);
+    this.showCancelButton(true); // 始终显示碎片开关
   }
 
   private startDevourMode(slotInfo: SlotInfo): void {
@@ -547,17 +562,21 @@ export class InventoryScene extends Phaser.Scene {
     this.hideCancelButton();
 
     const { width, height } = this.cameras.main;
-    this.cancelButton = this.add.container(width / 2, height - 60);
+    const btnWidth = Math.max(80, Math.min(100, width * 0.08));
+    const btnHeight = Math.max(28, Math.min(36, height * 0.05));
+    const fontSize = Math.max(11, Math.min(14, width * 0.012));
+
+    this.cancelButton = this.add.container(width / 2, height * 0.92);
 
     // 取消按钮
-    const cancelBtnX = showFragmentToggle ? -100 : 0;
-    const cancelBg = this.add.rectangle(cancelBtnX, 0, 100, 36, this.colors.redAccent);
+    const cancelBtnX = showFragmentToggle ? -width * 0.08 : 0;
+    const cancelBg = this.add.rectangle(cancelBtnX, 0, btnWidth, btnHeight, this.colors.redAccent);
     cancelBg.setStrokeStyle(2, 0xffffff, 0.5);
     cancelBg.setInteractive({ useHandCursor: true });
 
     const cancelText = this.add.text(cancelBtnX, 0, '取消', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${fontSize}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -570,23 +589,37 @@ export class InventoryScene extends Phaser.Scene {
 
     // 碎片开关（仅合成模式）
     if (showFragmentToggle) {
-      const toggleBg = this.add.rectangle(80, 0, 180, 36, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
+      const fragments = gameState.getFragmentCount();
+      const bonusPercent = fragments * 5; // 每个碎片 +5%
+
+      const getToggleText = (useFragments: boolean) => {
+        if (fragments === 0) {
+          return '无碎片';
+        }
+        return useFragments ? `✓ 碎片 (+${bonusPercent}%)` : '不使用碎片';
+      };
+
+      const toggleWidth = Math.max(120, Math.min(160, width * 0.14));
+      const toggleBg = this.add.rectangle(width * 0.08, 0, toggleWidth, btnHeight, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
       toggleBg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
       toggleBg.setInteractive({ useHandCursor: true });
 
-      const toggleText = this.add.text(80, 0, this.useFragmentsToggle ? '✓ 使用碎片' : '不使用碎片', {
+      const toggleText = this.add.text(width * 0.08, 0, getToggleText(this.useFragmentsToggle), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '13px',
+        fontSize: `${fontSize - 1}px`,
         color: '#f0e6d3',
       }).setOrigin(0.5);
 
       this.cancelButton.add([toggleBg, toggleText]);
 
-      toggleBg.on('pointerup', () => {
-        this.useFragmentsToggle = !this.useFragmentsToggle;
-        toggleBg.setFillStyle(this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
-        toggleText.setText(this.useFragmentsToggle ? '✓ 使用碎片' : '不使用碎片');
-      });
+      // 有碎片时才允许点击
+      if (fragments > 0) {
+        toggleBg.on('pointerup', () => {
+          this.useFragmentsToggle = !this.useFragmentsToggle;
+          toggleBg.setFillStyle(this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
+          toggleText.setText(getToggleText(this.useFragmentsToggle));
+        });
+      }
     }
   }
 
@@ -615,18 +648,24 @@ export class InventoryScene extends Phaser.Scene {
     this.hideCancelButton();
 
     if (this.popupMode === 'select-synthesize') {
+      // 先计算成功率用于显示
+      const rateInfo = SynthesisSystem.calculateSuccessRate(firstIndex, secondIndex, this.useFragmentsToggle);
       const result = SynthesisSystem.synthesize(firstIndex, secondIndex, this.useFragmentsToggle);
 
       if (result.isSpecial && result.result) {
         this.showSpecialSynthesisNotification(result.result);
       } else {
-        this.showTopMessage(result.message, result.success ? '#3fb950' : '#f85149');
-        this.time.delayedCall(1200, () => this.scene.restart());
+        // 在消息中显示成功率（debug用）
+        const rateMsg = `[成功率: ${rateInfo.rateStr}] `;
+        this.showTopMessage(rateMsg + result.message, result.success ? '#3fb950' : '#f85149');
+        this.time.delayedCall(1500, () => this.scene.restart());
       }
     } else {
+      // 吞噬成功率固定 15%
       const result = SynthesisSystem.devour(firstIndex, secondIndex);
-      this.showTopMessage(result.message, result.success ? '#3fb950' : '#f85149');
-      this.time.delayedCall(1200, () => this.scene.restart());
+      const rateMsg = '[成功率: 15%] ';
+      this.showTopMessage(rateMsg + result.message, result.success ? '#3fb950' : '#f85149');
+      this.time.delayedCall(1500, () => this.scene.restart());
     }
 
     this.popupMode = 'view';
@@ -761,20 +800,23 @@ export class InventoryScene extends Phaser.Scene {
   private showTopMessage(message: string, color: string = '#f0e6d3', autoHide: boolean = true): void {
     this.closeTopMessage();
 
-    const { width } = this.cameras.main;
+    const { width, height } = this.cameras.main;
+    const msgWidth = Math.max(300, Math.min(500, width * 0.45));
+    const msgHeight = Math.max(40, Math.min(50, height * 0.07));
+    const fontSize = Math.max(12, Math.min(16, width * 0.013));
 
-    this.topMessage = this.add.container(width / 2, 100);
+    this.topMessage = this.add.container(width / 2, height * 0.14);
 
     const bg = this.add.graphics();
     bg.fillStyle(this.colors.inkBlack, 0.95);
-    bg.fillRoundedRect(-200, -25, 400, 50, 8);
+    bg.fillRoundedRect(-msgWidth / 2, -msgHeight / 2, msgWidth, msgHeight, 8);
     bg.lineStyle(2, this.colors.goldAccent, 0.6);
-    bg.strokeRoundedRect(-200, -25, 400, 50, 8);
+    bg.strokeRoundedRect(-msgWidth / 2, -msgHeight / 2, msgWidth, msgHeight, 8);
     this.topMessage.add(bg);
 
     const text = this.add.text(0, 0, message, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${fontSize}px`,
       color: color,
       align: 'center',
     }).setOrigin(0.5);
@@ -835,11 +877,13 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createCloseButton(): void {
-    const { width } = this.cameras.main;
+    const { width, height } = this.cameras.main;
+    const headerHeight = height * 0.1;
+    const fontSize = Math.max(18, Math.min(24, width * 0.02));
 
-    const closeBtn = this.add.text(width - 30, 35, '✕', {
+    const closeBtn = this.add.text(width * 0.97, headerHeight / 2, '✕', {
       fontFamily: 'Arial',
-      fontSize: '24px',
+      fontSize: `${fontSize}px`,
       color: '#8b949e',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 

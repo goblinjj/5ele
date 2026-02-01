@@ -575,12 +575,23 @@ export class BattleScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const { colors } = this.UI;
 
+    // 立即将战利品加入背包
+    let fragmentsGained = 0;
+    for (const item of items) {
+      if (!gameState.isInventoryFull()) {
+        gameState.addToInventory(item);
+      } else {
+        fragmentsGained++;
+        gameState.addFragment();
+      }
+    }
+
     const lootContainer = this.add.container(0, 0);
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
-    const title = this.add.text(width / 2, 60, '战利品', {
+    const title = this.add.text(width / 2, height * 0.08, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '28px',
       color: '#d4a853',
@@ -716,28 +727,20 @@ export class BattleScene extends Phaser.Scene {
     continueBtnBg.on('pointerover', () => continueBtnBg.setFillStyle(0xffffff));
     continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(colors.goldAccent));
 
+    // 显示炼化提示（如果有）
+    if (fragmentsGained > 0) {
+      const fragmentText = this.add.text(width / 2, startY + rows * slotSize + 55, `${fragmentsGained} 件物品已炼化为碎片`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '12px',
+        color: '#a855f7',
+      }).setOrigin(0.5);
+      lootContainer.add(fragmentText);
+    }
+
     await new Promise<void>(resolve => {
       continueBtnBg.on('pointerup', () => {
-        // 先把战利品加入背包
-        let fragmentsGained = 0;
-        for (const item of items) {
-          if (!gameState.isInventoryFull()) {
-            gameState.addToInventory(item);
-          } else {
-            fragmentsGained++;
-            gameState.addFragment();
-          }
-        }
-
         lootContainer.destroy();
-
-        if (fragmentsGained > 0) {
-          this.showCenterText(`${fragmentsGained} 件物品炼化`, '#d4a853').then(() => {
-            resolve();
-          });
-        } else {
-          resolve();
-        }
+        resolve();
       });
     });
 

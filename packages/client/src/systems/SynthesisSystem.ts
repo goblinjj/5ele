@@ -72,6 +72,50 @@ const DEVOUR_BASE_RATE = 0.15;
  */
 export class SynthesisSystem {
   /**
+   * 计算合成成功率（用于 UI 显示）
+   * @param slot1 第一件装备的槽位
+   * @param slot2 第二件装备的槽位
+   * @param useFragments 是否使用碎片
+   * @returns 成功率百分比字符串，如 "50%" 或错误信息
+   */
+  static calculateSuccessRate(slot1: number, slot2: number, useFragments: boolean = false): { rate: number; rateStr: string; error?: string } {
+    const inventory = gameState.getInventory();
+    const item1 = inventory[slot1];
+    const item2 = inventory[slot2];
+
+    if (!item1 || !item2) {
+      return { rate: 0, rateStr: '0%', error: '请选择两件装备' };
+    }
+
+    if (item1.upgradeLevel !== item2.upgradeLevel) {
+      return { rate: 0, rateStr: '0%', error: '强化等级不同' };
+    }
+
+    // 检查特殊配方
+    const recipe = checkRecipe(item1, item2);
+    if (recipe) {
+      return { rate: recipe.successRate * 100, rateStr: `${Math.floor(recipe.successRate * 100)}% (特殊配方)` };
+    }
+
+    // 计算基础概率
+    const baseRate = (item1.wuxing !== undefined && item2.wuxing !== undefined)
+      ? this.getBaseRate(item1.wuxing, item2.wuxing)
+      : 0.5;
+
+    // 碎片加成
+    let fragmentBonus = 0;
+    if (useFragments) {
+      const fragmentCount = gameState.getFragmentCount();
+      fragmentBonus = fragmentCount * FRAGMENT_BONUS;
+    }
+
+    const finalRate = Math.min(baseRate + fragmentBonus, 0.95);
+    const percent = Math.floor(finalRate * 100);
+
+    return { rate: percent, rateStr: `${percent}%` };
+  }
+
+  /**
    * 合成两件装备
    * @param slot1 第一件装备的槽位（将被升级）
    * @param slot2 第二件装备的槽位（作为材料）

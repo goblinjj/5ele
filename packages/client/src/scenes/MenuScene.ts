@@ -3,7 +3,7 @@ import { WUXING_COLORS, Wuxing } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
 /**
- * 主菜单场景 - 横屏优化 (1280x720)
+ * 主菜单场景 - 响应式布局（基于屏幕百分比）
  */
 export class MenuScene extends Phaser.Scene {
   private readonly colors = {
@@ -26,10 +26,10 @@ export class MenuScene extends Phaser.Scene {
     this.createWuxingDecoration();
     this.createButtons();
 
-    // 版本号
-    this.add.text(width / 2, height - 40, 'v0.3.0', {
+    // 版本号 - 底部 5%
+    this.add.text(width / 2, height * 0.95, 'v0.3.0', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${Math.max(12, height * 0.02)}px`,
       color: '#484f58',
     }).setOrigin(0.5);
   }
@@ -45,24 +45,25 @@ export class MenuScene extends Phaser.Scene {
     for (let i = 0; i < 8; i++) {
       const x = Phaser.Math.Between(0, width);
       const y = Phaser.Math.Between(0, height);
-      const radius = Phaser.Math.Between(80, 200);
+      const radius = Phaser.Math.Between(width * 0.06, width * 0.15);
       bgGraphics.fillStyle(this.colors.inkBlack, 0.5);
       bgGraphics.fillCircle(x, y, radius);
     }
 
-    // 装饰线
+    // 装饰线 - 上方 15%，下方 85%
     bgGraphics.lineStyle(1, this.colors.goldAccent, 0.3);
-    bgGraphics.lineBetween(40, 120, width - 40, 120);
-    bgGraphics.lineBetween(40, height - 100, width - 40, height - 100);
+    bgGraphics.lineBetween(width * 0.03, height * 0.15, width * 0.97, height * 0.15);
+    bgGraphics.lineBetween(width * 0.03, height * 0.85, width * 0.97, height * 0.85);
   }
 
   private createTitle(): void {
     const { width, height } = this.cameras.main;
 
-    // 主标题 - 横屏时靠上
-    const title = this.add.text(width / 2, 80, '西游肉鸽', {
+    // 主标题 - 顶部 12%
+    const titleSize = Math.max(28, Math.min(48, width * 0.04));
+    const title = this.add.text(width / 2, height * 0.12, '西游肉鸽', {
       fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
-      fontSize: '48px',
+      fontSize: `${titleSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     });
@@ -79,10 +80,11 @@ export class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    // 副标题
-    this.add.text(width / 2, 130, '五行策略 · 回合对战', {
+    // 副标题 - 顶部 20%
+    const subTitleSize = Math.max(12, Math.min(16, width * 0.015));
+    this.add.text(width / 2, height * 0.20, '五行策略 · 回合对战', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${subTitleSize}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
   }
@@ -92,10 +94,12 @@ export class MenuScene extends Phaser.Scene {
 
     const wuxingOrder = [Wuxing.METAL, Wuxing.WOOD, Wuxing.WATER, Wuxing.FIRE, Wuxing.EARTH];
     const wuxingSymbols = ['金', '木', '水', '火', '土'];
-    const circleRadius = 22;
-    const spacing = 70;
+
+    // 响应式大小
+    const circleRadius = Math.max(15, Math.min(22, width * 0.018));
+    const spacing = Math.max(45, Math.min(70, width * 0.055));
     const startX = width / 2 - (wuxingOrder.length - 1) * spacing / 2;
-    const y = 200;
+    const y = height * 0.32; // 32% 从顶部
 
     wuxingOrder.forEach((wuxing, index) => {
       const x = startX + index * spacing;
@@ -105,9 +109,10 @@ export class MenuScene extends Phaser.Scene {
       const circle = this.add.circle(x, y, circleRadius, color, 0.8);
       circle.setStrokeStyle(2, 0xffffff, 0.3);
 
+      const symbolSize = Math.max(12, Math.min(18, width * 0.015));
       const symbol = this.add.text(x, y, wuxingSymbols[index], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '18px',
+        fontSize: `${symbolSize}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
 
@@ -123,24 +128,29 @@ export class MenuScene extends Phaser.Scene {
       });
     });
 
-    // 相克说明
-    this.add.text(width / 2, y + 45, '相克：金→木→土→水→火→金', {
+    // 相克说明 - 五行下方
+    const descSize = Math.max(10, Math.min(12, width * 0.01));
+    this.add.text(width / 2, y + circleRadius + 25, '相克：金→木→土→水→火→金', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${descSize}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
   }
 
   private createButtons(): void {
     const { width, height } = this.cameras.main;
-    const btnY = height - 180;
 
-    // 横屏布局：按钮水平排列
+    // 按钮区域在屏幕 65% 位置
+    const btnY = height * 0.65;
+
+    // 响应式按钮间距
+    const btnSpacing = Math.max(120, Math.min(150, width * 0.12));
+
     // 开始游戏按钮
-    this.createButton(width / 2 - 150, btnY, '开始游戏', '单人模式', () => this.startSinglePlayer());
+    this.createButton(width / 2 - btnSpacing, btnY, '开始游戏', '单人模式', () => this.startSinglePlayer());
 
     // 多人模式按钮
-    this.createButton(width / 2 + 150, btnY, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
+    this.createButton(width / 2 + btnSpacing, btnY, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
   }
 
   private createButton(
@@ -151,8 +161,13 @@ export class MenuScene extends Phaser.Scene {
     onClick: () => void,
     disabled: boolean = false
   ): void {
-    const buttonWidth = 260;
-    const buttonHeight = 70;
+    const { width, height } = this.cameras.main;
+
+    // 响应式按钮尺寸
+    const buttonWidth = Math.max(160, Math.min(260, width * 0.2));
+    const buttonHeight = Math.max(50, Math.min(70, height * 0.1));
+    const mainFontSize = Math.max(16, Math.min(24, width * 0.02));
+    const subFontSize = Math.max(10, Math.min(14, width * 0.012));
 
     const container = this.add.container(x, y);
 
@@ -162,16 +177,16 @@ export class MenuScene extends Phaser.Scene {
     bg.lineStyle(2, disabled ? this.colors.inkGrey : this.colors.goldAccent, disabled ? 0.3 : 0.6);
     bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
 
-    const buttonText = this.add.text(0, -10, text, {
+    const buttonText = this.add.text(0, -buttonHeight * 0.12, text, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '24px',
+      fontSize: `${mainFontSize}px`,
       color: disabled ? '#484f58' : '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const buttonSubText = this.add.text(0, 18, subText, {
+    const buttonSubText = this.add.text(0, buttonHeight * 0.2, subText, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${subFontSize}px`,
       color: disabled ? '#30363d' : '#8b949e',
     }).setOrigin(0.5);
 
