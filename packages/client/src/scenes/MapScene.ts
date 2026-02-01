@@ -162,26 +162,26 @@ export class MapScene extends Phaser.Scene {
       color: '#58a6ff',
     }).setOrigin(0, 0.5);
 
-    // 五行显示
+    // 五行显示（只有有五行属性时才显示）
     const weapon = gameState.getWeapon();
     const armor = gameState.getArmor();
 
-    if (weapon) {
+    if (weapon && weapon.wuxing !== undefined) {
       const color = WUXING_COLORS[weapon.wuxing];
       const wuxingCircle = this.add.circle(centerX + 10, y + 12, 10, color);
       wuxingCircle.setStrokeStyle(1, 0xffffff, 0.5);
-      this.add.text(centerX + 10, y + 12, `${weapon.wuxingLevel}`, {
+      this.add.text(centerX + 10, y + 12, `${weapon.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#ffffff',
       }).setOrigin(0.5);
     }
 
-    if (armor) {
+    if (armor && armor.wuxing !== undefined) {
       const color = WUXING_COLORS[armor.wuxing];
       const wuxingCircle = this.add.circle(centerX + 35, y + 12, 10, color);
       wuxingCircle.setStrokeStyle(1, 0xffffff, 0.5);
-      this.add.text(centerX + 35, y + 12, `${armor.wuxingLevel}`, {
+      this.add.text(centerX + 35, y + 12, `${armor.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#ffffff',

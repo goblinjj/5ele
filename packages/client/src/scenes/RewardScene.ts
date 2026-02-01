@@ -213,13 +213,13 @@ export class RewardScene extends Phaser.Scene {
     bg.setStrokeStyle(3, 0xffffff, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
-    // 五行图标
-    const wuxingColor = WUXING_COLORS[equip.wuxing];
+    // 五行图标（无属性时用灰色）
+    const wuxingColor = equip.wuxing !== undefined ? WUXING_COLORS[equip.wuxing] : 0x8b949e;
     const icon = this.add.circle(x, y - 80, 30, wuxingColor);
     icon.setStrokeStyle(2, 0xffffff, 0.5);
 
-    // 五行等级
-    this.add.text(x, y - 80, `${equip.wuxingLevel}`, {
+    // 五行等级（无属性时显示"-"）
+    this.add.text(x, y - 80, equip.wuxing !== undefined ? `${equip.wuxingLevel ?? 1}` : '-', {
       fontFamily: 'Arial',
       fontSize: '20px',
       color: '#ffffff',
@@ -261,8 +261,10 @@ export class RewardScene extends Phaser.Scene {
       color: '#22c55e',
     }).setOrigin(0.5);
 
-    // 五行属性
-    this.add.text(x, y + 90, `${WUXING_NAMES[equip.wuxing]}属性 Lv.${equip.wuxingLevel}`, {
+    // 五行属性（无属性时显示"无属性"）
+    const wuxingName = equip.wuxing !== undefined ? WUXING_NAMES[equip.wuxing] : '无';
+    const wuxingLevelStr = equip.wuxing !== undefined ? ` Lv.${equip.wuxingLevel ?? 1}` : '';
+    this.add.text(x, y + 90, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: 'Arial',
       fontSize: '14px',
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),

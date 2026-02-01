@@ -26,7 +26,7 @@ interface DisplayCombatant {
   name: string;
   hp: number;
   maxHp: number;
-  wuxing: Wuxing;
+  wuxing?: Wuxing;  // 可选，无属性时为 undefined
   isPlayer: boolean;
   x: number;
   y: number;
@@ -232,7 +232,7 @@ export class BattleScene extends Phaser.Scene {
       name: playerCombatant.name,
       hp: playerCombatant.hp,
       maxHp: playerCombatant.maxHp,
-      wuxing: playerCombatant.attackWuxing?.wuxing || Wuxing.FIRE,
+      wuxing: playerCombatant.attackWuxing?.wuxing,  // 可能为 undefined
       isPlayer: true,
       x: playerX,
       y: battleFieldY,
@@ -256,7 +256,7 @@ export class BattleScene extends Phaser.Scene {
         name: enemy.name,
         hp: enemy.hp,
         maxHp: enemy.maxHp,
-        wuxing: enemy.attackWuxing?.wuxing || Wuxing.WOOD,
+        wuxing: enemy.attackWuxing?.wuxing,  // 敌人通常有五行属性
         isPlayer: false,
         x: startX + i * enemySpacing,
         y: battleFieldY + (i % 2 === 0 ? -20 : 20), // 交错排列
@@ -323,7 +323,8 @@ export class BattleScene extends Phaser.Scene {
 
     // 战斗单位主体
     const bodySize = combatant.isPlayer ? playerSize : enemySize;
-    const bodyColor = WUXING_COLORS[combatant.wuxing];
+    // 无属性时使用灰色
+    const bodyColor = combatant.wuxing !== undefined ? WUXING_COLORS[combatant.wuxing] : 0x8b949e;
 
     // 外圈光环
     const aura = this.add.circle(0, 0, bodySize + 8, bodyColor, 0.2);
@@ -332,7 +333,7 @@ export class BattleScene extends Phaser.Scene {
     const body = this.add.circle(0, 0, bodySize, bodyColor);
     body.setStrokeStyle(3, colors.paperWhite, 0.6);
 
-    // 五行符号 - 中心
+    // 五行符号 - 中心（无属性显示"无"）
     const wuxingSymbol = this.getWuxingSymbol(combatant.wuxing);
     const symbolText = this.add.text(0, 0, wuxingSymbol, {
       fontFamily: '"Noto Serif SC", serif',
@@ -414,7 +415,8 @@ export class BattleScene extends Phaser.Scene {
     return container;
   }
 
-  private getWuxingSymbol(wuxing: Wuxing): string {
+  private getWuxingSymbol(wuxing?: Wuxing): string {
+    if (wuxing === undefined) return '无';  // 无属性
     switch (wuxing) {
       case Wuxing.METAL: return '金';
       case Wuxing.WOOD: return '木';
@@ -553,7 +555,8 @@ export class BattleScene extends Phaser.Scene {
 
   private async handleVictory(): Promise<void> {
     const nodeTypeStr = this.getNodeTypeString();
-    const loot = generateLoot(nodeTypeStr, this.round);
+    const dropRate = gameState.getPlayerState().dropRate;
+    const loot = generateLoot(nodeTypeStr, this.round, dropRate);
 
     await this.showLootScreen(loot.items);
 
@@ -613,7 +616,7 @@ export class BattleScene extends Phaser.Scene {
 
     items.forEach((item, i) => {
       const rarityColor = this.getRarityColor(item.rarity);
-      const wuxingName = WUXING_NAMES[item.wuxing];
+      const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
 
       const text = this.add.text(width / 2, startY + i * 35, `${item.name}`, {
         fontFamily: '"Noto Sans SC", sans-serif',

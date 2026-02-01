@@ -11,10 +11,14 @@ export interface LootResult {
 
 /**
  * 生成战斗掉落
+ * @param nodeType 节点类型
+ * @param round 当前回合
+ * @param dropRate 掉率倍数（1.0 = 100%，10.0 = 1000%）
  */
 export function generateLoot(
   nodeType: 'normal' | 'elite' | 'final',
-  round: number
+  round: number,
+  dropRate: number = 1.0
 ): LootResult {
   const items: Equipment[] = [];
 
@@ -24,19 +28,22 @@ export function generateLoot(
     items.push(bossDrop);
   }
 
-  // 确定掉落数量
-  let lootCount: number;
+  // 确定基础掉落数量
+  let baseLootCount: number;
   switch (nodeType) {
     case 'normal':
-      lootCount = randomInt(1, 3);
+      baseLootCount = randomInt(1, 3);
       break;
     case 'elite':
-      lootCount = randomInt(2, 4);
+      baseLootCount = randomInt(2, 4);
       break;
     case 'final':
-      lootCount = randomInt(3, 5);
+      baseLootCount = randomInt(3, 5);
       break;
   }
+
+  // 应用掉率倍数
+  const lootCount = Math.floor(baseLootCount * dropRate);
 
   // 生成随机装备
   const isHighQuality = nodeType === 'elite' || nodeType === 'final';

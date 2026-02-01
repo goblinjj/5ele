@@ -111,9 +111,11 @@ export class SynthesisSystem {
       };
     }
 
-    // 计算合成概率
+    // 计算合成概率（无属性装备使用默认概率）
     const fragmentCount = gameState.getFragmentCount();
-    const baseRate = this.getBaseRate(item1.wuxing, item2.wuxing);
+    const baseRate = (item1.wuxing !== undefined && item2.wuxing !== undefined)
+      ? this.getBaseRate(item1.wuxing, item2.wuxing)
+      : 0.5;  // 无属性时默认50%成功率
     const finalRate = Math.min(baseRate + fragmentCount * FRAGMENT_BONUS, 0.95);
 
     // 判断成功/失败
@@ -258,12 +260,17 @@ export class SynthesisSystem {
    * 升级装备
    */
   private static upgradeEquipment(equipment: Equipment): Equipment {
+    // 五行等级只在有属性时升级
+    const newWuxingLevel = equipment.wuxingLevel !== undefined
+      ? equipment.wuxingLevel + (equipment.upgradeLevel % 2 === 0 ? 1 : 0)
+      : undefined;
+
     return {
       ...equipment,
       upgradeLevel: equipment.upgradeLevel + 1,
       attack: equipment.attack ? equipment.attack + 1 : undefined,
       defense: equipment.defense ? equipment.defense + 1 : undefined,
-      wuxingLevel: equipment.wuxingLevel + (equipment.upgradeLevel % 2 === 0 ? 1 : 0),
+      wuxingLevel: newWuxingLevel,
       name: this.getUpgradedName(equipment),
     };
   }

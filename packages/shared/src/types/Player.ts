@@ -1,5 +1,5 @@
 import { Equipment, PlayerEquipment, EquipmentType, Rarity } from './Equipment.js';
-import { Wuxing, WuxingLevel } from './Wuxing.js';
+import { WuxingLevel } from './Wuxing.js';
 
 /**
  * 背包容量
@@ -41,6 +41,9 @@ export interface PlayerState {
 
   // 是否准备好
   isReady: boolean;
+
+  // 掉率加成（1.0 = 100%，10.0 = 1000%）
+  dropRate: number;
 }
 
 /**
@@ -82,31 +85,15 @@ export interface PlayerVisibleInfo {
 }
 
 /**
- * 初始武器 - 行者棒
+ * 初始武器 - 木棍（无属性）
  */
 const STARTER_WEAPON: Equipment = {
   id: 'starter_weapon',
-  name: '行者棒',
+  name: '木棍',
   type: EquipmentType.WEAPON,
-  rarity: Rarity.UNCOMMON,
-  wuxing: Wuxing.METAL,
-  wuxingLevel: 2,
-  attack: 6,
-  speed: 2,
-  upgradeLevel: 0,
-};
-
-/**
- * 初始铠甲 - 锁子甲
- */
-const STARTER_ARMOR: Equipment = {
-  id: 'starter_armor',
-  name: '锁子甲',
-  type: EquipmentType.ARMOR,
-  rarity: Rarity.UNCOMMON,
-  wuxing: Wuxing.EARTH,
-  wuxingLevel: 2,
-  defense: 4,
+  rarity: Rarity.COMMON,
+  // 无五行属性
+  attack: 1,
   speed: 0,
   upgradeLevel: 0,
 };
@@ -122,7 +109,7 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     maxHp: 25,
     equipment: {
       weapon: { ...STARTER_WEAPON },
-      armor: { ...STARTER_ARMOR },
+      armor: null,  // 无初始铠甲
       treasures: [],
     },
     inventory: {
@@ -131,6 +118,7 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     },
     trapCards: [],
     isReady: false,
+    dropRate: 10.0,  // 1000% 掉率，测试用
   };
 }
 
@@ -140,17 +128,22 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
 export function getVisibleInfo(player: PlayerState): PlayerVisibleInfo {
   const { equipment } = player;
 
+  // 只有装备存在且有五行属性时才返回
+  const weaponWuxing = equipment.weapon?.wuxing !== undefined ? {
+    wuxing: equipment.weapon.wuxing,
+    level: equipment.weapon.wuxingLevel ?? 1,
+  } : null;
+
+  const armorWuxing = equipment.armor?.wuxing !== undefined ? {
+    wuxing: equipment.armor.wuxing,
+    level: equipment.armor.wuxingLevel ?? 1,
+  } : null;
+
   return {
     id: player.id,
     name: player.name,
-    weaponWuxing: equipment.weapon ? {
-      wuxing: equipment.weapon.wuxing,
-      level: equipment.weapon.wuxingLevel,
-    } : null,
-    armorWuxing: equipment.armor ? {
-      wuxing: equipment.armor.wuxing,
-      level: equipment.armor.wuxingLevel,
-    } : null,
+    weaponWuxing,
+    armorWuxing,
     isInjured: player.hp < player.maxHp * 0.5,
     isWeak: player.hp < player.maxHp * 0.25,
     isPoisoned: false, // TODO: 实现中毒状态

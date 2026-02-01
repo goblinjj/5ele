@@ -148,14 +148,14 @@ export class InventoryScene extends Phaser.Scene {
     container.add(bg);
 
     if (equipment) {
-      // 装备图标
-      const color = WUXING_COLORS[equipment.wuxing];
+      // 装备图标（无属性时用灰色）
+      const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
       const icon = this.add.circle(0, 0, 22, color);
       icon.setStrokeStyle(2, 0xffffff, 0.5);
       container.add(icon);
 
-      // 等级
-      const levelText = this.add.text(0, 0, `${equipment.wuxingLevel}`, {
+      // 等级（无属性时显示"-"）
+      const levelText = this.add.text(0, 0, equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-', {
         fontFamily: 'Arial',
         fontSize: '14px',
         color: '#ffffff',
@@ -224,14 +224,14 @@ export class InventoryScene extends Phaser.Scene {
     container.add(bg);
 
     if (equipment) {
-      // 装备图标
-      const color = WUXING_COLORS[equipment.wuxing];
+      // 装备图标（无属性时用灰色）
+      const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
       const icon = this.add.circle(0, -5, 20, color);
       icon.setStrokeStyle(2, 0xffffff, 0.3);
       container.add(icon);
 
-      // 五行等级
-      const levelText = this.add.text(0, -5, `${equipment.wuxingLevel}`, {
+      // 五行等级（无属性时显示"-"）
+      const levelText = this.add.text(0, -5, equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-', {
         fontFamily: 'Arial',
         fontSize: '12px',
         color: '#ffffff',
@@ -435,11 +435,14 @@ export class InventoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.infoPanel.add(rarityText);
 
-    // 五行
-    const wuxingText = this.add.text(0, -panelHeight / 2 + 70, `${WUXING_NAMES[equipment.wuxing]} Lv.${equipment.wuxingLevel}`, {
+    // 五行（无属性时显示"无属性"）
+    const wuxingName = equipment.wuxing !== undefined ? WUXING_NAMES[equipment.wuxing] : '无';
+    const wuxingColor = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
+    const wuxingLevelStr = equipment.wuxing !== undefined ? ` Lv.${equipment.wuxingLevel ?? 1}` : '';
+    const wuxingText = this.add.text(0, -panelHeight / 2 + 70, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: 'Arial',
       fontSize: '14px',
-      color: '#' + WUXING_COLORS[equipment.wuxing].toString(16).padStart(6, '0'),
+      color: '#' + wuxingColor.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
     this.infoPanel.add(wuxingText);
 

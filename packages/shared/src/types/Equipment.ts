@@ -67,9 +67,9 @@ export interface Equipment {
   type: EquipmentType;
   rarity: Rarity;
 
-  // 五行属性
-  wuxing: Wuxing;
-  wuxingLevel: number;
+  // 五行属性（可选，无属性装备没有五行）
+  wuxing?: Wuxing;
+  wuxingLevel?: number;
 
   // 基础属性（低数值系统）
   attack?: number;   // 攻击力 1-10
@@ -96,19 +96,20 @@ export interface PlayerEquipment {
  * 计算玩家的攻击五行等级
  */
 export function getAttackWuxing(equipment: PlayerEquipment): WuxingLevel | null {
-  if (!equipment.weapon) return null;
+  // 无武器或武器无五行属性
+  if (!equipment.weapon || equipment.weapon.wuxing === undefined) return null;
 
-  let level = equipment.weapon.wuxingLevel;
+  let level = equipment.weapon.wuxingLevel ?? 1;
 
   // 铠甲同属性加成
   if (equipment.armor?.wuxing === equipment.weapon.wuxing) {
-    level += equipment.armor.wuxingLevel;
+    level += equipment.armor.wuxingLevel ?? 1;
   }
 
   // 法宝同属性加成
   for (const treasure of equipment.treasures) {
     if (treasure.wuxing === equipment.weapon.wuxing) {
-      level += treasure.wuxingLevel;
+      level += treasure.wuxingLevel ?? 1;
     }
   }
 
@@ -122,14 +123,15 @@ export function getAttackWuxing(equipment: PlayerEquipment): WuxingLevel | null 
  * 计算玩家的防御五行等级
  */
 export function getDefenseWuxing(equipment: PlayerEquipment): WuxingLevel | null {
-  if (!equipment.armor) return null;
+  // 无铠甲或铠甲无五行属性
+  if (!equipment.armor || equipment.armor.wuxing === undefined) return null;
 
-  let level = equipment.armor.wuxingLevel;
+  let level = equipment.armor.wuxingLevel ?? 1;
 
   // 法宝同属性加成
   for (const treasure of equipment.treasures) {
     if (treasure.wuxing === equipment.armor.wuxing) {
-      level += treasure.wuxingLevel;
+      level += treasure.wuxingLevel ?? 1;
     }
   }
 
