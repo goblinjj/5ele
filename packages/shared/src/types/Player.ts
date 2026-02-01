@@ -82,31 +82,31 @@ export interface PlayerVisibleInfo {
 }
 
 /**
- * 初始武器 - 木棍
+ * 初始武器 - 行者棒
  */
 const STARTER_WEAPON: Equipment = {
   id: 'starter_weapon',
-  name: '木棍',
+  name: '行者棒',
   type: EquipmentType.WEAPON,
-  rarity: Rarity.COMMON,
-  wuxing: Wuxing.WOOD,
-  wuxingLevel: 1,
-  attack: 3,
-  speed: 1,
+  rarity: Rarity.UNCOMMON,
+  wuxing: Wuxing.METAL,
+  wuxingLevel: 2,
+  attack: 6,
+  speed: 2,
   upgradeLevel: 0,
 };
 
 /**
- * 初始铠甲 - 布衣
+ * 初始铠甲 - 锁子甲
  */
 const STARTER_ARMOR: Equipment = {
   id: 'starter_armor',
-  name: '布衣',
+  name: '锁子甲',
   type: EquipmentType.ARMOR,
-  rarity: Rarity.COMMON,
+  rarity: Rarity.UNCOMMON,
   wuxing: Wuxing.EARTH,
-  wuxingLevel: 1,
-  defense: 2,
+  wuxingLevel: 2,
+  defense: 4,
   speed: 0,
   upgradeLevel: 0,
 };
@@ -118,8 +118,8 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
   return {
     id,
     name,
-    hp: 15,
-    maxHp: 15,
+    hp: 25,
+    maxHp: 25,
     equipment: {
       weapon: { ...STARTER_WEAPON },
       armor: { ...STARTER_ARMOR },

@@ -68,15 +68,15 @@ export const NORMAL_ENEMIES: EnemyTemplate[] = [
 ];
 
 /**
- * 精英怪物模板
+ * 精英怪物模板 - 比玩家稍弱，但奖励丰厚
  */
 export const ELITE_ENEMIES: EnemyTemplate[] = [
   {
     id: 'bear',
     name: '熊罴怪',
-    hp: 18,
-    attack: 4,
-    defense: 3,
+    hp: 12,
+    attack: 3,
+    defense: 2,
     speed: 0,
     wuxing: Wuxing.EARTH,
     wuxingLevel: 2,
@@ -85,8 +85,8 @@ export const ELITE_ENEMIES: EnemyTemplate[] = [
   {
     id: 'spider',
     name: '蜘蛛精',
-    hp: 14,
-    attack: 5,
+    hp: 10,
+    attack: 4,
     defense: 1,
     speed: 2,
     wuxing: Wuxing.FIRE,
@@ -96,8 +96,8 @@ export const ELITE_ENEMIES: EnemyTemplate[] = [
   {
     id: 'tiger',
     name: '虎力大仙',
-    hp: 16,
-    attack: 4,
+    hp: 11,
+    attack: 3,
     defense: 2,
     speed: 2,
     wuxing: Wuxing.METAL,
@@ -107,15 +107,15 @@ export const ELITE_ENEMIES: EnemyTemplate[] = [
 ];
 
 /**
- * Boss 模板
+ * Boss 模板 - 有挑战性但可战胜
  */
 export const BOSS_ENEMIES: EnemyTemplate[] = [
   {
     id: 'niuwang',
     name: '牛魔王',
-    hp: 40,
-    attack: 5,
-    defense: 3,
+    hp: 30,
+    attack: 4,
+    defense: 2,
     speed: 1,
     wuxing: Wuxing.FIRE,
     wuxingLevel: 3,
