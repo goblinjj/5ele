@@ -20,6 +20,7 @@ import {
   getDefenseWuxing,
   getTotalAttack,
   getTotalDefense,
+  getWuxingRelation,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
@@ -36,7 +37,7 @@ interface DisplayCombatant {
 }
 
 /**
- * 战斗场景 - 横屏优化 (1280x720)
+ * 战斗场景 - 响应式布局
  */
 export class BattleScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
@@ -47,40 +48,17 @@ export class BattleScene extends Phaser.Scene {
   private engineCombatants: EngineCombatant[] = [];
   private enemyCount: number = 0;
 
-  // UI 常量 - 横屏居中布局
-  private readonly UI = {
-    battleFieldY: 400,
-    playerX: 380,
-    enemyStartX: 750,
-    enemySpacing: 130,
-
-    statusBarY: 80,
-    statusBarHeight: 60,
-
-    hpBarWidth: 80,
-    hpBarHeight: 10,
-    hpBarOffsetY: -60,
-
-    playerSize: 55,
-    enemySize: 45,
-
-    // 战斗速度
-    attackDuration: 200,
-    damageDelay: 400,
-    turnDelay: 600,
-
-    colors: {
-      bgDark: 0x0d1117,
-      bgMid: 0x161b22,
-      inkBlack: 0x1c2128,
-      inkGrey: 0x30363d,
-      paperWhite: 0xf0e6d3,
-      paperCream: 0xe8dcc8,
-      goldAccent: 0xd4a853,
-      redAccent: 0xc94a4a,
-      greenAccent: 0x3fb950,
-      blueAccent: 0x58a6ff,
-    },
+  private readonly colors = {
+    bgDark: 0x0d1117,
+    bgMid: 0x161b22,
+    inkBlack: 0x1c2128,
+    inkGrey: 0x30363d,
+    paperWhite: 0xf0e6d3,
+    paperCream: 0xe8dcc8,
+    goldAccent: 0xd4a853,
+    redAccent: 0xc94a4a,
+    greenAccent: 0x3fb950,
+    blueAccent: 0x58a6ff,
   };
 
   constructor() {
@@ -99,97 +77,103 @@ export class BattleScene extends Phaser.Scene {
     this.createBattleField();
     this.initCombatants();
 
-    this.time.delayedCall(1000, () => this.runBattle());
+    // 检查是否有相生效果，允许更换装备
+    this.time.delayedCall(800, () => this.checkAndStartBattle());
   }
 
   private createBackground(): void {
     const { width, height } = this.cameras.main;
-    const { colors } = this.UI;
 
     const bgGraphics = this.add.graphics();
-    bgGraphics.fillStyle(colors.bgDark, 1);
+    bgGraphics.fillStyle(this.colors.bgDark, 1);
     bgGraphics.fillRect(0, 0, width, height);
 
     for (let i = 0; i < 8; i++) {
       const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(100, height);
-      const radius = Phaser.Math.Between(100, 300);
-      bgGraphics.fillStyle(colors.inkBlack, 0.3);
+      const y = Phaser.Math.Between(height * 0.15, height);
+      const radius = Phaser.Math.Between(width * 0.08, width * 0.2);
+      bgGraphics.fillStyle(this.colors.inkBlack, 0.3);
       bgGraphics.fillCircle(x, y, radius);
     }
 
-    bgGraphics.lineStyle(2, colors.goldAccent, 0.3);
-    bgGraphics.lineBetween(50, 120, width - 50, 120);
-    bgGraphics.lineBetween(50, height - 60, width - 50, height - 60);
+    bgGraphics.lineStyle(2, this.colors.goldAccent, 0.3);
+    bgGraphics.lineBetween(width * 0.04, height * 0.17, width * 0.96, height * 0.17);
+    bgGraphics.lineBetween(width * 0.04, height * 0.92, width * 0.96, height * 0.92);
   }
 
   private createTopBar(): void {
-    const { width } = this.cameras.main;
-    const { colors } = this.UI;
+    const { width, height } = this.cameras.main;
 
     const topBarBg = this.add.graphics();
-    topBarBg.fillStyle(colors.inkBlack, 0.8);
-    topBarBg.fillRoundedRect(20, 15, width - 40, 90, 8);
-    topBarBg.lineStyle(1, colors.goldAccent, 0.4);
-    topBarBg.strokeRoundedRect(20, 15, width - 40, 90, 8);
+    topBarBg.fillStyle(this.colors.inkBlack, 0.8);
+    topBarBg.fillRoundedRect(width * 0.02, height * 0.02, width * 0.96, height * 0.13, 8);
+    topBarBg.lineStyle(1, this.colors.goldAccent, 0.4);
+    topBarBg.strokeRoundedRect(width * 0.02, height * 0.02, width * 0.96, height * 0.13, 8);
 
     const titleText = this.nodeType === 'final' ? '最终决战' :
                       this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
 
-    this.add.text(width / 2, 45, titleText, {
+    const titleSize = Math.max(18, Math.min(28, width * 0.022));
+    this.add.text(width / 2, height * 0.065, titleText, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: `${titleSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(50, 45, `第 ${this.round} 轮`, {
+    const infoSize = Math.max(12, Math.min(16, width * 0.013));
+    this.add.text(width * 0.04, height * 0.065, `第 ${this.round} 轮`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${infoSize}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
-    this.createPlayerStatusBar(width - 50, 60);
+    this.createPlayerStatusBar(width * 0.96, height * 0.065);
   }
 
   private createPlayerStatusBar(x: number, y: number): void {
+    const { width } = this.cameras.main;
     const player = gameState.getPlayerState();
+    const fontSize = Math.max(10, Math.min(14, width * 0.011));
 
-    this.add.text(x, y - 15, `❤️ ${player.hp}/${player.maxHp}`, {
+    this.add.text(x, y - 12, `❤️ ${player.hp}/${player.maxHp}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${fontSize}px`,
       color: '#f85149',
     }).setOrigin(1, 0.5);
 
-    this.add.text(x, y + 15, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
+    this.add.text(x, y + 12, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${fontSize - 2}px`,
       color: '#8b949e',
     }).setOrigin(1, 0.5);
   }
 
   private createBattleField(): void {
     const { width, height } = this.cameras.main;
-    const { colors, battleFieldY } = this.UI;
+    const battleFieldY = height * 0.6;
 
     const fieldGraphics = this.add.graphics();
 
     fieldGraphics.fillStyle(0x000000, 0.3);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + 100, 700, 140);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.12, width * 0.55, height * 0.18);
 
-    fieldGraphics.fillStyle(colors.inkGrey, 0.4);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + 90, 680, 120);
+    fieldGraphics.fillStyle(this.colors.inkGrey, 0.4);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.1, width * 0.53, height * 0.15);
 
-    fieldGraphics.lineStyle(2, colors.goldAccent, 0.2);
-    fieldGraphics.strokeEllipse(width / 2, battleFieldY + 90, 680, 120);
+    fieldGraphics.lineStyle(2, this.colors.goldAccent, 0.2);
+    fieldGraphics.strokeEllipse(width / 2, battleFieldY + height * 0.1, width * 0.53, height * 0.15);
 
-    fieldGraphics.lineStyle(1, colors.paperCream, 0.15);
-    fieldGraphics.lineBetween(width / 2, battleFieldY - 120, width / 2, battleFieldY + 140);
+    fieldGraphics.lineStyle(1, this.colors.paperCream, 0.15);
+    fieldGraphics.lineBetween(width / 2, battleFieldY - height * 0.15, width / 2, battleFieldY + height * 0.18);
   }
 
   private initCombatants(): void {
-    const { width } = this.cameras.main;
-    const { battleFieldY, playerX, enemyStartX, enemySpacing } = this.UI;
+    const { width, height } = this.cameras.main;
+    const battleFieldY = height * 0.55;
+    const playerX = width * 0.28;
+    const enemyStartX = width * 0.58;
+    const enemySpacing = width * 0.12;
 
     this.displayCombatants.clear();
     this.engineCombatants = [];
@@ -219,9 +203,8 @@ export class BattleScene extends Phaser.Scene {
     );
     this.enemyCount = enemies.length;
 
-    const enemyCount = enemies.length;
-    const totalEnemyWidth = (enemyCount - 1) * enemySpacing;
-    const startX = enemyStartX + (width - enemyStartX - 100 - totalEnemyWidth) / 2;
+    const totalEnemyWidth = (enemies.length - 1) * enemySpacing;
+    const startX = enemyStartX + (width * 0.35 - totalEnemyWidth) / 2;
 
     enemies.forEach((enemy, i) => {
       this.engineCombatants.push(enemy);
@@ -234,7 +217,7 @@ export class BattleScene extends Phaser.Scene {
         wuxing: enemy.attackWuxing?.wuxing,
         isPlayer: false,
         x: startX + i * enemySpacing,
-        y: battleFieldY + (i % 2 === 0 ? -25 : 25),
+        y: battleFieldY + (i % 2 === 0 ? -height * 0.04 : height * 0.04),
       };
       this.displayCombatants.set(enemy.id, enemyDisplay);
     });
@@ -289,9 +272,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createCombatantSprite(combatant: DisplayCombatant, delay: number = 0): Phaser.GameObjects.Container {
-    const { colors, hpBarWidth, hpBarHeight, hpBarOffsetY, playerSize, enemySize } = this.UI;
+    const { width, height } = this.cameras.main;
+    const hpBarWidth = width * 0.07;
+    const hpBarHeight = height * 0.015;
+    const hpBarOffsetY = -height * 0.08;
+    const playerSize = width * 0.045;
+    const enemySize = width * 0.038;
 
-    const container = this.add.container(combatant.x, combatant.y + 60);
+    const container = this.add.container(combatant.x, combatant.y + height * 0.08);
     container.setAlpha(0);
 
     const bodySize = combatant.isPlayer ? playerSize : enemySize;
@@ -299,50 +287,67 @@ export class BattleScene extends Phaser.Scene {
 
     const aura = this.add.circle(0, 0, bodySize + 10, bodyColor, 0.2);
     const body = this.add.circle(0, 0, bodySize, bodyColor);
-    body.setStrokeStyle(3, colors.paperWhite, 0.6);
+    body.setStrokeStyle(3, this.colors.paperWhite, 0.6);
 
     const wuxingSymbol = this.getWuxingSymbol(combatant.wuxing);
+    const symbolSize = Math.max(16, Math.min(28, width * 0.022));
     const symbolText = this.add.text(0, 0, wuxingSymbol, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: combatant.isPlayer ? '28px' : '24px',
+      fontSize: `${combatant.isPlayer ? symbolSize : symbolSize * 0.85}px`,
       color: '#ffffff',
     }).setOrigin(0.5);
 
-    const nameY = hpBarOffsetY - 25;
-    const nameBg = this.add.rectangle(0, nameY, 110, 22, colors.inkBlack, 0.8);
+    const nameY = hpBarOffsetY - height * 0.035;
+    const nameSize = Math.max(10, Math.min(13, width * 0.01));
+    const nameBg = this.add.rectangle(0, nameY, width * 0.09, height * 0.03, this.colors.inkBlack, 0.8);
     nameBg.setStrokeStyle(1, bodyColor, 0.5);
 
     const nameText = this.add.text(0, nameY, combatant.name, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '13px',
+      fontSize: `${nameSize}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
-    const hpBarBg = this.add.rectangle(0, hpBarOffsetY, hpBarWidth + 4, hpBarHeight + 4, colors.inkBlack);
-    hpBarBg.setStrokeStyle(1, colors.inkGrey);
+    const hpBarBg = this.add.rectangle(0, hpBarOffsetY, hpBarWidth + 4, hpBarHeight + 4, this.colors.inkBlack);
+    hpBarBg.setStrokeStyle(1, this.colors.inkGrey);
+
+    // 根据实际HP百分比创建血条
+    const hpPercent = Math.max(0, combatant.hp / combatant.maxHp);
+    const initialWidth = hpBarWidth * hpPercent;
+    let barColor: number;
+    if (hpPercent < 0.25) {
+      barColor = this.colors.redAccent;
+    } else if (hpPercent < 0.5) {
+      barColor = 0xeab308;
+    } else {
+      barColor = this.colors.greenAccent;
+    }
 
     const hpBar = this.add.rectangle(
       -hpBarWidth / 2,
       hpBarOffsetY,
-      hpBarWidth,
+      initialWidth,
       hpBarHeight,
-      colors.greenAccent
+      barColor
     );
     hpBar.setOrigin(0, 0.5);
     hpBar.setName('hpBar');
+    hpBar.setData('maxWidth', hpBarWidth);
 
+    const hpTextSize = Math.max(8, Math.min(10, width * 0.008));
     const hpText = this.add.text(0, hpBarOffsetY, `${combatant.hp}`, {
       fontFamily: 'monospace',
-      fontSize: '10px',
+      fontSize: `${hpTextSize}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     hpText.setName('hpText');
 
     if (combatant.isPlayer) {
-      const playerMarker = this.add.text(0, bodySize + 25, '▲ 玩家', {
+      const markerSize = Math.max(9, Math.min(11, width * 0.009));
+      const playerMarker = this.add.text(0, bodySize + height * 0.035, '▲ 玩家', {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
+        fontSize: `${markerSize}px`,
         color: '#d4a853',
       }).setOrigin(0.5);
       container.add(playerMarker);
@@ -370,8 +375,6 @@ export class BattleScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    this.updateHpBar(combatant);
-
     return container;
   }
 
@@ -384,6 +387,142 @@ export class BattleScene extends Phaser.Scene {
       case Wuxing.FIRE: return '火';
       case Wuxing.EARTH: return '土';
       default: return '?';
+    }
+  }
+
+  /**
+   * 检查相生效果并决定是否允许更换装备
+   */
+  private async checkAndStartBattle(): Promise<void> {
+    // 检查玩家攻击五行与敌人防御五行的关系
+    const playerCombatant = this.engineCombatants.find(c => c.isPlayer);
+    const enemies = this.engineCombatants.filter(c => !c.isPlayer);
+
+    if (!playerCombatant || this.nodeType === 'final') {
+      // 最终战不允许更换装备
+      this.runBattle();
+      return;
+    }
+
+    const playerAttackWuxing = playerCombatant.attackWuxing?.wuxing;
+
+    // 检查是否有相生效果
+    const hasGenerateEffect = enemies.some(enemy => {
+      if (playerAttackWuxing === undefined || enemy.defenseWuxing?.wuxing === undefined) {
+        return false;
+      }
+      const relation = getWuxingRelation(playerAttackWuxing, enemy.defenseWuxing.wuxing);
+      return relation === 'generate';
+    });
+
+    if (hasGenerateEffect) {
+      // 显示相生警告并允许更换装备
+      await this.showGenerateWarning();
+    } else {
+      this.runBattle();
+    }
+  }
+
+  private async showGenerateWarning(): Promise<void> {
+    const { width, height } = this.cameras.main;
+
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
+
+    const panelWidth = width * 0.5;
+    const panelHeight = height * 0.35;
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(this.colors.inkBlack, 0.98);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+    panelBg.lineStyle(2, 0x3fb950, 0.8);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+
+    const titleSize = Math.max(16, Math.min(22, width * 0.018));
+    const title = this.add.text(width / 2, height / 2 - panelHeight * 0.3, '⚠️ 相生警告', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${titleSize}px`,
+      color: '#3fb950',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const descSize = Math.max(12, Math.min(14, width * 0.012));
+    const desc = this.add.text(width / 2, height / 2 - panelHeight * 0.08, '你的攻击属性会治疗部分敌人！\n是否更换装备？', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${descSize}px`,
+      color: '#f0e6d3',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    const btnWidth = panelWidth * 0.35;
+    const btnHeight = height * 0.06;
+    const btnY = height / 2 + panelHeight * 0.25;
+
+    // 更换装备按钮
+    const changeBtnBg = this.add.rectangle(width / 2 - panelWidth * 0.2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
+    changeBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
+    changeBtnBg.setInteractive({ useHandCursor: true });
+
+    const changeBtnText = this.add.text(width / 2 - panelWidth * 0.2, btnY, '更换装备', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${descSize}px`,
+      color: '#0d1117',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    // 继续战斗按钮
+    const continueBtnBg = this.add.rectangle(width / 2 + panelWidth * 0.2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
+    continueBtnBg.setStrokeStyle(2, this.colors.paperWhite, 0.5);
+    continueBtnBg.setInteractive({ useHandCursor: true });
+
+    const continueBtnText = this.add.text(width / 2 + panelWidth * 0.2, btnY, '继续战斗', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${descSize}px`,
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    const elements = [overlay, panelBg, title, desc, changeBtnBg, changeBtnText, continueBtnBg, continueBtnText];
+
+    changeBtnBg.on('pointerover', () => changeBtnBg.setFillStyle(0xffffff));
+    changeBtnBg.on('pointerout', () => changeBtnBg.setFillStyle(this.colors.goldAccent));
+    changeBtnBg.on('pointerup', () => {
+      elements.forEach(e => e.destroy());
+      this.scene.pause();
+      this.scene.launch('InventoryScene');
+      this.scene.get('InventoryScene').events.once('shutdown', () => {
+        this.scene.resume();
+        // 重新创建战斗者以反映装备变化
+        this.refreshPlayerCombatant();
+        this.checkAndStartBattle();
+      });
+    });
+
+    continueBtnBg.on('pointerover', () => continueBtnBg.setFillStyle(this.colors.goldAccent));
+    continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(this.colors.inkGrey));
+    continueBtnBg.on('pointerup', () => {
+      elements.forEach(e => e.destroy());
+      this.runBattle();
+    });
+  }
+
+  private refreshPlayerCombatant(): void {
+    // 更新玩家战斗者数据
+    const newPlayerCombatant = this.createPlayerCombatant();
+    const index = this.engineCombatants.findIndex(c => c.isPlayer);
+    if (index >= 0) {
+      this.engineCombatants[index] = newPlayerCombatant;
+    }
+
+    // 更新显示
+    const playerDisplay = this.displayCombatants.get('player');
+    if (playerDisplay) {
+      playerDisplay.wuxing = newPlayerCombatant.attackWuxing?.wuxing;
+      playerDisplay.hp = newPlayerCombatant.hp;
+      playerDisplay.maxHp = newPlayerCombatant.maxHp;
+
+      // 重新创建sprite
+      if (playerDisplay.sprite) {
+        playerDisplay.sprite.destroy();
+      }
+      playerDisplay.sprite = this.createCombatantSprite(playerDisplay, 0);
     }
   }
 
@@ -421,7 +560,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async playEvent(event: BattleEvent): Promise<void> {
-    const { turnDelay, damageDelay } = this.UI;
+    const damageDelay = 400;
+    const turnDelay = 600;
 
     switch (event.type) {
       case 'battle_start':
@@ -573,7 +713,6 @@ export class BattleScene extends Phaser.Scene {
 
   private async showLootScreen(items: Equipment[]): Promise<void> {
     const { width, height } = this.cameras.main;
-    const { colors } = this.UI;
 
     // 立即将战利品加入背包
     let fragmentsGained = 0;
@@ -591,20 +730,21 @@ export class BattleScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
+    const titleSize = Math.max(20, Math.min(28, width * 0.022));
     const title = this.add.text(width / 2, height * 0.08, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: `${titleSize}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     lootContainer.add(title);
 
-    const slotSize = 65;
+    const slotSize = Math.max(50, Math.min(65, width * 0.05));
     const cols = Math.min(items.length, 10);
     const rows = Math.ceil(items.length / cols);
     const gridWidth = cols * slotSize;
     const startX = (width - gridWidth) / 2 + slotSize / 2;
-    const startY = 140;
+    const startY = height * 0.2;
 
     let currentPopup: Phaser.GameObjects.Container | null = null;
 
@@ -627,39 +767,29 @@ export class BattleScene extends Phaser.Scene {
       const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
       const borderColor = this.getRarityBorderColor(item.rarity);
 
-      const bg = this.add.rectangle(0, 0, 55, 55, colors.inkBlack, 0.9);
+      const bg = this.add.rectangle(0, 0, slotSize * 0.85, slotSize * 0.85, this.colors.inkBlack, 0.9);
       bg.setStrokeStyle(2, borderColor, 0.8);
       bg.setInteractive({ useHandCursor: true });
       slotContainer.add(bg);
 
-      const icon = this.add.circle(0, -3, 18, wuxingColor);
+      const icon = this.add.circle(0, -3, slotSize * 0.28, wuxingColor);
       icon.setStrokeStyle(2, 0xffffff, 0.4);
       slotContainer.add(icon);
 
       const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
       const levelText = this.add.text(0, -3, levelStr, {
         fontFamily: 'monospace',
-        fontSize: '12px',
+        fontSize: `${slotSize * 0.18}px`,
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       slotContainer.add(levelText);
 
       const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
-      const typeText = this.add.text(0, 18, typeIcon, {
-        fontSize: '10px',
+      const typeText = this.add.text(0, slotSize * 0.28, typeIcon, {
+        fontSize: `${slotSize * 0.15}px`,
       }).setOrigin(0.5);
       slotContainer.add(typeText);
-
-      if (item.upgradeLevel > 0) {
-        const upgradeText = this.add.text(20, -20, `+${item.upgradeLevel}`, {
-          fontFamily: 'monospace',
-          fontSize: '9px',
-          color: '#3fb950',
-          fontStyle: 'bold',
-        }).setOrigin(0.5);
-        slotContainer.add(upgradeText);
-      }
 
       bg.on('pointerup', () => {
         closePopup();
@@ -675,31 +805,39 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     lootContainer.add(countText);
 
-    // 两个按钮：背包 和 继续冒险
-    const btnY = height - 100;
-    const btnWidth = 150;
-    const btnHeight = 45;
-    const btnSpacing = 180;
+    if (fragmentsGained > 0) {
+      const fragmentText = this.add.text(width / 2, startY + rows * slotSize + 55, `${fragmentsGained} 件物品已炼化为碎片`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '12px',
+        color: '#a855f7',
+      }).setOrigin(0.5);
+      lootContainer.add(fragmentText);
+    }
+
+    const btnY = height * 0.86;
+    const btnWidth = width * 0.12;
+    const btnHeight = height * 0.065;
+    const btnSpacing = width * 0.14;
 
     // 背包按钮
-    const bagBtnBg = this.add.rectangle(width / 2 - btnSpacing / 2, btnY, btnWidth, btnHeight, colors.inkGrey);
-    bagBtnBg.setStrokeStyle(2, colors.goldAccent, 0.5);
+    const bagBtnBg = this.add.rectangle(width / 2 - btnSpacing / 2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
+    bagBtnBg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bagBtnBg.setInteractive({ useHandCursor: true });
     lootContainer.add(bagBtnBg);
 
     const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", serif',
-      fontSize: '16px',
+      fontSize: `${Math.max(12, width * 0.012)}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
     lootContainer.add(bagBtnText);
 
     bagBtnBg.on('pointerover', () => {
-      bagBtnBg.setFillStyle(colors.goldAccent);
+      bagBtnBg.setFillStyle(this.colors.goldAccent);
       bagBtnText.setColor('#0d1117');
     });
     bagBtnBg.on('pointerout', () => {
-      bagBtnBg.setFillStyle(colors.inkGrey);
+      bagBtnBg.setFillStyle(this.colors.inkGrey);
       bagBtnText.setColor('#f0e6d3');
     });
     bagBtnBg.on('pointerup', () => {
@@ -711,31 +849,21 @@ export class BattleScene extends Phaser.Scene {
     });
 
     // 继续冒险按钮
-    const continueBtnBg = this.add.rectangle(width / 2 + btnSpacing / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
+    const continueBtnBg = this.add.rectangle(width / 2 + btnSpacing / 2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
     continueBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
     continueBtnBg.setInteractive({ useHandCursor: true });
     lootContainer.add(continueBtnBg);
 
     const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续冒险', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '16px',
+      fontSize: `${Math.max(12, width * 0.012)}px`,
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     lootContainer.add(continueBtnText);
 
     continueBtnBg.on('pointerover', () => continueBtnBg.setFillStyle(0xffffff));
-    continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(colors.goldAccent));
-
-    // 显示炼化提示（如果有）
-    if (fragmentsGained > 0) {
-      const fragmentText = this.add.text(width / 2, startY + rows * slotSize + 55, `${fragmentsGained} 件物品已炼化为碎片`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
-        color: '#a855f7',
-      }).setOrigin(0.5);
-      lootContainer.add(fragmentText);
-    }
+    continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(this.colors.goldAccent));
 
     await new Promise<void>(resolve => {
       continueBtnBg.on('pointerup', () => {
@@ -744,13 +872,11 @@ export class BattleScene extends Phaser.Scene {
       });
     });
 
-    // 第7轮为最终局，无论胜负都结束
     if (this.nodeType === 'final') {
       this.showGameComplete();
       return;
     }
 
-    // 直接跳转到MapScene，不再显示战斗场景
     this.scene.start('MapScene', {
       mode: this.mode,
       round: this.round + 1,
@@ -758,14 +884,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createLootPopup(item: Equipment, x: number, y: number): Phaser.GameObjects.Container {
-    const { colors } = this.UI;
+    const { width } = this.cameras.main;
     const popup = this.add.container(x, y);
 
     const panelHeight = item.skill ? 280 : 220;
     const borderColor = this.getRarityBorderColor(item.rarity);
 
     const bg = this.add.graphics();
-    bg.fillStyle(colors.inkBlack, 0.98);
+    bg.fillStyle(this.colors.inkBlack, 0.98);
     bg.fillRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
     bg.lineStyle(3, borderColor, 0.9);
     bg.strokeRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
@@ -1010,19 +1136,18 @@ export class BattleScene extends Phaser.Scene {
 
   private showGameOver(): void {
     const { width, height } = this.cameras.main;
-    const { colors } = this.UI;
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    const panelWidth = 400;
-    const panelHeight = 250;
+    const panelWidth = width * 0.35;
+    const panelHeight = height * 0.38;
     const panelBg = this.add.graphics();
-    panelBg.fillStyle(colors.inkBlack, 0.95);
+    panelBg.fillStyle(this.colors.inkBlack, 0.95);
     panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
-    panelBg.lineStyle(2, colors.redAccent, 0.6);
+    panelBg.lineStyle(2, this.colors.redAccent, 0.6);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    this.add.text(width / 2, height / 2 - 60, '败 北', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.25, '败 北', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '48px',
       color: '#f85149',
@@ -1035,12 +1160,12 @@ export class BattleScene extends Phaser.Scene {
       color: '#8b949e',
     }).setOrigin(0.5);
 
-    const btnWidth = 160;
-    const btnHeight = 45;
-    const btnY = height / 2 + 70;
+    const btnWidth = panelWidth * 0.5;
+    const btnHeight = height * 0.065;
+    const btnY = height / 2 + panelHeight * 0.3;
 
-    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.inkGrey);
-    btnBg.setStrokeStyle(2, colors.paperCream, 0.5);
+    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
+    btnBg.setStrokeStyle(2, this.colors.paperCream, 0.5);
     btnBg.setInteractive({ useHandCursor: true });
 
     const btnText = this.add.text(width / 2, btnY, '返回主菜单', {
@@ -1050,12 +1175,12 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     btnBg.on('pointerover', () => {
-      btnBg.setFillStyle(colors.goldAccent);
+      btnBg.setFillStyle(this.colors.goldAccent);
       btnText.setColor('#0d1117');
     });
 
     btnBg.on('pointerout', () => {
-      btnBg.setFillStyle(colors.inkGrey);
+      btnBg.setFillStyle(this.colors.inkGrey);
       btnText.setColor('#f0e6d3');
     });
 
@@ -1067,42 +1192,41 @@ export class BattleScene extends Phaser.Scene {
 
   private showGameComplete(): void {
     const { width, height } = this.cameras.main;
-    const { colors } = this.UI;
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    const panelWidth = 450;
-    const panelHeight = 300;
+    const panelWidth = width * 0.4;
+    const panelHeight = height * 0.45;
     const panelBg = this.add.graphics();
-    panelBg.fillStyle(colors.inkBlack, 0.95);
+    panelBg.fillStyle(this.colors.inkBlack, 0.95);
     panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
-    panelBg.lineStyle(2, colors.goldAccent, 0.8);
+    panelBg.lineStyle(2, this.colors.goldAccent, 0.8);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    this.add.text(width / 2, height / 2 - 80, '✨ 通关成功 ✨', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.28, '✨ 通关成功 ✨', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '42px',
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 - 20, '恭喜你完成了西游肉鸽！', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.05, '恭喜你完成了西游肉鸽！', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '18px',
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 + 20, '取经路漫漫，终得正果', {
+    this.add.text(width / 2, height / 2 + panelHeight * 0.08, '取经路漫漫，终得正果', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '14px',
       color: '#8b949e',
     }).setOrigin(0.5);
 
-    const btnWidth = 160;
-    const btnHeight = 45;
-    const btnY = height / 2 + 90;
+    const btnWidth = panelWidth * 0.4;
+    const btnHeight = height * 0.065;
+    const btnY = height / 2 + panelHeight * 0.3;
 
-    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
+    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
     btnBg.setStrokeStyle(2, 0xffffff, 0.5);
     btnBg.setInteractive({ useHandCursor: true });
 
@@ -1114,7 +1238,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     btnBg.on('pointerover', () => btnBg.setFillStyle(0xffffff));
-    btnBg.on('pointerout', () => btnBg.setFillStyle(colors.goldAccent));
+    btnBg.on('pointerout', () => btnBg.setFillStyle(this.colors.goldAccent));
 
     btnBg.on('pointerup', () => {
       gameState.reset();
@@ -1127,16 +1251,17 @@ export class BattleScene extends Phaser.Scene {
 
     const originalX = attacker.x;
     const originalY = attacker.y;
+    const { width } = this.cameras.main;
+    const attackDuration = 200;
 
-    // 创建攻击粒子
     this.createAttackParticles(attacker);
 
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
-        x: defender.x - (attacker.isPlayer ? 80 : -80),
+        x: defender.x - (attacker.isPlayer ? width * 0.06 : -width * 0.06),
         y: defender.y,
-        duration: this.UI.attackDuration,
+        duration: attackDuration,
         ease: 'Power3.easeIn',
         onComplete: () => resolve(),
       });
@@ -1158,7 +1283,7 @@ export class BattleScene extends Phaser.Scene {
         targets: attacker.sprite,
         x: originalX,
         y: originalY,
-        duration: this.UI.attackDuration,
+        duration: attackDuration,
         ease: 'Power2.easeOut',
         onComplete: () => resolve(),
       });
@@ -1167,6 +1292,7 @@ export class BattleScene extends Phaser.Scene {
 
   private createAttackParticles(attacker: DisplayCombatant): void {
     const color = attacker.wuxing !== undefined ? WUXING_COLORS[attacker.wuxing] : 0xffffff;
+    const { width } = this.cameras.main;
 
     for (let i = 0; i < 5; i++) {
       const particle = this.add.circle(
@@ -1176,7 +1302,7 @@ export class BattleScene extends Phaser.Scene {
         color
       );
 
-      const targetX = attacker.isPlayer ? attacker.x + 150 : attacker.x - 150;
+      const targetX = attacker.isPlayer ? attacker.x + width * 0.12 : attacker.x - width * 0.12;
 
       this.tweens.add({
         targets: particle,
@@ -1194,7 +1320,6 @@ export class BattleScene extends Phaser.Scene {
   private async playDeathAnimation(combatant: DisplayCombatant): Promise<void> {
     if (!combatant.sprite) return;
 
-    // 创建死亡粒子
     for (let i = 0; i < 12; i++) {
       const color = combatant.wuxing !== undefined ? WUXING_COLORS[combatant.wuxing] : 0x8b949e;
       const particle = this.add.circle(
@@ -1236,12 +1361,12 @@ export class BattleScene extends Phaser.Scene {
 
   private updateHpBar(combatant: DisplayCombatant): void {
     if (!combatant.sprite) return;
-    const { colors, hpBarWidth } = this.UI;
 
     const hpBar = combatant.sprite.getByName('hpBar') as Phaser.GameObjects.Rectangle;
     const hpText = combatant.sprite.getByName('hpText') as Phaser.GameObjects.Text;
 
     if (hpBar) {
+      const hpBarWidth = hpBar.getData('maxWidth') as number;
       const hpPercent = Math.max(0, combatant.hp / combatant.maxHp);
       const newWidth = hpBarWidth * hpPercent;
 
@@ -1254,11 +1379,11 @@ export class BattleScene extends Phaser.Scene {
 
       let barColor: number;
       if (hpPercent < 0.25) {
-        barColor = colors.redAccent;
+        barColor = this.colors.redAccent;
       } else if (hpPercent < 0.5) {
         barColor = 0xeab308;
       } else {
-        barColor = colors.greenAccent;
+        barColor = this.colors.greenAccent;
       }
       hpBar.setFillStyle(barColor);
     }
