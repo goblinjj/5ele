@@ -1,0 +1,19 @@
+{
+  "name": "xiyou-roguelike",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "docker-compose up",
+    "dev:local": "pnpm run --parallel -r dev",
+    "dev:client": "pnpm --filter @xiyou/client dev",
+    "dev:server": "pnpm --filter @xiyou/server dev",
+    "build": "pnpm --filter @xiyou/shared build && pnpm --filter @xiyou/client build && pnpm --filter @xiyou/server build",
+    "build:shared": "pnpm --filter @xiyou/shared build",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
+    "install:all": "pnpm install"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
