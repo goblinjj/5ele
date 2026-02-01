@@ -16,9 +16,10 @@ import { gameState } from './GameStateManager.js';
 export interface SynthesisResult {
   success: boolean;
   result?: Equipment;        // 成功时的产物
-  destroyedItem?: Equipment; // 被销毁/分解的装备
-  gotFragment: boolean;      // 是否获得碎片
+  destroyedItems: Equipment[]; // 被销毁的装备（两件都会销毁）
+  fragmentsGained: number;   // 获得的碎片数量
   message: string;
+  isSpecial?: boolean;       // 是否为特殊合成（传说装备）
 }
 
 /**
@@ -72,8 +73,11 @@ const DEVOUR_BASE_RATE = 0.15;
 export class SynthesisSystem {
   /**
    * 合成两件装备
+   * @param slot1 第一件装备的槽位（将被升级）
+   * @param slot2 第二件装备的槽位（作为材料）
+   * @param useFragments 是否消耗碎片提升成功率
    */
-  static synthesize(slot1: number, slot2: number): SynthesisResult {
+  static synthesize(slot1: number, slot2: number, useFragments: boolean = false): SynthesisResult {
     const inventory = gameState.getInventory();
     const item1 = inventory[slot1];
     const item2 = inventory[slot2];
@@ -81,7 +85,8 @@ export class SynthesisSystem {
     if (!item1 || !item2) {
       return {
         success: false,
-        gotFragment: false,
+        destroyedItems: [],
+        fragmentsGained: 0,
         message: '请选择两件装备进行合成',
       };
     }
@@ -89,25 +94,43 @@ export class SynthesisSystem {
     if (slot1 === slot2) {
       return {
         success: false,
-        gotFragment: false,
+        destroyedItems: [],
+        fragmentsGained: 0,
         message: '不能选择同一件装备',
+      };
+    }
+
+    // 检查升级等级是否相同
+    if (item1.upgradeLevel !== item2.upgradeLevel) {
+      return {
+        success: false,
+        destroyedItems: [],
+        fragmentsGained: 0,
+        message: `只有相同强化等级的装备才能合成（+${item1.upgradeLevel} 与 +${item2.upgradeLevel} 不匹配）`,
       };
     }
 
     // 检查特殊配方
     const specialResult = this.checkSpecialRecipe(item1, item2);
     if (specialResult) {
-      // 移除两件装备
-      gameState.removeFromInventory(slot1);
-      gameState.removeFromInventory(slot2 > slot1 ? slot2 - 1 : slot2);
+      // 移除两件装备（先移除较大索引）
+      if (slot1 > slot2) {
+        gameState.removeFromInventory(slot1);
+        gameState.removeFromInventory(slot2);
+      } else {
+        gameState.removeFromInventory(slot2);
+        gameState.removeFromInventory(slot1);
+      }
       // 添加结果
       gameState.addToInventory(specialResult);
 
       return {
         success: true,
         result: specialResult,
-        gotFragment: false,
+        destroyedItems: [item1, item2],
+        fragmentsGained: 0,
         message: `合成成功！获得了 ${specialResult.name}！`,
+        isSpecial: true,
       };
     }
 
@@ -116,51 +139,51 @@ export class SynthesisSystem {
     const baseRate = (item1.wuxing !== undefined && item2.wuxing !== undefined)
       ? this.getBaseRate(item1.wuxing, item2.wuxing)
       : 0.5;  // 无属性时默认50%成功率
-    const finalRate = Math.min(baseRate + fragmentCount * FRAGMENT_BONUS, 0.95);
+
+    // 碎片加成
+    let fragmentBonus = 0;
+    if (useFragments && fragmentCount > 0) {
+      fragmentBonus = fragmentCount * FRAGMENT_BONUS;
+      // 消耗所有碎片
+      gameState.useAllFragments();
+    }
+    const finalRate = Math.min(baseRate + fragmentBonus, 0.95);
 
     // 判断成功/失败
     const roll = Math.random();
     const success = roll < finalRate;
 
+    // 两件装备都会被销毁（先移除较大索引）
+    if (slot1 > slot2) {
+      gameState.removeFromInventory(slot1);
+      gameState.removeFromInventory(slot2);
+    } else {
+      gameState.removeFromInventory(slot2);
+      gameState.removeFromInventory(slot1);
+    }
+
     if (success) {
-      // 成功：随机选择一个装备升级
-      const upgradeFirst = Math.random() < 0.5;
-      const upgraded = upgradeFirst ? item1 : item2;
-      const destroyed = upgradeFirst ? item2 : item1;
-      const destroyedSlot = upgradeFirst ? slot2 : slot1;
-      const upgradedSlot = upgradeFirst ? slot1 : slot2;
-
-      // 升级装备
-      const upgradedItem = this.upgradeEquipment(upgraded);
-
-      // 移除被销毁的装备
-      gameState.removeFromInventory(destroyedSlot);
-
-      // 更新升级后的装备
-      const newSlot = destroyedSlot < upgradedSlot ? upgradedSlot - 1 : upgradedSlot;
-      inventory[newSlot] = upgradedItem;
+      // 成功：第一件装备升级
+      const upgradedItem = this.upgradeEquipment(item1);
+      gameState.addToInventory(upgradedItem);
 
       return {
         success: true,
         result: upgradedItem,
-        destroyedItem: destroyed,
-        gotFragment: false,
+        destroyedItems: [item1, item2],
+        fragmentsGained: 0,
         message: `合成成功！${upgradedItem.name} 升级了！`,
       };
     } else {
-      // 失败：随机一件变成碎片
-      const destroyFirst = Math.random() < 0.5;
-      const destroyedSlot = destroyFirst ? slot1 : slot2;
-      const destroyed = destroyFirst ? item1 : item2;
-
-      gameState.removeFromInventory(destroyedSlot);
+      // 失败：获得2个碎片
+      gameState.addFragment();
       gameState.addFragment();
 
       return {
         success: false,
-        destroyedItem: destroyed,
-        gotFragment: true,
-        message: `合成失败... ${destroyed.name} 分解成了碎片`,
+        destroyedItems: [item1, item2],
+        fragmentsGained: 2,
+        message: `合成失败... ${item1.name} 和 ${item2.name} 分解成了2个碎片`,
       };
     }
   }

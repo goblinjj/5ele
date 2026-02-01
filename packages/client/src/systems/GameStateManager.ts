@@ -73,6 +73,16 @@ export class GameStateManager {
   }
 
   /**
+   * 消耗所有碎片（合成加成时使用）
+   * @returns 消耗的碎片数量
+   */
+  useAllFragments(): number {
+    const count = this.playerState.inventory.fragmentCount;
+    this.playerState.inventory.fragmentCount = 0;
+    return count;
+  }
+
+  /**
    * 检查背包是否已满
    */
   isInventoryFull(): boolean {

@@ -43,6 +43,9 @@ export class BattleScene extends Phaser.Scene {
 
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
+  private equipmentChangeButton?: Phaser.GameObjects.Container;
+  private waitingForEquipmentChange: boolean = false;
+  private equipmentChangeResolver?: () => void;
 
   // UI 常量 - 移动端竖屏优化
   private readonly UI = {
@@ -509,6 +512,11 @@ export class BattleScene extends Phaser.Scene {
           if (target) {
             if (event.wuxingEffect === 'generate') {
               this.showWuxingEffect(target, '相生', false);
+
+              // 如果玩家攻击敌人时触发相生，显示更换装备按钮
+              if (event.actorId === 'player' && !target.isPlayer) {
+                await this.showEquipmentChangeOption();
+              }
             }
             target.hp = Math.min(target.maxHp, target.hp + event.value);
             this.showHeal(target, event.value);
@@ -1115,5 +1123,163 @@ export class BattleScene extends Phaser.Scene {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => this.time.delayedCall(ms, resolve));
+  }
+
+  private async showEquipmentChangeOption(): Promise<void> {
+    return new Promise<void>(resolve => {
+      const { width, height } = this.cameras.main;
+      const { colors } = this.UI;
+
+      this.equipmentChangeResolver = resolve;
+      this.waitingForEquipmentChange = true;
+
+      this.equipmentChangeButton = this.add.container(width / 2, height / 2);
+
+      // 半透明背景
+      const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.6);
+      this.equipmentChangeButton.add(overlay);
+
+      // 提示面板
+      const panelWidth = 320;
+      const panelHeight = 180;
+      const panel = this.add.graphics();
+      panel.fillStyle(colors.inkBlack, 0.95);
+      panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+      panel.lineStyle(2, 0xff9500, 0.8);
+      panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+      this.equipmentChangeButton.add(panel);
+
+      // 警告标题
+      const warningText = this.add.text(0, -60, '⚠️ 相生效果！', {
+        fontFamily: '"Noto Serif SC", serif',
+        fontSize: '24px',
+        color: '#ff9500',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      this.equipmentChangeButton.add(warningText);
+
+      // 说明文字
+      const descText = this.add.text(0, -20, '你的攻击治愈了敌人！\n是否更换装备？', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '16px',
+        color: '#f0e6d3',
+        align: 'center',
+      }).setOrigin(0.5);
+      this.equipmentChangeButton.add(descText);
+
+      // 更换装备按钮
+      const changeBtnWidth = 120;
+      const changeBtnHeight = 40;
+      const changeBtnX = -70;
+      const changeBtnY = 50;
+
+      const changeBtnBg = this.add.rectangle(changeBtnX, changeBtnY, changeBtnWidth, changeBtnHeight, colors.goldAccent);
+      changeBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
+      changeBtnBg.setInteractive({ useHandCursor: true });
+
+      const changeBtnText = this.add.text(changeBtnX, changeBtnY, '更换装备', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '16px',
+        color: '#0d1117',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+
+      this.equipmentChangeButton.add([changeBtnBg, changeBtnText]);
+
+      changeBtnBg.on('pointerover', () => changeBtnBg.setFillStyle(0xffffff));
+      changeBtnBg.on('pointerout', () => changeBtnBg.setFillStyle(colors.goldAccent));
+      changeBtnBg.on('pointerup', () => {
+        this.openEquipmentMenu();
+      });
+
+      // 继续战斗按钮
+      const continueBtnX = 70;
+      const continueBtnY = 50;
+
+      const continueBtnBg = this.add.rectangle(continueBtnX, continueBtnY, changeBtnWidth, changeBtnHeight, colors.inkGrey);
+      continueBtnBg.setStrokeStyle(2, colors.paperWhite, 0.5);
+      continueBtnBg.setInteractive({ useHandCursor: true });
+
+      const continueBtnText = this.add.text(continueBtnX, continueBtnY, '继续战斗', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '16px',
+        color: '#f0e6d3',
+      }).setOrigin(0.5);
+
+      this.equipmentChangeButton.add([continueBtnBg, continueBtnText]);
+
+      continueBtnBg.on('pointerover', () => {
+        continueBtnBg.setFillStyle(colors.goldAccent);
+        continueBtnText.setColor('#0d1117');
+      });
+      continueBtnBg.on('pointerout', () => {
+        continueBtnBg.setFillStyle(colors.inkGrey);
+        continueBtnText.setColor('#f0e6d3');
+      });
+      continueBtnBg.on('pointerup', () => {
+        this.closeEquipmentChangeOption();
+      });
+
+      // 入场动画
+      this.equipmentChangeButton.setAlpha(0);
+      this.tweens.add({
+        targets: this.equipmentChangeButton,
+        alpha: 1,
+        duration: 200,
+        ease: 'Power2.easeOut',
+      });
+    });
+  }
+
+  private closeEquipmentChangeOption(): void {
+    if (this.equipmentChangeButton) {
+      this.equipmentChangeButton.destroy();
+      this.equipmentChangeButton = undefined;
+    }
+    this.waitingForEquipmentChange = false;
+    if (this.equipmentChangeResolver) {
+      this.equipmentChangeResolver();
+      this.equipmentChangeResolver = undefined;
+    }
+  }
+
+  private openEquipmentMenu(): void {
+    // 暂停战斗，打开背包界面
+    this.scene.pause();
+    this.scene.launch('InventoryScene');
+
+    // 监听背包界面关闭
+    this.scene.get('InventoryScene').events.once('shutdown', () => {
+      this.scene.resume();
+      // 重新创建玩家 combatant 以更新装备
+      this.refreshPlayerCombatant();
+      this.closeEquipmentChangeOption();
+    });
+  }
+
+  private refreshPlayerCombatant(): void {
+    // 更新玩家战斗数据
+    const newPlayerCombatant = this.createPlayerCombatant();
+
+    // 更新引擎中的玩家数据
+    const playerIndex = this.engineCombatants.findIndex(c => c.id === 'player');
+    if (playerIndex !== -1) {
+      // 保留当前HP
+      const currentHp = this.engineCombatants[playerIndex].hp;
+      newPlayerCombatant.hp = currentHp;
+      this.engineCombatants[playerIndex] = newPlayerCombatant;
+    }
+
+    // 更新显示
+    const playerDisplay = this.displayCombatants.get('player');
+    if (playerDisplay) {
+      playerDisplay.wuxing = newPlayerCombatant.attackWuxing?.wuxing;
+
+      // 更新精灵显示
+      if (playerDisplay.sprite) {
+        playerDisplay.sprite.destroy();
+        playerDisplay.sprite = this.createCombatantSprite(playerDisplay, 0);
+      }
+    }
   }
 }

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   Equipment,
   EquipmentType,
+  Wuxing,
   WUXING_COLORS,
   WUXING_NAMES,
   Rarity,
@@ -25,9 +26,11 @@ interface SlotInfo {
 export class InventoryScene extends Phaser.Scene {
   private popup?: Phaser.GameObjects.Container;
   private centerMessage?: Phaser.GameObjects.Container;
+  private specialNotification?: Phaser.GameObjects.Container;
   private currentSlot?: SlotInfo;
   private popupMode: PopupMode = 'view';
   private firstSelectedSlot?: SlotInfo;
+  private cancelButton?: Phaser.GameObjects.Container;
 
   // 颜色主题
   private readonly colors = {
@@ -234,7 +237,9 @@ export class InventoryScene extends Phaser.Scene {
     // 槽位背景
     const bgColor = slotInfo.type === 'inventory' ? this.colors.inkGrey : this.colors.inkBlack;
     const bg = this.add.rectangle(0, 0, 60, 60, bgColor, 0.8);
-    bg.setStrokeStyle(2, equipment ? this.colors.goldAccent : 0x484f58, equipment ? 0.6 : 0.3);
+    // 根据稀有度设置边框颜色
+    const borderColor = equipment ? this.getRarityBorderColor(equipment.rarity) : 0x484f58;
+    bg.setStrokeStyle(2, borderColor, equipment ? 0.8 : 0.3);
     bg.setInteractive({ useHandCursor: true });
     container.add(bg);
 
@@ -294,7 +299,7 @@ export class InventoryScene extends Phaser.Scene {
     });
 
     bg.on('pointerout', () => {
-      bg.setStrokeStyle(2, equipment ? this.colors.goldAccent : 0x484f58, equipment ? 0.6 : 0.3);
+      bg.setStrokeStyle(2, borderColor, equipment ? 0.8 : 0.3);
     });
   }
 
@@ -341,12 +346,13 @@ export class InventoryScene extends Phaser.Scene {
     overlay.on('pointerup', () => this.closePopup());
     this.popup.add(overlay);
 
-    // 弹窗面板
-    const panelHeight = equipment.skill ? 380 : 320;
+    // 弹窗面板 - 使用稀有度边框颜色
+    const panelHeight = equipment.skill ? 410 : 350;
+    const borderColor = this.getRarityBorderColor(equipment.rarity);
     const panel = this.add.graphics();
     panel.fillStyle(this.colors.inkBlack, 0.98);
     panel.fillRoundedRect(-160, -panelHeight / 2, 320, panelHeight, 12);
-    panel.lineStyle(2, this.colors.goldAccent, 0.6);
+    panel.lineStyle(3, borderColor, 0.9);
     panel.strokeRoundedRect(-160, -panelHeight / 2, 320, panelHeight, 12);
     this.popup.add(panel);
 
@@ -379,6 +385,16 @@ export class InventoryScene extends Phaser.Scene {
     this.popup.add(nameText);
 
     yOffset += 30;
+
+    // 装备类型
+    const typeNameText = this.add.text(0, yOffset, this.getEquipmentTypeName(equipment.type), {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#8b949e',
+    }).setOrigin(0.5);
+    this.popup.add(typeNameText);
+
+    yOffset += 22;
 
     // 稀有度
     const rarityText = this.add.text(0, yOffset, this.getRarityName(equipment.rarity), {
@@ -509,6 +525,9 @@ export class InventoryScene extends Phaser.Scene {
     const equipment = slotInfo.equipment;
     if (!equipment || slotInfo.type !== 'inventory') return;
 
+    // 先关闭弹层
+    this.closePopup();
+
     let success = false;
     switch (equipment.type) {
       case EquipmentType.WEAPON:
@@ -527,8 +546,11 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     if (success) {
-      this.showCenterMessage(`装备了 ${equipment.name}`, '#3fb950');
-      this.time.delayedCall(800, () => this.scene.restart());
+      // 弹层关闭后再显示消息
+      this.time.delayedCall(100, () => {
+        this.showCenterMessage(`装备了 ${equipment.name}`, '#3fb950');
+        this.time.delayedCall(800, () => this.scene.restart());
+      });
     } else {
       this.showCenterMessage('装备失败', '#f85149');
     }
@@ -538,9 +560,14 @@ export class InventoryScene extends Phaser.Scene {
     const equipment = slotInfo.equipment;
     if (!equipment) return;
 
+    // 先关闭弹层
+    this.closePopup();
+
     // 检查背包空间
     if (gameState.isInventoryFull()) {
-      this.showCenterMessage('背包已满！', '#f85149');
+      this.time.delayedCall(100, () => {
+        this.showCenterMessage('背包已满！', '#f85149');
+      });
       return;
     }
 
@@ -564,10 +591,14 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     if (success) {
-      this.showCenterMessage(`卸下了 ${equipment.name}`, '#3fb950');
-      this.time.delayedCall(800, () => this.scene.restart());
+      this.time.delayedCall(100, () => {
+        this.showCenterMessage(`卸下了 ${equipment.name}`, '#3fb950');
+        this.time.delayedCall(800, () => this.scene.restart());
+      });
     } else {
-      this.showCenterMessage('卸下失败', '#f85149');
+      this.time.delayedCall(100, () => {
+        this.showCenterMessage('卸下失败', '#f85149');
+      });
     }
   }
 
@@ -576,6 +607,7 @@ export class InventoryScene extends Phaser.Scene {
     this.popupMode = 'select-synthesize';
     this.firstSelectedSlot = slotInfo;
     this.showCenterMessage('选择另一件装备进行合成', '#d4a853', false);
+    this.showCancelButton();
   }
 
   private startDevourMode(slotInfo: SlotInfo): void {
@@ -583,6 +615,56 @@ export class InventoryScene extends Phaser.Scene {
     this.popupMode = 'select-devour';
     this.firstSelectedSlot = slotInfo;
     this.showCenterMessage('选择要吞噬的装备', '#d4a853', false);
+    this.showCancelButton();
+  }
+
+  private showCancelButton(): void {
+    this.hideCancelButton();
+
+    const { width, height } = this.cameras.main;
+    this.cancelButton = this.add.container(width / 2, height - 80);
+
+    const btnWidth = 120;
+    const btnHeight = 40;
+
+    const bg = this.add.rectangle(0, 0, btnWidth, btnHeight, this.colors.redAccent);
+    bg.setStrokeStyle(2, 0xffffff, 0.5);
+    bg.setInteractive({ useHandCursor: true });
+
+    const text = this.add.text(0, 0, '取消', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '16px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    this.cancelButton.add([bg, text]);
+
+    bg.on('pointerover', () => {
+      bg.setFillStyle(0xff6b6b);
+    });
+
+    bg.on('pointerout', () => {
+      bg.setFillStyle(this.colors.redAccent);
+    });
+
+    bg.on('pointerup', () => {
+      this.cancelSelectionMode();
+    });
+  }
+
+  private hideCancelButton(): void {
+    if (this.cancelButton) {
+      this.cancelButton.destroy();
+      this.cancelButton = undefined;
+    }
+  }
+
+  private cancelSelectionMode(): void {
+    this.closeCenterMessage();
+    this.hideCancelButton();
+    this.popupMode = 'view';
+    this.firstSelectedSlot = undefined;
   }
 
   private performAction(secondSlot: SlotInfo): void {
@@ -591,21 +673,171 @@ export class InventoryScene extends Phaser.Scene {
     const firstIndex = this.firstSelectedSlot.index;
     const secondIndex = secondSlot.index;
 
-    let result: { success: boolean; message: string };
+    this.closeCenterMessage();
+    this.hideCancelButton();
 
     if (this.popupMode === 'select-synthesize') {
-      result = SynthesisSystem.synthesize(firstIndex, secondIndex);
-    } else {
-      result = SynthesisSystem.devour(firstIndex, secondIndex);
-    }
+      const result = SynthesisSystem.synthesize(firstIndex, secondIndex);
 
-    this.closeCenterMessage();
-    this.showCenterMessage(result.message, result.success ? '#3fb950' : '#f85149');
+      if (result.isSpecial && result.result) {
+        // 特殊合成（传说装备）- 显示大型通知
+        this.showSpecialSynthesisNotification(result.result);
+      } else {
+        this.showCenterMessage(result.message, result.success ? '#3fb950' : '#f85149');
+        this.time.delayedCall(1200, () => this.scene.restart());
+      }
+    } else {
+      const result = SynthesisSystem.devour(firstIndex, secondIndex);
+      this.showCenterMessage(result.message, result.success ? '#3fb950' : '#f85149');
+      this.time.delayedCall(1200, () => this.scene.restart());
+    }
 
     this.popupMode = 'view';
     this.firstSelectedSlot = undefined;
+  }
 
-    this.time.delayedCall(1200, () => this.scene.restart());
+  private showSpecialSynthesisNotification(equipment: Equipment): void {
+    const { width, height } = this.cameras.main;
+
+    this.specialNotification = this.add.container(width / 2, height / 2);
+
+    // 全屏遮罩
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.9);
+    this.specialNotification.add(overlay);
+
+    // 光效背景
+    const glow = this.add.graphics();
+    const glowColor = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0xd4a853;
+    glow.fillStyle(glowColor, 0.2);
+    glow.fillCircle(0, 0, 200);
+    this.specialNotification.add(glow);
+
+    // 光环动画
+    this.tweens.add({
+      targets: glow,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      alpha: 0.3,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // 主标题
+    const title = this.add.text(0, -120, '✨ 神器出世 ✨', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '36px',
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.specialNotification.add(title);
+
+    // 装备图标
+    const iconColor = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
+    const icon = this.add.circle(0, -30, 50, iconColor);
+    icon.setStrokeStyle(4, 0xffffff, 0.8);
+    this.specialNotification.add(icon);
+
+    // 五行符号
+    const wuxingSymbol = equipment.wuxing !== undefined ? this.getWuxingSymbol(equipment.wuxing) : '神';
+    const symbolText = this.add.text(0, -30, wuxingSymbol, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '32px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.specialNotification.add(symbolText);
+
+    // 装备名称
+    const nameText = this.add.text(0, 50, equipment.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '28px',
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.specialNotification.add(nameText);
+
+    // 稀有度
+    const rarityText = this.add.text(0, 90, this.getRarityName(equipment.rarity), {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '16px',
+      color: this.getRarityColor(equipment.rarity),
+    }).setOrigin(0.5);
+    this.specialNotification.add(rarityText);
+
+    // 技能描述
+    if (equipment.skill) {
+      const skillText = this.add.text(0, 130, `【${equipment.skill.name}】${equipment.skill.description}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '14px',
+        color: '#d4a853',
+        wordWrap: { width: 300 },
+        align: 'center',
+      }).setOrigin(0.5, 0);
+      this.specialNotification.add(skillText);
+    }
+
+    // 关闭按钮
+    const btnY = 220;
+    const btnWidth = 160;
+    const btnHeight = 45;
+
+    const btnBg = this.add.rectangle(0, btnY, btnWidth, btnHeight, this.colors.goldAccent);
+    btnBg.setStrokeStyle(2, 0xffffff, 0.5);
+    btnBg.setInteractive({ useHandCursor: true });
+
+    const btnText = this.add.text(0, btnY, '太棒了！', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '18px',
+      color: '#0d1117',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    this.specialNotification.add([btnBg, btnText]);
+
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(0xffffff);
+    });
+
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(this.colors.goldAccent);
+    });
+
+    btnBg.on('pointerup', () => {
+      this.closeSpecialNotification();
+      this.scene.restart();
+    });
+
+    // 入场动画
+    this.specialNotification.setAlpha(0);
+    this.specialNotification.setScale(0.8);
+    this.tweens.add({
+      targets: this.specialNotification,
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 400,
+      ease: 'Back.easeOut',
+    });
+  }
+
+  private closeSpecialNotification(): void {
+    if (this.specialNotification) {
+      this.specialNotification.destroy();
+      this.specialNotification = undefined;
+    }
+  }
+
+  private getWuxingSymbol(wuxing: Wuxing): string {
+    switch (wuxing) {
+      case Wuxing.METAL: return '金';
+      case Wuxing.WOOD: return '木';
+      case Wuxing.WATER: return '水';
+      case Wuxing.FIRE: return '火';
+      case Wuxing.EARTH: return '土';
+      default: return '?';
+    }
   }
 
   private showCenterMessage(message: string, color: string = '#f0e6d3', autoHide: boolean = true): void {
@@ -664,6 +896,26 @@ export class InventoryScene extends Phaser.Scene {
       case Rarity.EPIC: return '#a855f7';
       case Rarity.LEGENDARY: return '#d4a853';
       default: return '#8b949e';
+    }
+  }
+
+  private getRarityBorderColor(rarity: Rarity): number {
+    switch (rarity) {
+      case Rarity.COMMON: return 0x8b949e;
+      case Rarity.UNCOMMON: return 0x3fb950;
+      case Rarity.RARE: return 0x58a6ff;
+      case Rarity.EPIC: return 0xa855f7;
+      case Rarity.LEGENDARY: return 0xd4a853;
+      default: return 0x8b949e;
+    }
+  }
+
+  private getEquipmentTypeName(type: EquipmentType): string {
+    switch (type) {
+      case EquipmentType.WEAPON: return '武器';
+      case EquipmentType.ARMOR: return '铠甲';
+      case EquipmentType.TREASURE: return '法宝';
+      default: return '装备';
     }
   }
 
