@@ -3,7 +3,7 @@ import { WUXING_COLORS, Wuxing } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
 /**
- * 主菜单场景 - 移动端竖屏优化
+ * 主菜单场景 - 横屏优化 (1280x720)
  */
 export class MenuScene extends Phaser.Scene {
   private readonly colors = {
@@ -59,10 +59,10 @@ export class MenuScene extends Phaser.Scene {
   private createTitle(): void {
     const { width, height } = this.cameras.main;
 
-    // 主标题
-    const title = this.add.text(width / 2, height * 0.18, '西游肉鸽', {
+    // 主标题 - 横屏时靠上
+    const title = this.add.text(width / 2, 80, '西游肉鸽', {
       fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
-      fontSize: '56px',
+      fontSize: '48px',
       color: '#f0e6d3',
       fontStyle: 'bold',
     });
@@ -80,9 +80,9 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 副标题
-    this.add.text(width / 2, height * 0.25, '五行策略 · 回合对战', {
+    this.add.text(width / 2, 130, '五行策略 · 回合对战', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#8b949e',
     }).setOrigin(0.5);
   }
@@ -92,22 +92,22 @@ export class MenuScene extends Phaser.Scene {
 
     const wuxingOrder = [Wuxing.METAL, Wuxing.WOOD, Wuxing.WATER, Wuxing.FIRE, Wuxing.EARTH];
     const wuxingSymbols = ['金', '木', '水', '火', '土'];
-    const circleRadius = 25;
-    const spacing = 60;
+    const circleRadius = 22;
+    const spacing = 70;
     const startX = width / 2 - (wuxingOrder.length - 1) * spacing / 2;
-    const y = height * 0.35;
+    const y = 200;
 
     wuxingOrder.forEach((wuxing, index) => {
       const x = startX + index * spacing;
       const color = WUXING_COLORS[wuxing];
 
-      const aura = this.add.circle(x, y, circleRadius + 10, color, 0.15);
+      const aura = this.add.circle(x, y, circleRadius + 8, color, 0.15);
       const circle = this.add.circle(x, y, circleRadius, color, 0.8);
       circle.setStrokeStyle(2, 0xffffff, 0.3);
 
       const symbol = this.add.text(x, y, wuxingSymbols[index], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '20px',
+        fontSize: '18px',
         color: '#ffffff',
       }).setOrigin(0.5);
 
@@ -124,7 +124,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 相克说明
-    this.add.text(width / 2, y + 50, '相克：金→木→土→水→火→金', {
+    this.add.text(width / 2, y + 45, '相克：金→木→土→水→火→金', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '12px',
       color: '#6e7681',
@@ -133,12 +133,14 @@ export class MenuScene extends Phaser.Scene {
 
   private createButtons(): void {
     const { width, height } = this.cameras.main;
+    const btnY = height - 180;
 
+    // 横屏布局：按钮水平排列
     // 开始游戏按钮
-    this.createButton(width / 2, height * 0.55, '开始游戏', '单人模式', () => this.startSinglePlayer());
+    this.createButton(width / 2 - 150, btnY, '开始游戏', '单人模式', () => this.startSinglePlayer());
 
     // 多人模式按钮
-    this.createButton(width / 2, height * 0.68, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
+    this.createButton(width / 2 + 150, btnY, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
   }
 
   private createButton(

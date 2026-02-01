@@ -44,6 +44,12 @@ export interface PlayerState {
 
   // 掉率加成（1.0 = 100%，10.0 = 1000%）
   dropRate: number;
+
+  // 怪物成长系数（每轮增加的百分比，0.15 = 15%）
+  monsterScaling: number;
+
+  // 怪物数量加成（0 = 正常，1 = 多1个）
+  monsterCountBonus: number;
 }
 
 /**
@@ -119,6 +125,8 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     trapCards: [],
     isReady: false,
     dropRate: 10.0,  // 1000% 掉率，测试用
+    monsterScaling: 0.20,  // 每轮怪物成长 20%
+    monsterCountBonus: 0,  // 默认无额外怪物
   };
 }
 

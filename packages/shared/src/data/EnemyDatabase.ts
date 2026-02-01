@@ -133,33 +133,58 @@ export const BOSS_ENEMIES: EnemyTemplate[] = [
 
 /**
  * 根据节点类型生成敌人
+ * @param nodeType 节点类型
+ * @param round 当前回合
+ * @param monsterScaling 每轮成长系数（来自玩家属性，默认0.20）
+ * @param monsterCountBonus 怪物数量加成（来自玩家属性，默认0）
  */
 export function generateEnemies(
   nodeType: 'normal' | 'elite' | 'final',
-  round: number
+  round: number,
+  monsterScaling: number = 0.20,
+  monsterCountBonus: number = 0
 ): Combatant[] {
-  // 前两轮不加成，之后每轮 +10%
-  const scaling = round <= 2 ? 1 : 1 + (round - 2) * 0.1;
+  // 每轮按比例成长，第一轮基础值
+  const scaling = 1 + (round - 1) * monsterScaling;
   const enemies: Combatant[] = [];
 
   if (nodeType === 'normal') {
-    // 普通战斗：第一轮只有1个，之后1-2个
-    const count = round === 1 ? 1 : (Math.random() < 0.5 ? 1 : 2);
+    // 普通战斗：基础1-2个，加上额外数量
+    const baseCount = round === 1 ? 1 : (Math.random() < 0.5 ? 1 : 2);
+    const count = Math.min(baseCount + monsterCountBonus, 4); // 最多4个
     for (let i = 0; i < count; i++) {
       const template = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
       enemies.push(createCombatantFromTemplate(template, i, scaling));
     }
   } else if (nodeType === 'elite') {
-    // 精英战斗：1 个精英怪
+    // 精英战斗：1个精英怪
     const template = ELITE_ENEMIES[Math.floor(Math.random() * ELITE_ENEMIES.length)];
     enemies.push(createCombatantFromTemplate(template, 0, scaling));
   } else {
     // Boss 战斗
     const template = BOSS_ENEMIES[0];
-    enemies.push(createCombatantFromTemplate(template, 0, scaling));
+    enemies.push(createCombatantFromTemplate(template, 0, scaling * 1.2)); // Boss额外20%成长
   }
 
   return enemies;
+}
+
+/**
+ * 获取敌人数量（用于计算掉落）
+ */
+export function getEnemyCount(
+  nodeType: 'normal' | 'elite' | 'final',
+  round: number,
+  monsterCountBonus: number = 0
+): number {
+  if (nodeType === 'normal') {
+    const baseCount = round === 1 ? 1 : (Math.random() < 0.5 ? 1 : 2);
+    return Math.min(baseCount + monsterCountBonus, 4);
+  } else if (nodeType === 'elite') {
+    return 1;
+  } else {
+    return 1;
+  }
 }
 
 function createCombatantFromTemplate(

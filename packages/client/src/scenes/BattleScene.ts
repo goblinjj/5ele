@@ -7,6 +7,8 @@ import {
   Skill,
   SkillTrigger,
   Equipment,
+  EquipmentType,
+  Rarity,
   BattleEngine,
   BattleEvent,
   Combatant as EngineCombatant,
@@ -26,7 +28,7 @@ interface DisplayCombatant {
   name: string;
   hp: number;
   maxHp: number;
-  wuxing?: Wuxing;  // 可选，无属性时为 undefined
+  wuxing?: Wuxing;
   isPlayer: boolean;
   x: number;
   y: number;
@@ -34,7 +36,7 @@ interface DisplayCombatant {
 }
 
 /**
- * 战斗场景 - 水墨画风格 UI
+ * 战斗场景 - 横屏优化 (1280x720)
  */
 export class BattleScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
@@ -43,32 +45,30 @@ export class BattleScene extends Phaser.Scene {
 
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
-  private equipmentChangeButton?: Phaser.GameObjects.Container;
-  private waitingForEquipmentChange: boolean = false;
-  private equipmentChangeResolver?: () => void;
+  private enemyCount: number = 0;
 
-  // UI 常量 - 移动端竖屏优化
+  // UI 常量 - 横屏居中布局
   private readonly UI = {
-    // 战斗区域（竖屏布局）
-    battleFieldY: 550,
-    playerX: 180,
-    enemyStartX: 400,
-    enemySpacing: 100,
+    battleFieldY: 400,
+    playerX: 380,
+    enemyStartX: 750,
+    enemySpacing: 130,
 
-    // 状态栏
     statusBarY: 80,
     statusBarHeight: 60,
 
-    // HP 条尺寸
-    hpBarWidth: 70,
-    hpBarHeight: 8,
-    hpBarOffsetY: -50,
+    hpBarWidth: 80,
+    hpBarHeight: 10,
+    hpBarOffsetY: -60,
 
-    // 战斗单位
-    playerSize: 45,
-    enemySize: 38,
+    playerSize: 55,
+    enemySize: 45,
 
-    // 颜色主题 - 水墨画风格
+    // 战斗速度
+    attackDuration: 200,
+    damageDelay: 400,
+    turnDelay: 600,
+
     colors: {
       bgDark: 0x0d1117,
       bgMid: 0x161b22,
@@ -94,36 +94,22 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
-
-    // 创建背景层
     this.createBackground();
-
-    // 创建顶部信息栏
     this.createTopBar();
-
-    // 创建战斗场地
     this.createBattleField();
-
-    // 初始化战斗单位
     this.initCombatants();
 
-    // 开始战斗
-    this.time.delayedCall(800, () => this.runBattle());
+    this.time.delayedCall(1000, () => this.runBattle());
   }
 
   private createBackground(): void {
     const { width, height } = this.cameras.main;
     const { colors } = this.UI;
 
-    // 深色渐变背景
     const bgGraphics = this.add.graphics();
-
-    // 主背景
     bgGraphics.fillStyle(colors.bgDark, 1);
     bgGraphics.fillRect(0, 0, width, height);
 
-    // 添加微妙的纹理 - 水墨晕染效果
     for (let i = 0; i < 8; i++) {
       const x = Phaser.Math.Between(0, width);
       const y = Phaser.Math.Between(100, height);
@@ -132,64 +118,52 @@ export class BattleScene extends Phaser.Scene {
       bgGraphics.fillCircle(x, y, radius);
     }
 
-    // 顶部装饰线
     bgGraphics.lineStyle(2, colors.goldAccent, 0.3);
     bgGraphics.lineBetween(50, 120, width - 50, 120);
-
-    // 底部装饰线
     bgGraphics.lineBetween(50, height - 60, width - 50, height - 60);
   }
 
   private createTopBar(): void {
     const { width } = this.cameras.main;
-    const { colors, statusBarY } = this.UI;
+    const { colors } = this.UI;
 
-    // 顶部状态栏背景
     const topBarBg = this.add.graphics();
     topBarBg.fillStyle(colors.inkBlack, 0.8);
     topBarBg.fillRoundedRect(20, 15, width - 40, 90, 8);
     topBarBg.lineStyle(1, colors.goldAccent, 0.4);
     topBarBg.strokeRoundedRect(20, 15, width - 40, 90, 8);
 
-    // 战斗标题
     const titleText = this.nodeType === 'final' ? '最终决战' :
                       this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
 
-    const titleStyle = {
-      fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
-      fontSize: '32px',
+    this.add.text(width / 2, 45, titleText, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '28px',
       color: '#f0e6d3',
       fontStyle: 'bold',
-    };
+    }).setOrigin(0.5);
 
-    this.add.text(width / 2, 45, titleText, titleStyle).setOrigin(0.5);
-
-    // 回合数 - 左侧
     this.add.text(50, 45, `第 ${this.round} 轮`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
-    // 玩家状态 - 右侧
     this.createPlayerStatusBar(width - 50, 60);
   }
 
   private createPlayerStatusBar(x: number, y: number): void {
     const player = gameState.getPlayerState();
-    const { colors } = this.UI;
 
-    // HP 显示
-    const hpText = this.add.text(x, y - 15, `❤️ ${player.hp}/${player.maxHp}`, {
+    this.add.text(x, y - 15, `❤️ ${player.hp}/${player.maxHp}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: '14px',
       color: '#f85149',
     }).setOrigin(1, 0.5);
 
-    // 攻防显示
-    const statsText = this.add.text(x, y + 15, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
+    this.add.text(x, y + 15, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: '12px',
       color: '#8b949e',
     }).setOrigin(1, 0.5);
   }
@@ -198,24 +172,19 @@ export class BattleScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const { colors, battleFieldY } = this.UI;
 
-    // 战斗区域背景 - 椭圆形战场
     const fieldGraphics = this.add.graphics();
 
-    // 地面阴影
     fieldGraphics.fillStyle(0x000000, 0.3);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + 80, 600, 120);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + 100, 700, 140);
 
-    // 战场主体
     fieldGraphics.fillStyle(colors.inkGrey, 0.4);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + 70, 580, 100);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + 90, 680, 120);
 
-    // 战场边缘高光
     fieldGraphics.lineStyle(2, colors.goldAccent, 0.2);
-    fieldGraphics.strokeEllipse(width / 2, battleFieldY + 70, 580, 100);
+    fieldGraphics.strokeEllipse(width / 2, battleFieldY + 90, 680, 120);
 
-    // VS 分隔线
     fieldGraphics.lineStyle(1, colors.paperCream, 0.15);
-    fieldGraphics.lineBetween(width / 2, battleFieldY - 100, width / 2, battleFieldY + 120);
+    fieldGraphics.lineBetween(width / 2, battleFieldY - 120, width / 2, battleFieldY + 140);
   }
 
   private initCombatants(): void {
@@ -225,28 +194,31 @@ export class BattleScene extends Phaser.Scene {
     this.displayCombatants.clear();
     this.engineCombatants = [];
 
-    // 创建玩家 Combatant
     const playerCombatant = this.createPlayerCombatant();
     this.engineCombatants.push(playerCombatant);
 
-    // 创建玩家显示对象
     const playerDisplay: DisplayCombatant = {
       id: playerCombatant.id,
       name: playerCombatant.name,
       hp: playerCombatant.hp,
       maxHp: playerCombatant.maxHp,
-      wuxing: playerCombatant.attackWuxing?.wuxing,  // 可能为 undefined
+      wuxing: playerCombatant.attackWuxing?.wuxing,
       isPlayer: true,
       x: playerX,
       y: battleFieldY,
     };
     this.displayCombatants.set(playerCombatant.id, playerDisplay);
 
-    // 生成敌人
+    const playerState = gameState.getPlayerState();
     const nodeTypeStr = this.getNodeTypeString();
-    const enemies = generateEnemies(nodeTypeStr, this.round);
+    const enemies = generateEnemies(
+      nodeTypeStr,
+      this.round,
+      playerState.monsterScaling,
+      playerState.monsterCountBonus
+    );
+    this.enemyCount = enemies.length;
 
-    // 计算敌人位置 - 均匀分布在右侧
     const enemyCount = enemies.length;
     const totalEnemyWidth = (enemyCount - 1) * enemySpacing;
     const startX = enemyStartX + (width - enemyStartX - 100 - totalEnemyWidth) / 2;
@@ -259,19 +231,18 @@ export class BattleScene extends Phaser.Scene {
         name: enemy.name,
         hp: enemy.hp,
         maxHp: enemy.maxHp,
-        wuxing: enemy.attackWuxing?.wuxing,  // 敌人通常有五行属性
+        wuxing: enemy.attackWuxing?.wuxing,
         isPlayer: false,
         x: startX + i * enemySpacing,
-        y: battleFieldY + (i % 2 === 0 ? -20 : 20), // 交错排列
+        y: battleFieldY + (i % 2 === 0 ? -25 : 25),
       };
       this.displayCombatants.set(enemy.id, enemyDisplay);
     });
 
-    // 创建精灵 - 使用动画入场
     let delay = 0;
     this.displayCombatants.forEach(c => {
       c.sprite = this.createCombatantSprite(c, delay);
-      delay += 100;
+      delay += 150;
     });
   }
 
@@ -283,7 +254,6 @@ export class BattleScene extends Phaser.Scene {
       treasures: gameState.getTreasures(),
     };
 
-    // 收集技能
     const skills: Skill[] = [];
     const allEquipment: Equipment[] = [...equipment.treasures];
     if (equipment.weapon) allEquipment.push(equipment.weapon);
@@ -321,45 +291,36 @@ export class BattleScene extends Phaser.Scene {
   private createCombatantSprite(combatant: DisplayCombatant, delay: number = 0): Phaser.GameObjects.Container {
     const { colors, hpBarWidth, hpBarHeight, hpBarOffsetY, playerSize, enemySize } = this.UI;
 
-    const container = this.add.container(combatant.x, combatant.y + 50);
+    const container = this.add.container(combatant.x, combatant.y + 60);
     container.setAlpha(0);
 
-    // 战斗单位主体
     const bodySize = combatant.isPlayer ? playerSize : enemySize;
-    // 无属性时使用灰色
     const bodyColor = combatant.wuxing !== undefined ? WUXING_COLORS[combatant.wuxing] : 0x8b949e;
 
-    // 外圈光环
-    const aura = this.add.circle(0, 0, bodySize + 8, bodyColor, 0.2);
-
-    // 主体圆形
+    const aura = this.add.circle(0, 0, bodySize + 10, bodyColor, 0.2);
     const body = this.add.circle(0, 0, bodySize, bodyColor);
     body.setStrokeStyle(3, colors.paperWhite, 0.6);
 
-    // 五行符号 - 中心（无属性显示"无"）
     const wuxingSymbol = this.getWuxingSymbol(combatant.wuxing);
     const symbolText = this.add.text(0, 0, wuxingSymbol, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: combatant.isPlayer ? '28px' : '22px',
+      fontSize: combatant.isPlayer ? '28px' : '24px',
       color: '#ffffff',
     }).setOrigin(0.5);
 
-    // 名称标签 - 上方
     const nameY = hpBarOffsetY - 25;
-    const nameBg = this.add.rectangle(0, nameY, 100, 22, colors.inkBlack, 0.8);
+    const nameBg = this.add.rectangle(0, nameY, 110, 22, colors.inkBlack, 0.8);
     nameBg.setStrokeStyle(1, bodyColor, 0.5);
 
     const nameText = this.add.text(0, nameY, combatant.name, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
-    // HP 条背景
     const hpBarBg = this.add.rectangle(0, hpBarOffsetY, hpBarWidth + 4, hpBarHeight + 4, colors.inkBlack);
     hpBarBg.setStrokeStyle(1, colors.inkGrey);
 
-    // HP 条本体 - 从左对齐
     const hpBar = this.add.rectangle(
       -hpBarWidth / 2,
       hpBarOffsetY,
@@ -370,7 +331,6 @@ export class BattleScene extends Phaser.Scene {
     hpBar.setOrigin(0, 0.5);
     hpBar.setName('hpBar');
 
-    // HP 数值文字
     const hpText = this.add.text(0, hpBarOffsetY, `${combatant.hp}`, {
       fontFamily: 'monospace',
       fontSize: '10px',
@@ -379,29 +339,26 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     hpText.setName('hpText');
 
-    // 玩家标识
     if (combatant.isPlayer) {
-      const playerMarker = this.add.text(0, bodySize + 20, '▲ 玩家', {
+      const playerMarker = this.add.text(0, bodySize + 25, '▲ 玩家', {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
-        color: colors.goldAccent.toString(16).padStart(6, '0'),
+        fontSize: '11px',
+        color: '#d4a853',
       }).setOrigin(0.5);
       container.add(playerMarker);
     }
 
     container.add([aura, body, symbolText, nameBg, nameText, hpBarBg, hpBar, hpText]);
 
-    // 入场动画
     this.tweens.add({
       targets: container,
       y: combatant.y,
       alpha: 1,
-      duration: 400,
+      duration: 500,
       delay: delay,
       ease: 'Back.easeOut',
     });
 
-    // 光环呼吸动画
     this.tweens.add({
       targets: aura,
       scaleX: 1.1,
@@ -419,7 +376,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private getWuxingSymbol(wuxing?: Wuxing): string {
-    if (wuxing === undefined) return '无';  // 无属性
+    if (wuxing === undefined) return '无';
     switch (wuxing) {
       case Wuxing.METAL: return '金';
       case Wuxing.WOOD: return '木';
@@ -433,7 +390,6 @@ export class BattleScene extends Phaser.Scene {
   private async runBattle(): Promise<void> {
     await this.showCenterText('战斗开始！', '#f0e6d3');
 
-    // 创建战斗引擎并运行
     const config: BattleConfig = {
       allowEquipmentChange: this.nodeType !== 'final',
       isPvP: false,
@@ -442,12 +398,10 @@ export class BattleScene extends Phaser.Scene {
     const engine = new BattleEngine(this.engineCombatants, config);
     const result = engine.run();
 
-    // 播放所有事件
     for (const event of result.events) {
       await this.playEvent(event);
     }
 
-    // 同步玩家 HP
     const playerSurvivor = result.survivingCombatants.find(c => c.isPlayer);
     if (playerSurvivor) {
       gameState.getPlayerState().hp = playerSurvivor.hp;
@@ -455,8 +409,7 @@ export class BattleScene extends Phaser.Scene {
       gameState.getPlayerState().hp = 0;
     }
 
-    // 战斗结束处理
-    await this.delay(300);
+    await this.delay(500);
 
     if (result.winnerId) {
       await this.showCenterText('胜利！', '#3fb950');
@@ -468,6 +421,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async playEvent(event: BattleEvent): Promise<void> {
+    const { turnDelay, damageDelay } = this.UI;
+
     switch (event.type) {
       case 'battle_start':
       case 'round_start':
@@ -479,7 +434,7 @@ export class BattleScene extends Phaser.Scene {
           const actor = this.displayCombatants.get(event.actorId);
           if (actor) {
             this.showSkillTrigger(actor, event.skillName);
-            await this.delay(300);
+            await this.delay(damageDelay);
           }
         }
         break;
@@ -495,13 +450,14 @@ export class BattleScene extends Phaser.Scene {
             }
 
             if (event.wuxingEffect === 'conquer') {
-              this.showWuxingEffect(target, '克制', true);
+              this.showWuxingEffect(target, '克制！', true);
             }
 
             target.hp = Math.max(0, target.hp - event.value);
             this.showDamage(target, event.value, event.isCritical || false);
+            this.createHitParticles(target);
             this.updateHpBar(target);
-            await this.delay(250);
+            await this.delay(damageDelay);
           }
         }
         break;
@@ -511,17 +467,13 @@ export class BattleScene extends Phaser.Scene {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             if (event.wuxingEffect === 'generate') {
-              this.showWuxingEffect(target, '相生', false);
-
-              // 如果玩家攻击敌人时触发相生，显示更换装备按钮
-              if (event.actorId === 'player' && !target.isPlayer) {
-                await this.showEquipmentChangeOption();
-              }
+              this.showWuxingEffect(target, '相生！', false);
             }
             target.hp = Math.min(target.maxHp, target.hp + event.value);
             this.showHeal(target, event.value);
+            this.createHealParticles(target);
             this.updateHpBar(target);
-            await this.delay(300);
+            await this.delay(damageDelay);
           }
         }
         break;
@@ -531,7 +483,7 @@ export class BattleScene extends Phaser.Scene {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             this.showMiss(target);
-            await this.delay(300);
+            await this.delay(damageDelay);
           }
         }
         break;
@@ -541,7 +493,7 @@ export class BattleScene extends Phaser.Scene {
           const actor = this.displayCombatants.get(event.actorId);
           if (actor) {
             this.showStatus(actor, '冻结!', '#58a6ff');
-            await this.delay(400);
+            await this.delay(turnDelay);
           }
         }
         break;
@@ -556,68 +508,93 @@ export class BattleScene extends Phaser.Scene {
         break;
 
       case 'round_end':
+        await this.delay(turnDelay);
+        break;
+
       case 'battle_end':
         break;
     }
   }
 
+  private createHitParticles(target: DisplayCombatant): void {
+    if (!target.sprite) return;
+
+    for (let i = 0; i < 8; i++) {
+      const particle = this.add.circle(
+        target.x + Phaser.Math.Between(-20, 20),
+        target.y + Phaser.Math.Between(-20, 20),
+        Phaser.Math.Between(3, 8),
+        0xff6b6b
+      );
+
+      this.tweens.add({
+        targets: particle,
+        x: particle.x + Phaser.Math.Between(-60, 60),
+        y: particle.y + Phaser.Math.Between(-80, -20),
+        alpha: 0,
+        scale: 0,
+        duration: 500,
+        ease: 'Power2.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private createHealParticles(target: DisplayCombatant): void {
+    if (!target.sprite) return;
+
+    for (let i = 0; i < 6; i++) {
+      const particle = this.add.circle(
+        target.x + Phaser.Math.Between(-30, 30),
+        target.y + 30,
+        Phaser.Math.Between(4, 8),
+        0x3fb950
+      );
+
+      this.tweens.add({
+        targets: particle,
+        y: particle.y - 80,
+        alpha: 0,
+        duration: 800,
+        delay: i * 50,
+        ease: 'Power2.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
   private async handleVictory(): Promise<void> {
     const nodeTypeStr = this.getNodeTypeString();
-    const dropRate = gameState.getPlayerState().dropRate;
-    const loot = generateLoot(nodeTypeStr, this.round, dropRate);
+    const playerState = gameState.getPlayerState();
+    const loot = generateLoot(nodeTypeStr, this.round, playerState.dropRate, this.enemyCount);
 
     await this.showLootScreen(loot.items);
-
-    let fragmentsGained = 0;
-    for (const item of loot.items) {
-      if (!gameState.isInventoryFull()) {
-        gameState.addToInventory(item);
-      } else {
-        fragmentsGained++;
-        gameState.addFragment();
-      }
-    }
-
-    if (fragmentsGained > 0) {
-      await this.showCenterText(`${fragmentsGained} 件物品炼化`, '#d4a853');
-      await this.delay(500);
-    }
-
-    this.scene.start('MapScene', {
-      mode: this.mode,
-      round: this.round + 1,
-    });
   }
 
   private async showLootScreen(items: Equipment[]): Promise<void> {
     const { width, height } = this.cameras.main;
     const { colors } = this.UI;
 
-    // 全屏容器
     const lootContainer = this.add.container(0, 0);
 
-    // 半透明遮罩
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
-    // 标题
-    const title = this.add.text(width / 2, 80, '战利品', {
+    const title = this.add.text(width / 2, 60, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '32px',
+      fontSize: '28px',
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     lootContainer.add(title);
 
-    // 装备图标网格
-    const slotSize = 70;
-    const cols = Math.min(items.length, 5);
+    const slotSize = 65;
+    const cols = Math.min(items.length, 10);
     const rows = Math.ceil(items.length / cols);
     const gridWidth = cols * slotSize;
     const startX = (width - gridWidth) / 2 + slotSize / 2;
-    const startY = 180;
+    const startY = 140;
 
-    // 当前弹窗
     let currentPopup: Phaser.GameObjects.Container | null = null;
 
     const closePopup = () => {
@@ -627,7 +604,6 @@ export class BattleScene extends Phaser.Scene {
       }
     };
 
-    // 创建装备图标
     items.forEach((item, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
@@ -637,44 +613,50 @@ export class BattleScene extends Phaser.Scene {
       const slotContainer = this.add.container(x, y);
       lootContainer.add(slotContainer);
 
-      // 槽位背景
       const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
-      const bg = this.add.rectangle(0, 0, 60, 60, colors.inkBlack, 0.9);
-      bg.setStrokeStyle(2, wuxingColor, 0.8);
+      const borderColor = this.getRarityBorderColor(item.rarity);
+
+      const bg = this.add.rectangle(0, 0, 55, 55, colors.inkBlack, 0.9);
+      bg.setStrokeStyle(2, borderColor, 0.8);
       bg.setInteractive({ useHandCursor: true });
       slotContainer.add(bg);
 
-      // 装备图标
-      const icon = this.add.circle(0, -3, 20, wuxingColor);
+      const icon = this.add.circle(0, -3, 18, wuxingColor);
       icon.setStrokeStyle(2, 0xffffff, 0.4);
       slotContainer.add(icon);
 
-      // 五行等级
       const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
       const levelText = this.add.text(0, -3, levelStr, {
         fontFamily: 'monospace',
-        fontSize: '14px',
+        fontSize: '12px',
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       slotContainer.add(levelText);
 
-      // 类型图标
       const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
-      const typeText = this.add.text(0, 22, typeIcon, {
-        fontSize: '12px',
+      const typeText = this.add.text(0, 18, typeIcon, {
+        fontSize: '10px',
       }).setOrigin(0.5);
       slotContainer.add(typeText);
 
-      // 点击显示弹窗
+      if (item.upgradeLevel > 0) {
+        const upgradeText = this.add.text(20, -20, `+${item.upgradeLevel}`, {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: '#3fb950',
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
+        slotContainer.add(upgradeText);
+      }
+
       bg.on('pointerup', () => {
         closePopup();
-        currentPopup = this.createLootPopup(item, width / 2, height / 2 + 50);
+        currentPopup = this.createLootPopup(item, width / 2, height / 2);
         lootContainer.add(currentPopup);
       });
     });
 
-    // 物品数量提示
     const countText = this.add.text(width / 2, startY + rows * slotSize + 30, `共 ${items.length} 件`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '14px',
@@ -682,38 +664,93 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     lootContainer.add(countText);
 
+    // 两个按钮：背包 和 继续冒险
+    const btnY = height - 100;
+    const btnWidth = 150;
+    const btnHeight = 45;
+    const btnSpacing = 180;
+
+    // 背包按钮
+    const bagBtnBg = this.add.rectangle(width / 2 - btnSpacing / 2, btnY, btnWidth, btnHeight, colors.inkGrey);
+    bagBtnBg.setStrokeStyle(2, colors.goldAccent, 0.5);
+    bagBtnBg.setInteractive({ useHandCursor: true });
+    lootContainer.add(bagBtnBg);
+
+    const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 背包', {
+      fontFamily: '"Noto Sans SC", serif',
+      fontSize: '16px',
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+    lootContainer.add(bagBtnText);
+
+    bagBtnBg.on('pointerover', () => {
+      bagBtnBg.setFillStyle(colors.goldAccent);
+      bagBtnText.setColor('#0d1117');
+    });
+    bagBtnBg.on('pointerout', () => {
+      bagBtnBg.setFillStyle(colors.inkGrey);
+      bagBtnText.setColor('#f0e6d3');
+    });
+    bagBtnBg.on('pointerup', () => {
+      this.scene.pause();
+      this.scene.launch('InventoryScene');
+      this.scene.get('InventoryScene').events.once('shutdown', () => {
+        this.scene.resume();
+      });
+    });
+
     // 继续冒险按钮
-    const btnY = height - 120;
-    const btnWidth = 200;
-    const btnHeight = 50;
+    const continueBtnBg = this.add.rectangle(width / 2 + btnSpacing / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
+    continueBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
+    continueBtnBg.setInteractive({ useHandCursor: true });
+    lootContainer.add(continueBtnBg);
 
-    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
-    btnBg.setStrokeStyle(2, 0xffffff, 0.5);
-    btnBg.setInteractive({ useHandCursor: true });
-    lootContainer.add(btnBg);
-
-    const btnText = this.add.text(width / 2, btnY, '继续冒险', {
+    const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续冒险', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '20px',
+      fontSize: '16px',
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);
-    lootContainer.add(btnText);
+    lootContainer.add(continueBtnText);
 
-    btnBg.on('pointerover', () => {
-      btnBg.setFillStyle(0xffffff);
-    });
+    continueBtnBg.on('pointerover', () => continueBtnBg.setFillStyle(0xffffff));
+    continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(colors.goldAccent));
 
-    btnBg.on('pointerout', () => {
-      btnBg.setFillStyle(colors.goldAccent);
-    });
-
-    // 等待点击继续
     await new Promise<void>(resolve => {
-      btnBg.on('pointerup', () => {
+      continueBtnBg.on('pointerup', () => {
+        // 先把战利品加入背包
+        let fragmentsGained = 0;
+        for (const item of items) {
+          if (!gameState.isInventoryFull()) {
+            gameState.addToInventory(item);
+          } else {
+            fragmentsGained++;
+            gameState.addFragment();
+          }
+        }
+
         lootContainer.destroy();
-        resolve();
+
+        if (fragmentsGained > 0) {
+          this.showCenterText(`${fragmentsGained} 件物品炼化`, '#d4a853').then(() => {
+            resolve();
+          });
+        } else {
+          resolve();
+        }
       });
+    });
+
+    // 第7轮为最终局，无论胜负都结束
+    if (this.nodeType === 'final') {
+      this.showGameComplete();
+      return;
+    }
+
+    // 直接跳转到MapScene，不再显示战斗场景
+    this.scene.start('MapScene', {
+      mode: this.mode,
+      round: this.round + 1,
     });
   }
 
@@ -722,98 +759,86 @@ export class BattleScene extends Phaser.Scene {
     const popup = this.add.container(x, y);
 
     const panelHeight = item.skill ? 280 : 220;
+    const borderColor = this.getRarityBorderColor(item.rarity);
 
-    // 背景
     const bg = this.add.graphics();
     bg.fillStyle(colors.inkBlack, 0.98);
-    bg.fillRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
-    bg.lineStyle(2, colors.goldAccent, 0.6);
-    bg.strokeRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
+    bg.fillRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
+    bg.lineStyle(3, borderColor, 0.9);
+    bg.strokeRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
     popup.add(bg);
 
     let yOffset = -panelHeight / 2 + 25;
 
-    // 名称
     const nameText = this.add.text(0, yOffset, item.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     popup.add(nameText);
 
-    yOffset += 30;
-
-    // 稀有度
-    const rarityText = this.add.text(0, yOffset, this.getRarityNameCN(item.rarity), {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
-      color: this.getRarityColor(item.rarity),
-    }).setOrigin(0.5);
-    popup.add(rarityText);
-
     yOffset += 25;
 
-    // 五行
+    const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '法宝';
+    const typeRarityText = this.add.text(0, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '12px',
+      color: this.getRarityColor(item.rarity),
+    }).setOrigin(0.5);
+    popup.add(typeRarityText);
+
+    yOffset += 22;
+
     const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
     const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
     const wuxingLevelStr = item.wuxing !== undefined ? ` Lv.${item.wuxingLevel ?? 1}` : '';
     const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: '12px',
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
     popup.add(wuxingText);
 
-    yOffset += 25;
+    yOffset += 22;
 
-    // 攻防
-    if (item.attack) {
-      const attackText = this.add.text(0, yOffset, `攻击 +${item.attack}`, {
+    const stats: string[] = [];
+    if (item.attack) stats.push(`攻击 +${item.attack}`);
+    if (item.defense) stats.push(`防御 +${item.defense}`);
+    if (stats.length > 0) {
+      const statsText = this.add.text(0, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '14px',
-        color: '#f85149',
+        fontSize: '13px',
+        color: '#f0e6d3',
       }).setOrigin(0.5);
-      popup.add(attackText);
+      popup.add(statsText);
       yOffset += 22;
     }
 
-    if (item.defense) {
-      const defenseText = this.add.text(0, yOffset, `防御 +${item.defense}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '14px',
-        color: '#58a6ff',
-      }).setOrigin(0.5);
-      popup.add(defenseText);
-      yOffset += 22;
-    }
-
-    // 技能
     if (item.skill) {
       yOffset += 5;
       const skillNameText = this.add.text(0, yOffset, `【${item.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '14px',
+        fontSize: '12px',
         color: '#d4a853',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       popup.add(skillNameText);
 
-      yOffset += 20;
+      yOffset += 18;
       const skillDescText = this.add.text(0, yOffset, item.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: '11px',
         color: '#8b949e',
-        wordWrap: { width: 260 },
+        wordWrap: { width: 240 },
         align: 'center',
       }).setOrigin(0.5, 0);
       popup.add(skillDescText);
     }
 
-    // 关闭提示
     const closeText = this.add.text(0, panelHeight / 2 - 20, '点击其他地方关闭', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '11px',
+      fontSize: '10px',
       color: '#6e7681',
     }).setOrigin(0.5);
     popup.add(closeText);
@@ -821,23 +846,47 @@ export class BattleScene extends Phaser.Scene {
     return popup;
   }
 
-  private getRarityNameCN(rarity: string): string {
+  private getRarityBorderColor(rarity: Rarity | string): number {
     switch (rarity) {
+      case Rarity.COMMON:
+      case 'common': return 0x8b949e;
+      case Rarity.UNCOMMON:
+      case 'uncommon': return 0x3fb950;
+      case Rarity.RARE:
+      case 'rare': return 0x58a6ff;
+      case Rarity.EPIC:
+      case 'epic': return 0xa855f7;
+      case Rarity.LEGENDARY:
+      case 'legendary': return 0xd4a853;
+      default: return 0x8b949e;
+    }
+  }
+
+  private getRarityNameCN(rarity: Rarity | string): string {
+    switch (rarity) {
+      case Rarity.LEGENDARY:
       case 'legendary': return '传说';
+      case Rarity.EPIC:
       case 'epic': return '史诗';
+      case Rarity.RARE:
       case 'rare': return '稀有';
+      case Rarity.UNCOMMON:
       case 'uncommon': return '优秀';
       default: return '普通';
     }
   }
 
-  private getRarityColor(rarity: string): string {
+  private getRarityColor(rarity: Rarity | string): string {
     switch (rarity) {
-      case 'legendary': return '#ff8c00';
+      case Rarity.LEGENDARY:
+      case 'legendary': return '#d4a853';
+      case Rarity.EPIC:
       case 'epic': return '#a855f7';
+      case Rarity.RARE:
       case 'rare': return '#58a6ff';
+      case Rarity.UNCOMMON:
       case 'uncommon': return '#3fb950';
-      default: return '#f0e6d3';
+      default: return '#8b949e';
     }
   }
 
@@ -859,22 +908,21 @@ export class BattleScene extends Phaser.Scene {
       strokeThickness: 4,
     }).setOrigin(0.5);
 
-    // 弹出+上浮动画
     this.tweens.add({
       targets: floatText,
-      y: floatText.y - 40,
+      y: floatText.y - 50,
       scaleX: { from: 0.5, to: 1 },
       scaleY: { from: 0.5, to: 1 },
-      duration: 200,
+      duration: 300,
       ease: 'Back.easeOut',
     });
 
     this.tweens.add({
       targets: floatText,
-      y: floatText.y - 80,
+      y: floatText.y - 100,
       alpha: 0,
-      duration: 600,
-      delay: 400,
+      duration: 800,
+      delay: 500,
       ease: 'Power2',
       onComplete: () => floatText.destroy(),
     });
@@ -886,14 +934,13 @@ export class BattleScene extends Phaser.Scene {
     const text = isCrit ? `${damage}!` : `-${damage}`;
     this.showFloatingText(combatant, text, color, size);
 
-    // 受击震动效果
     if (combatant.sprite) {
       this.tweens.add({
         targets: combatant.sprite,
-        x: combatant.x + 8,
-        duration: 50,
+        x: combatant.x + 10,
+        duration: 60,
         yoyo: true,
-        repeat: 2,
+        repeat: 3,
       });
     }
   }
@@ -907,28 +954,27 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showSkillTrigger(combatant: DisplayCombatant, skillName: string): void {
-    this.showFloatingText(combatant, `【${skillName}】`, '#d4a853', 16, -120);
+    this.showFloatingText(combatant, `【${skillName}】`, '#d4a853', 16, -130);
   }
 
   private showStatus(combatant: DisplayCombatant, status: string, color: string = '#58a6ff'): void {
-    this.showFloatingText(combatant, status, color, 18, -120);
+    this.showFloatingText(combatant, status, color, 18, -130);
   }
 
   private showWuxingEffect(combatant: DisplayCombatant, effectName: string, isConquer: boolean): void {
     const color = isConquer ? '#ff9500' : '#3fb950';
-    this.showFloatingText(combatant, effectName, color, 18, -120);
+    this.showFloatingText(combatant, effectName, color, 20, -130);
   }
 
   private showCenterText(text: string, color: string = '#f0e6d3'): Promise<void> {
     return new Promise(resolve => {
       const { width, height } = this.cameras.main;
 
-      // 背景遮罩
       const mask = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.5);
 
       const centerText = this.add.text(width / 2, height / 2, text, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '48px',
+        fontSize: '42px',
         color: color,
         fontStyle: 'bold',
         stroke: '#000000',
@@ -940,14 +986,14 @@ export class BattleScene extends Phaser.Scene {
         alpha: 1,
         scaleX: { from: 0.3, to: 1.1 },
         scaleY: { from: 0.3, to: 1.1 },
-        duration: 300,
+        duration: 400,
         ease: 'Back.easeOut',
         onComplete: () => {
           this.tweens.add({
             targets: [centerText, mask],
             alpha: 0,
-            duration: 400,
-            delay: 600,
+            duration: 500,
+            delay: 800,
             onComplete: () => {
               centerText.destroy();
               mask.destroy();
@@ -963,10 +1009,8 @@ export class BattleScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const { colors } = this.UI;
 
-    // 全屏遮罩
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    // 失败面板
     const panelWidth = 400;
     const panelHeight = 250;
     const panelBg = this.add.graphics();
@@ -975,22 +1019,19 @@ export class BattleScene extends Phaser.Scene {
     panelBg.lineStyle(2, colors.redAccent, 0.6);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    // 失败标题
     this.add.text(width / 2, height / 2 - 60, '败 北', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '56px',
+      fontSize: '48px',
       color: '#f85149',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 副标题
     this.add.text(width / 2, height / 2, '西游路漫漫，来日再战', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#8b949e',
     }).setOrigin(0.5);
 
-    // 返回按钮
     const btnWidth = 160;
     const btnHeight = 45;
     const btnY = height / 2 + 70;
@@ -1001,7 +1042,7 @@ export class BattleScene extends Phaser.Scene {
 
     const btnText = this.add.text(width / 2, btnY, '返回主菜单', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -1021,53 +1062,158 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  private showGameComplete(): void {
+    const { width, height } = this.cameras.main;
+    const { colors } = this.UI;
+
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
+
+    const panelWidth = 450;
+    const panelHeight = 300;
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(colors.inkBlack, 0.95);
+    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+    panelBg.lineStyle(2, colors.goldAccent, 0.8);
+    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+
+    this.add.text(width / 2, height / 2 - 80, '✨ 通关成功 ✨', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '42px',
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    this.add.text(width / 2, height / 2 - 20, '恭喜你完成了西游肉鸽！', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '18px',
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    this.add.text(width / 2, height / 2 + 20, '取经路漫漫，终得正果', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#8b949e',
+    }).setOrigin(0.5);
+
+    const btnWidth = 160;
+    const btnHeight = 45;
+    const btnY = height / 2 + 90;
+
+    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
+    btnBg.setStrokeStyle(2, 0xffffff, 0.5);
+    btnBg.setInteractive({ useHandCursor: true });
+
+    const btnText = this.add.text(width / 2, btnY, '再来一局', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '16px',
+      color: '#0d1117',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    btnBg.on('pointerover', () => btnBg.setFillStyle(0xffffff));
+    btnBg.on('pointerout', () => btnBg.setFillStyle(colors.goldAccent));
+
+    btnBg.on('pointerup', () => {
+      gameState.reset();
+      this.scene.start('MenuScene');
+    });
+  }
+
   private async playAttackAnimation(attacker: DisplayCombatant, defender: DisplayCombatant): Promise<void> {
     if (!attacker.sprite) return;
 
     const originalX = attacker.x;
     const originalY = attacker.y;
 
-    // 冲刺
+    // 创建攻击粒子
+    this.createAttackParticles(attacker);
+
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
-        x: defender.x - (attacker.isPlayer ? 60 : -60),
+        x: defender.x - (attacker.isPlayer ? 80 : -80),
         y: defender.y,
-        duration: 120,
+        duration: this.UI.attackDuration,
         ease: 'Power3.easeIn',
         onComplete: () => resolve(),
       });
     });
 
-    // 攻击闪光
     if (defender.sprite) {
-      const flash = this.add.circle(defender.x, defender.y, 60, 0xffffff, 0.6);
+      const flash = this.add.circle(defender.x, defender.y, 70, 0xffffff, 0.7);
       this.tweens.add({
         targets: flash,
         alpha: 0,
         scale: 1.5,
-        duration: 200,
+        duration: 250,
         onComplete: () => flash.destroy(),
       });
     }
 
-    // 返回
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
         x: originalX,
         y: originalY,
-        duration: 150,
+        duration: this.UI.attackDuration,
         ease: 'Power2.easeOut',
         onComplete: () => resolve(),
       });
     });
   }
 
+  private createAttackParticles(attacker: DisplayCombatant): void {
+    const color = attacker.wuxing !== undefined ? WUXING_COLORS[attacker.wuxing] : 0xffffff;
+
+    for (let i = 0; i < 5; i++) {
+      const particle = this.add.circle(
+        attacker.x + Phaser.Math.Between(-10, 10),
+        attacker.y + Phaser.Math.Between(-10, 10),
+        Phaser.Math.Between(4, 10),
+        color
+      );
+
+      const targetX = attacker.isPlayer ? attacker.x + 150 : attacker.x - 150;
+
+      this.tweens.add({
+        targets: particle,
+        x: targetX + Phaser.Math.Between(-30, 30),
+        y: attacker.y + Phaser.Math.Between(-50, 50),
+        alpha: 0,
+        duration: 400,
+        delay: i * 30,
+        ease: 'Power2.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
   private async playDeathAnimation(combatant: DisplayCombatant): Promise<void> {
     if (!combatant.sprite) return;
 
-    // 闪烁 + 缩小消失
+    // 创建死亡粒子
+    for (let i = 0; i < 12; i++) {
+      const color = combatant.wuxing !== undefined ? WUXING_COLORS[combatant.wuxing] : 0x8b949e;
+      const particle = this.add.circle(
+        combatant.x + Phaser.Math.Between(-20, 20),
+        combatant.y + Phaser.Math.Between(-20, 20),
+        Phaser.Math.Between(5, 12),
+        color
+      );
+
+      this.tweens.add({
+        targets: particle,
+        x: particle.x + Phaser.Math.Between(-100, 100),
+        y: particle.y + Phaser.Math.Between(-100, 100),
+        alpha: 0,
+        scale: 0,
+        duration: 600,
+        delay: i * 30,
+        ease: 'Power2.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
+
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: combatant.sprite,
@@ -1075,7 +1221,7 @@ export class BattleScene extends Phaser.Scene {
         scaleX: 0,
         scaleY: 0,
         angle: combatant.isPlayer ? -45 : 45,
-        duration: 400,
+        duration: 500,
         ease: 'Power2.easeIn',
         onComplete: () => {
           combatant.sprite?.destroy();
@@ -1096,15 +1242,13 @@ export class BattleScene extends Phaser.Scene {
       const hpPercent = Math.max(0, combatant.hp / combatant.maxHp);
       const newWidth = hpBarWidth * hpPercent;
 
-      // 平滑动画
       this.tweens.add({
         targets: hpBar,
         width: newWidth,
-        duration: 200,
+        duration: 300,
         ease: 'Power2.easeOut',
       });
 
-      // 颜色变化
       let barColor: number;
       if (hpPercent < 0.25) {
         barColor = colors.redAccent;
@@ -1123,163 +1267,5 @@ export class BattleScene extends Phaser.Scene {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => this.time.delayedCall(ms, resolve));
-  }
-
-  private async showEquipmentChangeOption(): Promise<void> {
-    return new Promise<void>(resolve => {
-      const { width, height } = this.cameras.main;
-      const { colors } = this.UI;
-
-      this.equipmentChangeResolver = resolve;
-      this.waitingForEquipmentChange = true;
-
-      this.equipmentChangeButton = this.add.container(width / 2, height / 2);
-
-      // 半透明背景
-      const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.6);
-      this.equipmentChangeButton.add(overlay);
-
-      // 提示面板
-      const panelWidth = 320;
-      const panelHeight = 180;
-      const panel = this.add.graphics();
-      panel.fillStyle(colors.inkBlack, 0.95);
-      panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-      panel.lineStyle(2, 0xff9500, 0.8);
-      panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-      this.equipmentChangeButton.add(panel);
-
-      // 警告标题
-      const warningText = this.add.text(0, -60, '⚠️ 相生效果！', {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: '24px',
-        color: '#ff9500',
-        fontStyle: 'bold',
-      }).setOrigin(0.5);
-      this.equipmentChangeButton.add(warningText);
-
-      // 说明文字
-      const descText = this.add.text(0, -20, '你的攻击治愈了敌人！\n是否更换装备？', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '16px',
-        color: '#f0e6d3',
-        align: 'center',
-      }).setOrigin(0.5);
-      this.equipmentChangeButton.add(descText);
-
-      // 更换装备按钮
-      const changeBtnWidth = 120;
-      const changeBtnHeight = 40;
-      const changeBtnX = -70;
-      const changeBtnY = 50;
-
-      const changeBtnBg = this.add.rectangle(changeBtnX, changeBtnY, changeBtnWidth, changeBtnHeight, colors.goldAccent);
-      changeBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
-      changeBtnBg.setInteractive({ useHandCursor: true });
-
-      const changeBtnText = this.add.text(changeBtnX, changeBtnY, '更换装备', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '16px',
-        color: '#0d1117',
-        fontStyle: 'bold',
-      }).setOrigin(0.5);
-
-      this.equipmentChangeButton.add([changeBtnBg, changeBtnText]);
-
-      changeBtnBg.on('pointerover', () => changeBtnBg.setFillStyle(0xffffff));
-      changeBtnBg.on('pointerout', () => changeBtnBg.setFillStyle(colors.goldAccent));
-      changeBtnBg.on('pointerup', () => {
-        this.openEquipmentMenu();
-      });
-
-      // 继续战斗按钮
-      const continueBtnX = 70;
-      const continueBtnY = 50;
-
-      const continueBtnBg = this.add.rectangle(continueBtnX, continueBtnY, changeBtnWidth, changeBtnHeight, colors.inkGrey);
-      continueBtnBg.setStrokeStyle(2, colors.paperWhite, 0.5);
-      continueBtnBg.setInteractive({ useHandCursor: true });
-
-      const continueBtnText = this.add.text(continueBtnX, continueBtnY, '继续战斗', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '16px',
-        color: '#f0e6d3',
-      }).setOrigin(0.5);
-
-      this.equipmentChangeButton.add([continueBtnBg, continueBtnText]);
-
-      continueBtnBg.on('pointerover', () => {
-        continueBtnBg.setFillStyle(colors.goldAccent);
-        continueBtnText.setColor('#0d1117');
-      });
-      continueBtnBg.on('pointerout', () => {
-        continueBtnBg.setFillStyle(colors.inkGrey);
-        continueBtnText.setColor('#f0e6d3');
-      });
-      continueBtnBg.on('pointerup', () => {
-        this.closeEquipmentChangeOption();
-      });
-
-      // 入场动画
-      this.equipmentChangeButton.setAlpha(0);
-      this.tweens.add({
-        targets: this.equipmentChangeButton,
-        alpha: 1,
-        duration: 200,
-        ease: 'Power2.easeOut',
-      });
-    });
-  }
-
-  private closeEquipmentChangeOption(): void {
-    if (this.equipmentChangeButton) {
-      this.equipmentChangeButton.destroy();
-      this.equipmentChangeButton = undefined;
-    }
-    this.waitingForEquipmentChange = false;
-    if (this.equipmentChangeResolver) {
-      this.equipmentChangeResolver();
-      this.equipmentChangeResolver = undefined;
-    }
-  }
-
-  private openEquipmentMenu(): void {
-    // 暂停战斗，打开背包界面
-    this.scene.pause();
-    this.scene.launch('InventoryScene');
-
-    // 监听背包界面关闭
-    this.scene.get('InventoryScene').events.once('shutdown', () => {
-      this.scene.resume();
-      // 重新创建玩家 combatant 以更新装备
-      this.refreshPlayerCombatant();
-      this.closeEquipmentChangeOption();
-    });
-  }
-
-  private refreshPlayerCombatant(): void {
-    // 更新玩家战斗数据
-    const newPlayerCombatant = this.createPlayerCombatant();
-
-    // 更新引擎中的玩家数据
-    const playerIndex = this.engineCombatants.findIndex(c => c.id === 'player');
-    if (playerIndex !== -1) {
-      // 保留当前HP
-      const currentHp = this.engineCombatants[playerIndex].hp;
-      newPlayerCombatant.hp = currentHp;
-      this.engineCombatants[playerIndex] = newPlayerCombatant;
-    }
-
-    // 更新显示
-    const playerDisplay = this.displayCombatants.get('player');
-    if (playerDisplay) {
-      playerDisplay.wuxing = newPlayerCombatant.attackWuxing?.wuxing;
-
-      // 更新精灵显示
-      if (playerDisplay.sprite) {
-        playerDisplay.sprite.destroy();
-        playerDisplay.sprite = this.createCombatantSprite(playerDisplay, 0);
-      }
-    }
   }
 }

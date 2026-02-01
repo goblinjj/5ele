@@ -3,12 +3,12 @@ import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
 /**
- * 地图场景 - 移动端竖屏优化
+ * 地图场景 - 横屏优化 (1280x720)
  */
 export class MapScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
   private currentRound: number = 1;
-  private maxRounds: number = 6;
+  private maxRounds: number = 7; // 第7轮为最终局
   private nodeOptions: GameNode[] = [];
 
   private readonly colors = {
@@ -198,6 +198,16 @@ export class MapScene extends Phaser.Scene {
   private generateNodeOptions(): void {
     this.nodeOptions = [];
 
+    // 第7轮是最终局，只有一个选择：最终Boss战斗
+    if (this.currentRound >= this.maxRounds) {
+      this.nodeOptions.push({
+        type: NodeType.ELITE_BATTLE, // 将作为 'final' 处理
+        name: '最终决战',
+        description: '与混世魔王的最终对决',
+      });
+      return;
+    }
+
     // 第一个必定是战斗节点
     const battleRoll = Math.random();
     if (battleRoll < 0.7) {
@@ -265,24 +275,25 @@ export class MapScene extends Phaser.Scene {
     // 标题
     this.add.text(width / 2, 200, '选择下一步', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: '24px',
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 竖向排列节点卡片
-    const cardHeight = 140;
-    const spacing = 160;
-    const startY = 320;
+    // 横向排列节点卡片
+    const cardWidth = 340;
+    const spacing = 380;
+    const startX = width / 2 - (this.nodeOptions.length - 1) * spacing / 2;
+    const y = height / 2 + 60;
 
     this.nodeOptions.forEach((node, index) => {
-      this.createNodeCard(width / 2, startY + index * spacing, node, index);
+      this.createNodeCard(startX + index * spacing, y, node, index);
     });
   }
 
   private createNodeCard(x: number, y: number, node: GameNode, index: number): void {
-    const cardWidth = 320;
-    const cardHeight = 130;
+    const cardWidth = 340;
+    const cardHeight = 200;
     const nodeColor = this.getNodeColor(node.type);
 
     const container = this.add.container(x, y + 30);
@@ -296,40 +307,41 @@ export class MapScene extends Phaser.Scene {
     bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     container.add(bgGraphics);
 
-    // 左侧图标
-    const iconBg = this.add.circle(-cardWidth / 2 + 50, 0, 35, nodeColor, 0.3);
+    // 顶部图标
+    const iconBg = this.add.circle(0, -50, 40, nodeColor, 0.3);
     iconBg.setStrokeStyle(2, nodeColor, 0.6);
     container.add(iconBg);
 
-    const icon = this.add.text(-cardWidth / 2 + 50, 0, this.getNodeIcon(node.type), {
-      fontSize: '32px',
+    const icon = this.add.text(0, -50, this.getNodeIcon(node.type), {
+      fontSize: '36px',
     }).setOrigin(0.5);
     container.add(icon);
 
-    // 右侧文字
-    const nameText = this.add.text(20, -20, node.name, {
+    // 名称居中
+    const nameText = this.add.text(0, 15, node.name, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '22px',
       color: '#f0e6d3',
       fontStyle: 'bold',
-    }).setOrigin(0, 0.5);
+    }).setOrigin(0.5);
     container.add(nameText);
 
-    const descText = this.add.text(20, 15, node.description, {
+    // 描述居中
+    const descText = this.add.text(0, 50, node.description, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '14px',
       color: '#8b949e',
-    }).setOrigin(0, 0.5);
+    }).setOrigin(0.5);
     container.add(descText);
 
     // 额外信息
     const infoText = this.getNodeInfo(node.type);
     if (infoText) {
-      const info = this.add.text(cardWidth / 2 - 20, 0, infoText, {
+      const info = this.add.text(0, 80, infoText, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: '12px',
         color: this.getNodeInfoColor(node.type),
-      }).setOrigin(1, 0.5);
+      }).setOrigin(0.5);
       container.add(info);
     }
 
@@ -338,7 +350,7 @@ export class MapScene extends Phaser.Scene {
     hitArea.setInteractive({ useHandCursor: true });
     container.add(hitArea);
 
-    // 入场动画
+    // 入场动画 - 从下方弹入
     this.tweens.add({
       targets: container,
       y: y,
@@ -352,8 +364,8 @@ export class MapScene extends Phaser.Scene {
     hitArea.on('pointerover', () => {
       this.tweens.add({
         targets: container,
-        scaleX: 1.03,
-        scaleY: 1.03,
+        scaleX: 1.05,
+        scaleY: 1.05,
         duration: 150,
       });
       bgGraphics.clear();
@@ -422,9 +434,11 @@ export class MapScene extends Phaser.Scene {
     if (node.type === NodeType.REST) {
       this.showRestEffect();
     } else if (node.type === NodeType.NORMAL_BATTLE || node.type === NodeType.ELITE_BATTLE) {
+      // 如果是最终局（第7轮），传递 'final' 类型
+      const nodeType = this.currentRound >= this.maxRounds ? 'final' : node.type;
       this.scene.start('BattleScene', {
         mode: this.mode,
-        nodeType: node.type,
+        nodeType: nodeType,
         round: this.currentRound,
       });
     } else if (node.type === NodeType.STORY) {

@@ -14,11 +14,13 @@ export interface LootResult {
  * @param nodeType 节点类型
  * @param round 当前回合
  * @param dropRate 掉率倍数（1.0 = 100%，10.0 = 1000%）
+ * @param enemyCount 击杀的怪物数量（每个怪物单独计算掉落）
  */
 export function generateLoot(
   nodeType: 'normal' | 'elite' | 'final',
   round: number,
-  dropRate: number = 1.0
+  dropRate: number = 1.0,
+  enemyCount: number = 1
 ): LootResult {
   const items: Equipment[] = [];
 
@@ -28,27 +30,30 @@ export function generateLoot(
     items.push(bossDrop);
   }
 
-  // 确定基础掉落数量
-  let baseLootCount: number;
-  switch (nodeType) {
-    case 'normal':
-      baseLootCount = randomInt(1, 3);
-      break;
-    case 'elite':
-      baseLootCount = randomInt(2, 4);
-      break;
-    case 'final':
-      baseLootCount = randomInt(3, 5);
-      break;
-  }
+  // 每个怪物单独计算掉落
+  for (let enemy = 0; enemy < enemyCount; enemy++) {
+    // 确定每个怪物的基础掉落数量
+    let baseLootPerEnemy: number;
+    switch (nodeType) {
+      case 'normal':
+        baseLootPerEnemy = randomInt(1, 2);
+        break;
+      case 'elite':
+        baseLootPerEnemy = randomInt(2, 4);
+        break;
+      case 'final':
+        baseLootPerEnemy = randomInt(3, 5);
+        break;
+    }
 
-  // 应用掉率倍数
-  const lootCount = Math.floor(baseLootCount * dropRate);
+    // 应用掉率倍数
+    const lootCount = Math.floor(baseLootPerEnemy * dropRate);
 
-  // 生成随机装备
-  const isHighQuality = nodeType === 'elite' || nodeType === 'final';
-  for (let i = items.length; i < lootCount; i++) {
-    items.push(generateRandomEquipment(isHighQuality, round));
+    // 生成随机装备
+    const isHighQuality = nodeType === 'elite' || nodeType === 'final';
+    for (let i = 0; i < lootCount; i++) {
+      items.push(generateRandomEquipment(isHighQuality, round));
+    }
   }
 
   return { items };
