@@ -1,0 +1,10 @@
+{
+  "name": "西游肉鸽",
+  "short_name": "西游肉鸽",
+  "description": "五行策略回合对战游戏",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117"
+}

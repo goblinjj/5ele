@@ -5,9 +5,7 @@ import {
   WUXING_NAMES,
   NodeType,
   Skill,
-  SkillTrigger,
   Equipment,
-  EquipmentType,
   Rarity,
   BattleEngine,
   BattleEvent,
@@ -20,7 +18,6 @@ import {
   getDefenseWuxing,
   getTotalAttack,
   getTotalDefense,
-  getWuxingRelation,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
@@ -71,14 +68,18 @@ export class BattleScene extends Phaser.Scene {
     this.round = data.round || 1;
   }
 
+  private inventoryButton?: Phaser.GameObjects.Container;
+  private isBattleRunning: boolean = false;
+
   create(): void {
     this.createBackground();
     this.createTopBar();
     this.createBattleField();
+    this.createInventoryButton();
     this.initCombatants();
 
-    // 检查是否有相生效果，允许更换装备
-    this.time.delayedCall(800, () => this.checkAndStartBattle());
+    // 直接开始战斗
+    this.time.delayedCall(800, () => this.runBattle());
   }
 
   private createBackground(): void {
@@ -166,6 +167,58 @@ export class BattleScene extends Phaser.Scene {
 
     fieldGraphics.lineStyle(1, this.colors.paperCream, 0.15);
     fieldGraphics.lineBetween(width / 2, battleFieldY - height * 0.15, width / 2, battleFieldY + height * 0.18);
+  }
+
+  private createInventoryButton(): void {
+    const { width, height } = this.cameras.main;
+
+    // 背包按钮 - 放在右下角
+    const btnWidth = width * 0.08;
+    const btnHeight = height * 0.06;
+    const btnX = width * 0.94;
+    const btnY = height * 0.88;
+
+    this.inventoryButton = this.add.container(btnX, btnY);
+
+    const btnBg = this.add.rectangle(0, 0, btnWidth, btnHeight, this.colors.inkBlack, 0.9);
+    btnBg.setStrokeStyle(2, this.colors.goldAccent, 0.6);
+    btnBg.setInteractive({ useHandCursor: true });
+    this.inventoryButton.add(btnBg);
+
+    const fontSize = Math.max(10, Math.min(14, width * 0.011));
+    const btnText = this.add.text(0, 0, '📦 背包', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${fontSize}px`,
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+    this.inventoryButton.add(btnText);
+
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(this.colors.goldAccent);
+      btnText.setColor('#0d1117');
+    });
+
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(this.colors.inkBlack);
+      btnText.setColor('#f0e6d3');
+    });
+
+    btnBg.on('pointerup', () => {
+      this.openInventory();
+    });
+  }
+
+  private openInventory(): void {
+    // 暂停战斗场景，打开背包
+    this.scene.pause();
+    this.scene.launch('InventoryScene');
+    this.scene.get('InventoryScene').events.once('shutdown', () => {
+      this.scene.resume();
+      // 如果战斗还没开始或正在进行中，更新玩家数据
+      if (!this.isBattleRunning) {
+        this.refreshPlayerCombatant();
+      }
+    });
   }
 
   private initCombatants(): void {
@@ -390,119 +443,6 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * 检查相生效果并决定是否允许更换装备
-   */
-  private async checkAndStartBattle(): Promise<void> {
-    // 检查玩家攻击五行与敌人防御五行的关系
-    const playerCombatant = this.engineCombatants.find(c => c.isPlayer);
-    const enemies = this.engineCombatants.filter(c => !c.isPlayer);
-
-    if (!playerCombatant || this.nodeType === 'final') {
-      // 最终战不允许更换装备
-      this.runBattle();
-      return;
-    }
-
-    const playerAttackWuxing = playerCombatant.attackWuxing?.wuxing;
-
-    // 检查是否有相生效果
-    const hasGenerateEffect = enemies.some(enemy => {
-      if (playerAttackWuxing === undefined || enemy.defenseWuxing?.wuxing === undefined) {
-        return false;
-      }
-      const relation = getWuxingRelation(playerAttackWuxing, enemy.defenseWuxing.wuxing);
-      return relation === 'generate';
-    });
-
-    if (hasGenerateEffect) {
-      // 显示相生警告并允许更换装备
-      await this.showGenerateWarning();
-    } else {
-      this.runBattle();
-    }
-  }
-
-  private async showGenerateWarning(): Promise<void> {
-    const { width, height } = this.cameras.main;
-
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
-
-    const panelWidth = width * 0.5;
-    const panelHeight = height * 0.35;
-    const panelBg = this.add.graphics();
-    panelBg.fillStyle(this.colors.inkBlack, 0.98);
-    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
-    panelBg.lineStyle(2, 0x3fb950, 0.8);
-    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
-
-    const titleSize = Math.max(16, Math.min(22, width * 0.018));
-    const title = this.add.text(width / 2, height / 2 - panelHeight * 0.3, '⚠️ 相生警告', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleSize}px`,
-      color: '#3fb950',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    const descSize = Math.max(12, Math.min(14, width * 0.012));
-    const desc = this.add.text(width / 2, height / 2 - panelHeight * 0.08, '你的攻击属性会治疗部分敌人！\n是否更换装备？', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${descSize}px`,
-      color: '#f0e6d3',
-      align: 'center',
-    }).setOrigin(0.5);
-
-    const btnWidth = panelWidth * 0.35;
-    const btnHeight = height * 0.06;
-    const btnY = height / 2 + panelHeight * 0.25;
-
-    // 更换装备按钮
-    const changeBtnBg = this.add.rectangle(width / 2 - panelWidth * 0.2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
-    changeBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
-    changeBtnBg.setInteractive({ useHandCursor: true });
-
-    const changeBtnText = this.add.text(width / 2 - panelWidth * 0.2, btnY, '更换装备', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${descSize}px`,
-      color: '#0d1117',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    // 继续战斗按钮
-    const continueBtnBg = this.add.rectangle(width / 2 + panelWidth * 0.2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
-    continueBtnBg.setStrokeStyle(2, this.colors.paperWhite, 0.5);
-    continueBtnBg.setInteractive({ useHandCursor: true });
-
-    const continueBtnText = this.add.text(width / 2 + panelWidth * 0.2, btnY, '继续战斗', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${descSize}px`,
-      color: '#f0e6d3',
-    }).setOrigin(0.5);
-
-    const elements = [overlay, panelBg, title, desc, changeBtnBg, changeBtnText, continueBtnBg, continueBtnText];
-
-    changeBtnBg.on('pointerover', () => changeBtnBg.setFillStyle(0xffffff));
-    changeBtnBg.on('pointerout', () => changeBtnBg.setFillStyle(this.colors.goldAccent));
-    changeBtnBg.on('pointerup', () => {
-      elements.forEach(e => e.destroy());
-      this.scene.pause();
-      this.scene.launch('InventoryScene');
-      this.scene.get('InventoryScene').events.once('shutdown', () => {
-        this.scene.resume();
-        // 重新创建战斗者以反映装备变化
-        this.refreshPlayerCombatant();
-        this.checkAndStartBattle();
-      });
-    });
-
-    continueBtnBg.on('pointerover', () => continueBtnBg.setFillStyle(this.colors.goldAccent));
-    continueBtnBg.on('pointerout', () => continueBtnBg.setFillStyle(this.colors.inkGrey));
-    continueBtnBg.on('pointerup', () => {
-      elements.forEach(e => e.destroy());
-      this.runBattle();
-    });
-  }
-
   private refreshPlayerCombatant(): void {
     // 更新玩家战斗者数据
     const newPlayerCombatant = this.createPlayerCombatant();
@@ -527,6 +467,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async runBattle(): Promise<void> {
+    this.isBattleRunning = true;
     await this.showCenterText('战斗开始！', '#f0e6d3');
 
     const config: BattleConfig = {
