@@ -53,15 +53,15 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 全屏背景
-    this.add.rectangle(width / 2, height / 2, width, height, this.colors.bgDark, 0.95);
+    this.add.rectangle(width / 2, height / 2, width, height, this.colors.bgDark, 0.98);
 
     // 标题栏
     this.createHeader();
 
-    // 左侧：装备栏
+    // 上半部分：装备栏（武器、铠甲、法宝）
     this.createEquipmentSection();
 
-    // 右侧：背包栏
+    // 下半部分：背包栏
     this.createInventorySection();
 
     // 关闭按钮
@@ -79,15 +79,17 @@ export class InventoryScene extends Phaser.Scene {
 
   private createHeader(): void {
     const { width, height } = this.cameras.main;
-    const headerHeight = height * 0.1;
+    const headerHeight = height * 0.08;
 
     // 标题背景
     const headerBg = this.add.graphics();
     headerBg.fillStyle(this.colors.inkBlack, 0.9);
     headerBg.fillRect(0, 0, width, headerHeight);
+    headerBg.lineStyle(1, this.colors.goldAccent, 0.3);
+    headerBg.lineBetween(0, headerHeight, width, headerHeight);
 
     // 标题
-    const titleSize = Math.max(16, Math.min(24, width * 0.02));
+    const titleSize = Math.max(18, Math.min(26, width * 0.022));
     this.add.text(width / 2, headerHeight / 2, '背包管理', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${titleSize}px`,
@@ -95,115 +97,150 @@ export class InventoryScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 玩家状态
+    // 玩家状态（左侧）
     const player = gameState.getPlayerState();
-    const statsFontSize = Math.max(10, Math.min(14, width * 0.012));
-    this.add.text(width * 0.12, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}`, {
+    const statsFontSize = Math.max(11, Math.min(15, width * 0.013));
+    this.add.text(width * 0.03, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${statsFontSize}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
-    // 碎片数量
+    // 碎片数量（右侧）
     const fragments = gameState.getFragmentCount();
-    this.add.text(width * 0.92, headerHeight / 2, `💎 ${fragments}`, {
+    this.add.text(width * 0.92, headerHeight / 2, `💎 碎片: ${fragments}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${statsFontSize + 2}px`,
+      fontSize: `${statsFontSize}px`,
       color: '#a855f7',
     }).setOrigin(1, 0.5);
   }
 
   private createEquipmentSection(): void {
     const { width, height } = this.cameras.main;
-    const startX = width * 0.06;
-    const startY = height * 0.15;
-    const slotSize = Math.max(45, Math.min(60, width * 0.05));
-    const fontSize = Math.max(10, Math.min(14, width * 0.012));
-    const labelFontSize = Math.max(9, Math.min(12, width * 0.01));
+    const headerHeight = height * 0.08;
+    const sectionY = headerHeight + height * 0.02;
+    const sectionHeight = height * 0.42;
 
-    // 分区标题
-    this.add.text(startX, startY, '装备栏', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
-      color: '#8b949e',
-    });
+    // 装备区域背景
+    const sectionBg = this.add.graphics();
+    sectionBg.fillStyle(this.colors.inkBlack, 0.5);
+    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+    sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
+    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+
+    // 槽位大小 - 更大以填充空间
+    const slotSize = Math.max(70, Math.min(90, height * 0.14));
+    const fontSize = Math.max(12, Math.min(16, width * 0.014));
+    const labelFontSize = Math.max(11, Math.min(14, width * 0.012));
+
+    // === 左侧：武器和铠甲 ===
+    const leftStartX = width * 0.08;
+    const equipY = sectionY + sectionHeight * 0.5;
 
     // 武器
-    this.add.text(startX, startY + height * 0.05, '武器', {
+    this.add.text(leftStartX, equipY - slotSize * 0.7, '武器', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
-      color: '#6e7681',
-    });
-    this.createSlot(startX + slotSize * 0.5, startY + height * 0.12, {
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.createSlot(leftStartX, equipY, {
       type: 'weapon',
       index: 0,
       equipment: gameState.getWeapon(),
     }, slotSize);
 
     // 铠甲
-    this.add.text(startX + slotSize * 1.5, startY + height * 0.05, '铠甲', {
+    const armorX = leftStartX + slotSize * 1.4;
+    this.add.text(armorX, equipY - slotSize * 0.7, '铠甲', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
-      color: '#6e7681',
-    });
-    this.createSlot(startX + slotSize * 2, startY + height * 0.12, {
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.createSlot(armorX, equipY, {
       type: 'armor',
       index: 0,
       equipment: gameState.getArmor(),
     }, slotSize);
 
-    // 法宝
-    this.add.text(startX, startY + height * 0.22, '法宝', {
+    // === 分隔线 ===
+    const dividerX = width * 0.32;
+    sectionBg.lineStyle(1, this.colors.inkGrey, 0.4);
+    sectionBg.lineBetween(dividerX, sectionY + 15, dividerX, sectionY + sectionHeight - 15);
+
+    // === 右侧：法宝 ===
+    const treasureStartX = width * 0.38;
+    const treasures = gameState.getTreasures();
+
+    // 法宝标题
+    this.add.text(treasureStartX, sectionY + 15, '法宝栏', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
-      color: '#6e7681',
+      color: '#d4a853',
+      fontStyle: 'bold',
     });
 
-    const treasures = gameState.getTreasures();
+    // 6个法宝槽位，排成2行3列
+    const treasureSlotSize = slotSize * 0.9;
     const treasureCols = 3;
+    const treasureSpacing = treasureSlotSize * 1.15;
+    const treasureRowY = equipY - treasureSlotSize * 0.3;
 
     for (let i = 0; i < MAX_TREASURES; i++) {
       const col = i % treasureCols;
       const row = Math.floor(i / treasureCols);
-      const x = startX + slotSize * 0.5 + col * slotSize * 1.1;
-      const y = startY + height * 0.3 + row * slotSize * 1.1;
+      const x = treasureStartX + treasureSlotSize * 0.6 + col * treasureSpacing;
+      const y = treasureRowY + row * treasureSpacing;
 
       this.createSlot(x, y, {
         type: 'treasure',
         index: i,
         equipment: treasures[i] || null,
-      }, slotSize);
+      }, treasureSlotSize);
     }
   }
 
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
-    const startX = width * 0.28;
-    const startY = height * 0.15;
-    const slotSize = Math.max(45, Math.min(60, width * 0.05));
-    const fontSize = Math.max(10, Math.min(14, width * 0.012));
+    const headerHeight = height * 0.08;
+    const topSectionHeight = height * 0.42;
+    const sectionY = headerHeight + topSectionHeight + height * 0.04;
+    const sectionHeight = height * 0.40;
 
-    // 计算可用宽度内能放多少列
-    const availableWidth = width * 0.68;
-    const cols = Math.min(12, Math.floor(availableWidth / (slotSize * 1.1)));
+    // 背包区域背景
+    const sectionBg = this.add.graphics();
+    sectionBg.fillStyle(this.colors.inkBlack, 0.5);
+    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+    sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
+    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+
+    const fontSize = Math.max(12, Math.min(16, width * 0.014));
+    const labelFontSize = Math.max(11, Math.min(14, width * 0.012));
 
     // 分区标题
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
-    this.add.text(startX, startY, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
+    this.add.text(width * 0.05, sectionY + 15, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
-      color: '#8b949e',
+      fontSize: `${labelFontSize}px`,
+      color: '#d4a853',
+      fontStyle: 'bold',
     });
 
+    // 槽位大小 - 计算以填满宽度
+    const availableWidth = width * 0.90;
+    const cols = 10; // 固定10列
+    const slotSpacing = availableWidth / cols;
+    const slotSize = Math.min(slotSpacing * 0.85, sectionHeight * 0.65);
+
     const inventory = gameState.getInventory();
+    const startX = width * 0.05 + slotSpacing * 0.5;
+    const slotY = sectionY + sectionHeight * 0.55;
 
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = startX + slotSize * 0.5 + col * slotSize * 1.1;
-      const y = startY + height * 0.08 + row * slotSize * 1.1;
+      const x = startX + i * slotSpacing;
 
-      this.createSlot(x, y, {
+      this.createSlot(x, slotY, {
         type: 'inventory',
         index: i,
         equipment: inventory[i],
@@ -562,14 +599,15 @@ export class InventoryScene extends Phaser.Scene {
     this.hideCancelButton();
 
     const { width, height } = this.cameras.main;
-    const btnWidth = Math.max(80, Math.min(100, width * 0.08));
-    const btnHeight = Math.max(28, Math.min(36, height * 0.05));
-    const fontSize = Math.max(11, Math.min(14, width * 0.012));
+    const btnWidth = Math.max(90, Math.min(110, width * 0.09));
+    const btnHeight = Math.max(32, Math.min(40, height * 0.055));
+    const fontSize = Math.max(12, Math.min(15, width * 0.013));
 
-    this.cancelButton = this.add.container(width / 2, height * 0.92);
+    // 放在屏幕中间（装备区和背包区之间）
+    this.cancelButton = this.add.container(width / 2, height * 0.52);
 
     // 取消按钮
-    const cancelBtnX = showFragmentToggle ? -width * 0.08 : 0;
+    const cancelBtnX = showFragmentToggle ? -width * 0.12 : 0;
     const cancelBg = this.add.rectangle(cancelBtnX, 0, btnWidth, btnHeight, this.colors.redAccent);
     cancelBg.setStrokeStyle(2, 0xffffff, 0.5);
     cancelBg.setInteractive({ useHandCursor: true });
@@ -599,12 +637,12 @@ export class InventoryScene extends Phaser.Scene {
         return useFragments ? `✓ 碎片 (+${bonusPercent}%)` : '不使用碎片';
       };
 
-      const toggleWidth = Math.max(120, Math.min(160, width * 0.14));
-      const toggleBg = this.add.rectangle(width * 0.08, 0, toggleWidth, btnHeight, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
+      const toggleWidth = Math.max(140, Math.min(180, width * 0.15));
+      const toggleBg = this.add.rectangle(width * 0.12, 0, toggleWidth, btnHeight, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
       toggleBg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
       toggleBg.setInteractive({ useHandCursor: true });
 
-      const toggleText = this.add.text(width * 0.08, 0, getToggleText(this.useFragmentsToggle), {
+      const toggleText = this.add.text(width * 0.12, 0, getToggleText(this.useFragmentsToggle), {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${fontSize - 1}px`,
         color: '#f0e6d3',
@@ -801,16 +839,17 @@ export class InventoryScene extends Phaser.Scene {
     this.closeTopMessage();
 
     const { width, height } = this.cameras.main;
-    const msgWidth = Math.max(300, Math.min(500, width * 0.45));
-    const msgHeight = Math.max(40, Math.min(50, height * 0.07));
-    const fontSize = Math.max(12, Math.min(16, width * 0.013));
+    const msgWidth = Math.max(350, Math.min(600, width * 0.5));
+    const msgHeight = Math.max(45, Math.min(55, height * 0.08));
+    const fontSize = Math.max(13, Math.min(17, width * 0.014));
 
-    this.topMessage = this.add.container(width / 2, height * 0.14);
+    // 放在装备区和背包区之间
+    this.topMessage = this.add.container(width / 2, height * 0.52);
 
     const bg = this.add.graphics();
-    bg.fillStyle(this.colors.inkBlack, 0.95);
+    bg.fillStyle(this.colors.inkBlack, 0.98);
     bg.fillRoundedRect(-msgWidth / 2, -msgHeight / 2, msgWidth, msgHeight, 8);
-    bg.lineStyle(2, this.colors.goldAccent, 0.6);
+    bg.lineStyle(2, this.colors.goldAccent, 0.8);
     bg.strokeRoundedRect(-msgWidth / 2, -msgHeight / 2, msgWidth, msgHeight, 8);
     this.topMessage.add(bg);
 
@@ -878,8 +917,8 @@ export class InventoryScene extends Phaser.Scene {
 
   private createCloseButton(): void {
     const { width, height } = this.cameras.main;
-    const headerHeight = height * 0.1;
-    const fontSize = Math.max(18, Math.min(24, width * 0.02));
+    const headerHeight = height * 0.08;
+    const fontSize = Math.max(20, Math.min(28, width * 0.022));
 
     const closeBtn = this.add.text(width * 0.97, headerHeight / 2, '✕', {
       fontFamily: 'Arial',
