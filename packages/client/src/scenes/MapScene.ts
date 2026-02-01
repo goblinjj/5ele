@@ -3,7 +3,7 @@ import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
 /**
- * 地图场景 - 节点选择（水墨画风格）
+ * 地图场景 - 移动端竖屏优化
  */
 export class MapScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
@@ -11,14 +11,11 @@ export class MapScene extends Phaser.Scene {
   private maxRounds: number = 6;
   private nodeOptions: GameNode[] = [];
 
-  // UI 颜色主题
   private readonly colors = {
     bgDark: 0x0d1117,
-    bgMid: 0x161b22,
     inkBlack: 0x1c2128,
     inkGrey: 0x30363d,
     paperWhite: 0xf0e6d3,
-    paperCream: 0xe8dcc8,
     goldAccent: 0xd4a853,
     redAccent: 0xc94a4a,
     greenAccent: 0x3fb950,
@@ -35,39 +32,23 @@ export class MapScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
-
-    // 背景
     this.createBackground();
-
-    // 顶部信息栏
     this.createHeader();
-
-    // 玩家状态栏
     this.createPlayerStatus();
-
-    // 生成节点选项
     this.generateNodeOptions();
-
-    // 显示节点选择
     this.displayNodes();
-
-    // 背包按钮
     this.createInventoryButton();
 
-    // 键盘快捷键
     this.input.keyboard?.on('keydown-I', () => this.openInventory());
   }
 
   private createBackground(): void {
     const { width, height } = this.cameras.main;
 
-    // 深色背景
     const bgGraphics = this.add.graphics();
     bgGraphics.fillStyle(this.colors.bgDark, 1);
     bgGraphics.fillRect(0, 0, width, height);
 
-    // 水墨晕染效果
     for (let i = 0; i < 6; i++) {
       const x = Phaser.Math.Between(0, width);
       const y = Phaser.Math.Between(100, height);
@@ -75,145 +56,124 @@ export class MapScene extends Phaser.Scene {
       bgGraphics.fillStyle(this.colors.inkBlack, 0.4);
       bgGraphics.fillCircle(x, y, radius);
     }
-
-    // 装饰线
-    bgGraphics.lineStyle(1, this.colors.goldAccent, 0.2);
-    bgGraphics.lineBetween(40, 110, width - 40, 110);
-    bgGraphics.lineBetween(40, height - 50, width - 40, height - 50);
   }
 
   private createHeader(): void {
     const { width } = this.cameras.main;
 
-    // 顶部栏背景
+    // 顶部栏
     const headerBg = this.add.graphics();
     headerBg.fillStyle(this.colors.inkBlack, 0.9);
-    headerBg.fillRoundedRect(20, 15, width - 40, 80, 8);
-    headerBg.lineStyle(1, this.colors.goldAccent, 0.4);
-    headerBg.strokeRoundedRect(20, 15, width - 40, 80, 8);
+    headerBg.fillRect(0, 0, width, 80);
 
     // 回合数
-    this.add.text(50, 40, `第 ${this.currentRound}/${this.maxRounds} 轮`, {
+    this.add.text(width / 2, 40, `第 ${this.currentRound} / ${this.maxRounds} 轮`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: '24px',
       color: '#f0e6d3',
       fontStyle: 'bold',
-    }).setOrigin(0, 0.5);
-
-    // 模式
-    const modeText = this.mode === 'single' ? '单人模式' : '多人模式';
-    this.add.text(width - 50, 40, modeText, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
-      color: '#8b949e',
-    }).setOrigin(1, 0.5);
+    }).setOrigin(0.5);
   }
 
   private createPlayerStatus(): void {
     const { width } = this.cameras.main;
-    const player = gameState.getPlayerState();
-    const centerX = width / 2;
-    const y = 55;
+    const y = 130;
 
-    // 状态面板背景
-    const panelWidth = 320;
-    const panelBg = this.add.graphics();
-    panelBg.fillStyle(this.colors.inkGrey, 0.6);
-    panelBg.fillRoundedRect(centerX - panelWidth / 2, 25, panelWidth, 50, 6);
+    // 属性背景
+    const statsBg = this.add.graphics();
+    statsBg.fillStyle(this.colors.inkGrey, 0.5);
+    statsBg.fillRoundedRect(20, y - 30, width - 40, 60, 8);
+
+    const player = gameState.getPlayerState();
 
     // HP 条
-    const hpBarWidth = 100;
-    const hpBarHeight = 14;
+    const hpBarWidth = 120;
     const hpPercent = player.hp / player.maxHp;
-    const hpX = centerX - 100;
+    const hpX = 50;
 
-    // HP 条背景
-    this.add.rectangle(hpX, y, hpBarWidth + 4, hpBarHeight + 4, this.colors.inkBlack);
+    this.add.rectangle(hpX + hpBarWidth / 2, y, hpBarWidth + 4, 20, this.colors.inkBlack);
 
-    // HP 条本体
     const hpBar = this.add.rectangle(
-      hpX - hpBarWidth / 2,
+      hpX,
       y,
       hpBarWidth * hpPercent,
-      hpBarHeight,
+      16,
       hpPercent > 0.5 ? this.colors.greenAccent : hpPercent > 0.25 ? 0xeab308 : this.colors.redAccent
     );
     hpBar.setOrigin(0, 0.5);
 
-    // HP 数值
-    this.add.text(hpX, y, `${player.hp}/${player.maxHp}`, {
+    this.add.text(hpX + hpBarWidth / 2, y, `${player.hp}/${player.maxHp}`, {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '12px',
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 攻击力
-    this.add.text(centerX + 10, y - 8, `⚔ ${gameState.getTotalAttack()}`, {
+    // 攻防
+    this.add.text(200, y - 8, `⚔️ ${gameState.getTotalAttack()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: '16px',
       color: '#f85149',
     }).setOrigin(0, 0.5);
 
-    // 防御力
-    this.add.text(centerX + 60, y - 8, `🛡 ${gameState.getTotalDefense()}`, {
+    this.add.text(200, y + 12, `🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: '16px',
       color: '#58a6ff',
     }).setOrigin(0, 0.5);
 
-    // 五行显示（只有有五行属性时才显示）
+    // 五行显示
     const weapon = gameState.getWeapon();
     const armor = gameState.getArmor();
+    let wuxingX = 320;
 
     if (weapon && weapon.wuxing !== undefined) {
       const color = WUXING_COLORS[weapon.wuxing];
-      const wuxingCircle = this.add.circle(centerX + 10, y + 12, 10, color);
-      wuxingCircle.setStrokeStyle(1, 0xffffff, 0.5);
-      this.add.text(centerX + 10, y + 12, `${weapon.wuxingLevel ?? 1}`, {
+      this.add.circle(wuxingX, y, 15, color).setStrokeStyle(1, 0xffffff, 0.5);
+      this.add.text(wuxingX, y, `${weapon.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: '10px',
+        fontSize: '12px',
         color: '#ffffff',
       }).setOrigin(0.5);
+      wuxingX += 40;
     }
 
     if (armor && armor.wuxing !== undefined) {
       const color = WUXING_COLORS[armor.wuxing];
-      const wuxingCircle = this.add.circle(centerX + 35, y + 12, 10, color);
-      wuxingCircle.setStrokeStyle(1, 0xffffff, 0.5);
-      this.add.text(centerX + 35, y + 12, `${armor.wuxingLevel ?? 1}`, {
+      this.add.circle(wuxingX, y, 15, color).setStrokeStyle(1, 0xffffff, 0.5);
+      this.add.text(wuxingX, y, `${armor.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: '10px',
+        fontSize: '12px',
         color: '#ffffff',
       }).setOrigin(0.5);
     }
 
-    // 碎片数量
+    // 碎片
     const fragments = gameState.getFragmentCount();
     if (fragments > 0) {
-      this.add.text(centerX + 100, y, `💎 ${fragments}`, {
+      this.add.text(width - 40, y, `💎 ${fragments}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '14px',
+        fontSize: '16px',
         color: '#a855f7',
-      }).setOrigin(0, 0.5);
+      }).setOrigin(1, 0.5);
     }
   }
 
   private createInventoryButton(): void {
     const { width, height } = this.cameras.main;
 
-    const btnWidth = 130;
-    const btnHeight = 40;
-    const btnX = width - 85;
-    const btnY = height - 70;
+    const btnWidth = 140;
+    const btnHeight = 50;
+    const btnX = width / 2;
+    const btnY = height - 80;
 
     const bg = this.add.rectangle(btnX, btnY, btnWidth, btnHeight, this.colors.inkGrey);
     bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
-    const text = this.add.text(btnX, btnY, '📦 背包 (I)', {
+    const text = this.add.text(btnX, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: '18px',
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -236,10 +196,9 @@ export class MapScene extends Phaser.Scene {
   }
 
   private generateNodeOptions(): void {
-    // 生成 3 个节点选项
     this.nodeOptions = [];
 
-    // 第一个必定是战斗节点（普通或精英）
+    // 第一个必定是战斗节点
     const battleRoll = Math.random();
     if (battleRoll < 0.7) {
       this.nodeOptions.push({
@@ -255,13 +214,10 @@ export class MapScene extends Phaser.Scene {
       });
     }
 
-    // 其余两个随机生成（排除已选类型，增加多样性）
     for (let i = 0; i < 2; i++) {
-      const node = this.randomNode();
-      this.nodeOptions.push(node);
+      this.nodeOptions.push(this.randomNode());
     }
 
-    // 打乱顺序
     this.shuffleArray(this.nodeOptions);
   }
 
@@ -273,7 +229,6 @@ export class MapScene extends Phaser.Scene {
   }
 
   private randomNode(): GameNode {
-    // 节点类型概率（不包含战斗，因为第一个已保证）
     const roll = Math.random();
     let type: NodeType;
     let name: string;
@@ -306,85 +261,82 @@ export class MapScene extends Phaser.Scene {
 
   private displayNodes(): void {
     const { width, height } = this.cameras.main;
-    const nodeCount = this.nodeOptions.length;
-    const spacing = 240;
-    const startX = width / 2 - (nodeCount - 1) * spacing / 2;
 
     // 标题
-    this.add.text(width / 2, 150, '选择下一步行动', {
+    this.add.text(width / 2, 200, '选择下一步', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '32px',
+      fontSize: '28px',
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 节点卡片
+    // 竖向排列节点卡片
+    const cardHeight = 140;
+    const spacing = 160;
+    const startY = 320;
+
     this.nodeOptions.forEach((node, index) => {
-      this.createNodeCard(startX + index * spacing, height / 2 + 30, node, index);
+      this.createNodeCard(width / 2, startY + index * spacing, node, index);
     });
   }
 
   private createNodeCard(x: number, y: number, node: GameNode, index: number): void {
-    const cardWidth = 200;
-    const cardHeight = 260;
+    const cardWidth = 320;
+    const cardHeight = 130;
     const nodeColor = this.getNodeColor(node.type);
 
-    // 卡片容器
     const container = this.add.container(x, y + 30);
     container.setAlpha(0);
 
     // 卡片背景
     const bgGraphics = this.add.graphics();
     bgGraphics.fillStyle(this.colors.inkBlack, 0.9);
-    bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
+    bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     bgGraphics.lineStyle(2, nodeColor, 0.6);
-    bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
+    bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    container.add(bgGraphics);
 
-    // 顶部装饰
-    bgGraphics.fillStyle(nodeColor, 0.3);
-    bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, 60, { tl: 10, tr: 10, bl: 0, br: 0 });
-
-    // 节点图标
-    const iconBg = this.add.circle(0, -70, 35, nodeColor, 0.3);
+    // 左侧图标
+    const iconBg = this.add.circle(-cardWidth / 2 + 50, 0, 35, nodeColor, 0.3);
     iconBg.setStrokeStyle(2, nodeColor, 0.6);
+    container.add(iconBg);
 
-    const icon = this.add.text(0, -70, this.getNodeIcon(node.type), {
+    const icon = this.add.text(-cardWidth / 2 + 50, 0, this.getNodeIcon(node.type), {
       fontSize: '32px',
     }).setOrigin(0.5);
+    container.add(icon);
 
-    // 节点名称
-    const nameText = this.add.text(0, -10, node.name, {
+    // 右侧文字
+    const nameText = this.add.text(20, -20, node.name, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '22px',
       color: '#f0e6d3',
       fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
+    container.add(nameText);
 
-    // 节点描述
-    const descText = this.add.text(0, 30, node.description, {
+    const descText = this.add.text(20, 15, node.description, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '14px',
       color: '#8b949e',
-      wordWrap: { width: cardWidth - 30 },
-      align: 'center',
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
+    container.add(descText);
 
     // 额外信息
     const infoText = this.getNodeInfo(node.type);
     if (infoText) {
-      this.add.text(0, 70, infoText, {
+      const info = this.add.text(cardWidth / 2 - 20, 0, infoText, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: '12px',
         color: this.getNodeInfoColor(node.type),
-      }).setOrigin(0.5);
-      container.add(this.children.list[this.children.list.length - 1]);
+      }).setOrigin(1, 0.5);
+      container.add(info);
     }
 
     // 交互区域
     const hitArea = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0);
     hitArea.setInteractive({ useHandCursor: true });
-
-    container.add([bgGraphics, iconBg, icon, nameText, descText, hitArea]);
+    container.add(hitArea);
 
     // 入场动画
     this.tweens.add({
@@ -400,18 +352,15 @@ export class MapScene extends Phaser.Scene {
     hitArea.on('pointerover', () => {
       this.tweens.add({
         targets: container,
-        scaleX: 1.05,
-        scaleY: 1.05,
+        scaleX: 1.03,
+        scaleY: 1.03,
         duration: 150,
-        ease: 'Power2.easeOut',
       });
       bgGraphics.clear();
       bgGraphics.fillStyle(this.colors.inkBlack, 0.95);
-      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
+      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
       bgGraphics.lineStyle(3, this.colors.goldAccent, 1);
-      bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
-      bgGraphics.fillStyle(nodeColor, 0.4);
-      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, 60, { tl: 10, tr: 10, bl: 0, br: 0 });
+      bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     });
 
     hitArea.on('pointerout', () => {
@@ -420,81 +369,56 @@ export class MapScene extends Phaser.Scene {
         scaleX: 1,
         scaleY: 1,
         duration: 150,
-        ease: 'Power2.easeOut',
       });
       bgGraphics.clear();
       bgGraphics.fillStyle(this.colors.inkBlack, 0.9);
-      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
+      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
       bgGraphics.lineStyle(2, nodeColor, 0.6);
-      bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
-      bgGraphics.fillStyle(nodeColor, 0.3);
-      bgGraphics.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, 60, { tl: 10, tr: 10, bl: 0, br: 0 });
+      bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     });
 
-    hitArea.on('pointerup', () => {
-      this.selectNode(node, index);
-    });
+    hitArea.on('pointerup', () => this.selectNode(node, index));
   }
 
   private getNodeColor(type: NodeType): number {
     switch (type) {
-      case NodeType.NORMAL_BATTLE:
-        return 0x6e7681;
-      case NodeType.REST:
-        return this.colors.greenAccent;
-      case NodeType.ELITE_BATTLE:
-        return this.colors.redAccent;
-      case NodeType.STORY:
-        return 0xa855f7;
-      case NodeType.RANDOM_EVENT:
-        return this.colors.goldAccent;
-      default:
-        return this.colors.inkGrey;
+      case NodeType.NORMAL_BATTLE: return 0x6e7681;
+      case NodeType.REST: return this.colors.greenAccent;
+      case NodeType.ELITE_BATTLE: return this.colors.redAccent;
+      case NodeType.STORY: return 0xa855f7;
+      case NodeType.RANDOM_EVENT: return this.colors.goldAccent;
+      default: return this.colors.inkGrey;
     }
   }
 
   private getNodeIcon(type: NodeType): string {
     switch (type) {
-      case NodeType.NORMAL_BATTLE:
-        return '⚔️';
-      case NodeType.REST:
-        return '🏕️';
-      case NodeType.ELITE_BATTLE:
-        return '👹';
-      case NodeType.STORY:
-        return '📜';
-      case NodeType.RANDOM_EVENT:
-        return '❓';
-      default:
-        return '❔';
+      case NodeType.NORMAL_BATTLE: return '⚔️';
+      case NodeType.REST: return '🏕️';
+      case NodeType.ELITE_BATTLE: return '👹';
+      case NodeType.STORY: return '📜';
+      case NodeType.RANDOM_EVENT: return '❓';
+      default: return '❔';
     }
   }
 
   private getNodeInfo(type: NodeType): string | null {
     switch (type) {
-      case NodeType.REST:
-        return '恢复全部生命';
-      case NodeType.ELITE_BATTLE:
-        return '高难度 · 高奖励';
-      default:
-        return null;
+      case NodeType.REST: return '恢复全部生命';
+      case NodeType.ELITE_BATTLE: return '高难度·高奖励';
+      default: return null;
     }
   }
 
   private getNodeInfoColor(type: NodeType): string {
     switch (type) {
-      case NodeType.REST:
-        return '#3fb950';
-      case NodeType.ELITE_BATTLE:
-        return '#f85149';
-      default:
-        return '#8b949e';
+      case NodeType.REST: return '#3fb950';
+      case NodeType.ELITE_BATTLE: return '#f85149';
+      default: return '#8b949e';
     }
   }
 
   private selectNode(node: GameNode, index: number): void {
-    console.log(`选择了节点: ${node.name}`);
-
     if (node.type === NodeType.REST) {
       this.showRestEffect();
     } else if (node.type === NodeType.NORMAL_BATTLE || node.type === NodeType.ELITE_BATTLE) {
@@ -504,7 +428,6 @@ export class MapScene extends Phaser.Scene {
         round: this.currentRound,
       });
     } else if (node.type === NodeType.STORY) {
-      // TODO: 进入剧情场景
       this.scene.start('BattleScene', {
         mode: this.mode,
         nodeType: node.type,
@@ -522,7 +445,6 @@ export class MapScene extends Phaser.Scene {
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
 
-    // 休息面板
     const panelBg = this.add.graphics();
     panelBg.fillStyle(this.colors.inkBlack, 0.95);
     panelBg.fillRoundedRect(width / 2 - 150, height / 2 - 80, 300, 160, 12);

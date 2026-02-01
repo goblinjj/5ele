@@ -44,26 +44,26 @@ export class BattleScene extends Phaser.Scene {
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
 
-  // UI 常量 - 统一管理
+  // UI 常量 - 移动端竖屏优化
   private readonly UI = {
-    // 战斗区域
-    battleFieldY: 340,
-    playerX: 200,
-    enemyStartX: 500,
-    enemySpacing: 120,
+    // 战斗区域（竖屏布局）
+    battleFieldY: 550,
+    playerX: 180,
+    enemyStartX: 400,
+    enemySpacing: 100,
 
     // 状态栏
     statusBarY: 80,
     statusBarHeight: 60,
 
     // HP 条尺寸
-    hpBarWidth: 80,
-    hpBarHeight: 10,
-    hpBarOffsetY: -55,
+    hpBarWidth: 70,
+    hpBarHeight: 8,
+    hpBarOffsetY: -50,
 
     // 战斗单位
-    playerSize: 50,
-    enemySize: 40,
+    playerSize: 45,
+    enemySize: 38,
 
     // 颜色主题 - 水墨画风格
     colors: {
@@ -585,82 +585,242 @@ export class BattleScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const { colors } = this.UI;
 
-    // 半透明遮罩
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.85);
+    // 全屏容器
+    const lootContainer = this.add.container(0, 0);
 
-    // 战利品面板背景
-    const panelWidth = 400;
-    const panelHeight = 300;
-    const panelBg = this.add.graphics();
-    panelBg.fillStyle(colors.inkBlack, 0.95);
-    panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
-    panelBg.lineStyle(2, colors.goldAccent, 0.6);
-    panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+    // 半透明遮罩
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
+    lootContainer.add(overlay);
 
     // 标题
-    const title = this.add.text(width / 2, height / 2 - 110, '⚔️ 战利品 ⚔️', {
+    const title = this.add.text(width / 2, 80, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: '32px',
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
+    lootContainer.add(title);
 
-    // 装饰线
-    const decorLine = this.add.graphics();
-    decorLine.lineStyle(1, colors.goldAccent, 0.4);
-    decorLine.lineBetween(width / 2 - 120, height / 2 - 80, width / 2 + 120, height / 2 - 80);
+    // 装备图标网格
+    const slotSize = 70;
+    const cols = Math.min(items.length, 5);
+    const rows = Math.ceil(items.length / cols);
+    const gridWidth = cols * slotSize;
+    const startX = (width - gridWidth) / 2 + slotSize / 2;
+    const startY = 180;
 
-    // 物品列表
-    const itemTexts: Phaser.GameObjects.Text[] = [];
-    const startY = height / 2 - 50;
+    // 当前弹窗
+    let currentPopup: Phaser.GameObjects.Container | null = null;
 
+    const closePopup = () => {
+      if (currentPopup) {
+        currentPopup.destroy();
+        currentPopup = null;
+      }
+    };
+
+    // 创建装备图标
     items.forEach((item, i) => {
-      const rarityColor = this.getRarityColor(item.rarity);
-      const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * slotSize;
+      const y = startY + row * slotSize;
 
-      const text = this.add.text(width / 2, startY + i * 35, `${item.name}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '18px',
-        color: rarityColor,
+      const slotContainer = this.add.container(x, y);
+      lootContainer.add(slotContainer);
+
+      // 槽位背景
+      const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
+      const bg = this.add.rectangle(0, 0, 60, 60, colors.inkBlack, 0.9);
+      bg.setStrokeStyle(2, wuxingColor, 0.8);
+      bg.setInteractive({ useHandCursor: true });
+      slotContainer.add(bg);
+
+      // 装备图标
+      const icon = this.add.circle(0, -3, 20, wuxingColor);
+      icon.setStrokeStyle(2, 0xffffff, 0.4);
+      slotContainer.add(icon);
+
+      // 五行等级
+      const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
+      const levelText = this.add.text(0, -3, levelStr, {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        color: '#ffffff',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
+      slotContainer.add(levelText);
 
-      const subText = this.add.text(width / 2, startY + i * 35 + 18, `${wuxingName}属性`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
+      // 类型图标
+      const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
+      const typeText = this.add.text(0, 22, typeIcon, {
         fontSize: '12px',
-        color: '#8b949e',
       }).setOrigin(0.5);
+      slotContainer.add(typeText);
 
-      itemTexts.push(text, subText);
+      // 点击显示弹窗
+      bg.on('pointerup', () => {
+        closePopup();
+        currentPopup = this.createLootPopup(item, width / 2, height / 2 + 50);
+        lootContainer.add(currentPopup);
+      });
     });
 
-    // 继续提示
-    const continueText = this.add.text(width / 2, height / 2 + 100, '点击继续', {
+    // 物品数量提示
+    const countText = this.add.text(width / 2, startY + rows * slotSize + 30, `共 ${items.length} 件`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: '14px',
       color: '#8b949e',
     }).setOrigin(0.5);
+    lootContainer.add(countText);
 
-    // 闪烁动画
-    this.tweens.add({
-      targets: continueText,
-      alpha: 0.4,
-      duration: 600,
-      yoyo: true,
-      repeat: -1,
+    // 继续冒险按钮
+    const btnY = height - 120;
+    const btnWidth = 200;
+    const btnHeight = 50;
+
+    const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, colors.goldAccent);
+    btnBg.setStrokeStyle(2, 0xffffff, 0.5);
+    btnBg.setInteractive({ useHandCursor: true });
+    lootContainer.add(btnBg);
+
+    const btnText = this.add.text(width / 2, btnY, '继续冒险', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '20px',
+      color: '#0d1117',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    lootContainer.add(btnText);
+
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(0xffffff);
     });
 
-    // 等待点击
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(colors.goldAccent);
+    });
+
+    // 等待点击继续
     await new Promise<void>(resolve => {
-      this.input.once('pointerup', () => {
-        overlay.destroy();
-        panelBg.destroy();
-        title.destroy();
-        decorLine.destroy();
-        continueText.destroy();
-        itemTexts.forEach(t => t.destroy());
+      btnBg.on('pointerup', () => {
+        lootContainer.destroy();
         resolve();
       });
     });
+  }
+
+  private createLootPopup(item: Equipment, x: number, y: number): Phaser.GameObjects.Container {
+    const { colors } = this.UI;
+    const popup = this.add.container(x, y);
+
+    const panelHeight = item.skill ? 280 : 220;
+
+    // 背景
+    const bg = this.add.graphics();
+    bg.fillStyle(colors.inkBlack, 0.98);
+    bg.fillRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
+    bg.lineStyle(2, colors.goldAccent, 0.6);
+    bg.strokeRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
+    popup.add(bg);
+
+    let yOffset = -panelHeight / 2 + 25;
+
+    // 名称
+    const nameText = this.add.text(0, yOffset, item.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '20px',
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    popup.add(nameText);
+
+    yOffset += 30;
+
+    // 稀有度
+    const rarityText = this.add.text(0, yOffset, this.getRarityNameCN(item.rarity), {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: this.getRarityColor(item.rarity),
+    }).setOrigin(0.5);
+    popup.add(rarityText);
+
+    yOffset += 25;
+
+    // 五行
+    const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
+    const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
+    const wuxingLevelStr = item.wuxing !== undefined ? ` Lv.${item.wuxingLevel ?? 1}` : '';
+    const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#' + wuxingColor.toString(16).padStart(6, '0'),
+    }).setOrigin(0.5);
+    popup.add(wuxingText);
+
+    yOffset += 25;
+
+    // 攻防
+    if (item.attack) {
+      const attackText = this.add.text(0, yOffset, `攻击 +${item.attack}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '14px',
+        color: '#f85149',
+      }).setOrigin(0.5);
+      popup.add(attackText);
+      yOffset += 22;
+    }
+
+    if (item.defense) {
+      const defenseText = this.add.text(0, yOffset, `防御 +${item.defense}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '14px',
+        color: '#58a6ff',
+      }).setOrigin(0.5);
+      popup.add(defenseText);
+      yOffset += 22;
+    }
+
+    // 技能
+    if (item.skill) {
+      yOffset += 5;
+      const skillNameText = this.add.text(0, yOffset, `【${item.skill.name}】`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '14px',
+        color: '#d4a853',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      popup.add(skillNameText);
+
+      yOffset += 20;
+      const skillDescText = this.add.text(0, yOffset, item.skill.description, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '12px',
+        color: '#8b949e',
+        wordWrap: { width: 260 },
+        align: 'center',
+      }).setOrigin(0.5, 0);
+      popup.add(skillDescText);
+    }
+
+    // 关闭提示
+    const closeText = this.add.text(0, panelHeight / 2 - 20, '点击其他地方关闭', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '11px',
+      color: '#6e7681',
+    }).setOrigin(0.5);
+    popup.add(closeText);
+
+    return popup;
+  }
+
+  private getRarityNameCN(rarity: string): string {
+    switch (rarity) {
+      case 'legendary': return '传说';
+      case 'epic': return '史诗';
+      case 'rare': return '稀有';
+      case 'uncommon': return '优秀';
+      default: return '普通';
+    }
   }
 
   private getRarityColor(rarity: string): string {

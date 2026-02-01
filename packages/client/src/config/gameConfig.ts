@@ -6,15 +6,16 @@ import { BattleScene } from '../scenes/BattleScene.js';
 import { RewardScene } from '../scenes/RewardScene.js';
 import { InventoryScene } from '../scenes/InventoryScene.js';
 
-export const GAME_WIDTH = 1280;
-export const GAME_HEIGHT = 720;
+// 基准设计尺寸（竖屏移动端优先）
+export const GAME_WIDTH = 750;
+export const GAME_HEIGHT = 1334;
 
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   parent: 'game-container',
-  backgroundColor: '#1a1a2e',
+  backgroundColor: '#0d1117',
   scene: [BootScene, MenuScene, MapScene, BattleScene, RewardScene, InventoryScene],
   physics: {
     default: 'arcade',
@@ -25,5 +26,16 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    min: {
+      width: 375,
+      height: 667,
+    },
+    max: {
+      width: 750,
+      height: 1334,
+    },
+  },
+  input: {
+    activePointers: 3,  // 支持多点触控
   },
 };
