@@ -5,6 +5,9 @@ import {
   INVENTORY_SIZE,
   MAX_TREASURES,
   createInitialPlayerState,
+  PlayerStatus,
+  StatusType,
+  checkWuxingMastery,
 } from '@xiyou/shared';
 
 /**
@@ -187,6 +190,9 @@ export class GameStateManager {
 
     this.playerState.inventory.slots[inventoryIndex] = null;
     this.playerState.equipment.treasures.push(item);
+
+    // 检查五行圆满状态
+    this.checkAndUpdateWuxingMastery();
     return true;
   }
 
@@ -201,7 +207,11 @@ export class GameStateManager {
     if (this.isInventoryFull()) return false;
 
     const treasure = this.playerState.equipment.treasures.splice(treasureIndex, 1)[0];
-    return this.addToInventory(treasure);
+    const result = this.addToInventory(treasure);
+
+    // 检查五行圆满状态（可能会失去）
+    this.checkAndUpdateWuxingMastery();
+    return result;
   }
 
   /**
@@ -252,6 +262,60 @@ export class GameStateManager {
       defense += treasure.defense ?? 0;
     }
     return defense;
+  }
+
+  /**
+   * 获取玩家状态列表
+   */
+  getStatuses(): PlayerStatus[] {
+    return this.playerState.statuses;
+  }
+
+  /**
+   * 检查是否拥有某个状态
+   */
+  hasStatus(statusType: StatusType): boolean {
+    return this.playerState.statuses.some(s => s.type === statusType);
+  }
+
+  /**
+   * 添加状态
+   */
+  addStatus(statusType: StatusType): boolean {
+    if (this.hasStatus(statusType)) return false;
+    this.playerState.statuses.push({
+      type: statusType,
+      acquiredAt: Date.now(),
+    });
+    return true;
+  }
+
+  /**
+   * 移除状态
+   */
+  removeStatus(statusType: StatusType): boolean {
+    const index = this.playerState.statuses.findIndex(s => s.type === statusType);
+    if (index === -1) return false;
+    this.playerState.statuses.splice(index, 1);
+    return true;
+  }
+
+  /**
+   * 检查并更新五行圆满状态
+   * @returns 是否新获得了五行圆满状态
+   */
+  checkAndUpdateWuxingMastery(): boolean {
+    const treasures = this.playerState.equipment.treasures;
+    const wuxings = treasures.map(t => t.wuxing);
+    const hasMastery = checkWuxingMastery(wuxings);
+
+    if (hasMastery && !this.hasStatus(StatusType.WUXING_MASTERY)) {
+      this.addStatus(StatusType.WUXING_MASTERY);
+      return true;  // 新获得
+    } else if (!hasMastery && this.hasStatus(StatusType.WUXING_MASTERY)) {
+      this.removeStatus(StatusType.WUXING_MASTERY);
+    }
+    return false;
   }
 }
 

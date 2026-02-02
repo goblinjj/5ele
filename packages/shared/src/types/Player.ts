@@ -1,5 +1,6 @@
 import { Equipment, PlayerEquipment, EquipmentType, Rarity } from './Equipment.js';
 import { WuxingLevel } from './Wuxing.js';
+import { PlayerStatus } from './Status.js';
 
 /**
  * 背包容量
@@ -50,6 +51,9 @@ export interface PlayerState {
 
   // 怪物数量加成（0 = 正常，1 = 多1个）
   monsterCountBonus: number;
+
+  // 角色状态
+  statuses: PlayerStatus[];
 }
 
 /**
@@ -127,6 +131,7 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     dropRate: 2.0,  // 200% 掉率
     monsterScaling: 0.30,  // 每轮怪物成长 30%
     monsterCountBonus: 0,  // 默认无额外怪物
+    statuses: [],  // 初始无状态
   };
 }
 

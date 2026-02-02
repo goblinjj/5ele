@@ -81,6 +81,21 @@ export function processStartOfTurnEffects(combatant: Combatant): BattleEvent[] {
   // 重置每回合一次的致命保护
   effects.hasSurvivedLethal = false;
 
+  // 五行圆满：每回合恢复5%最大生命值
+  if (combatant.hasWuxingMastery && combatant.hp < combatant.maxHp) {
+    const masteryHeal = Math.floor(combatant.maxHp * 0.05);
+    const actualHeal = Math.min(masteryHeal, combatant.maxHp - combatant.hp);
+    if (actualHeal > 0) {
+      combatant.hp += actualHeal;
+      events.push({
+        type: 'status_heal',
+        targetId: combatant.id,
+        value: actualHeal,
+        message: '五行圆满',
+      });
+    }
+  }
+
   // 木属性：回复
   if (effects.regeneration && effects.regeneration.percent > 0) {
     let regenPercent = effects.regeneration.percent;
@@ -180,8 +195,11 @@ export function applyAttackWuxingEffects(
     defender.statusEffects = {};
   }
 
+  // 五行圆满：免疫所有负面状态
+  const isImmuneToStatus = defender.hasWuxingMastery ?? false;
+
   // 金属性：流血
-  if (wuxing === Wuxing.METAL && config.bleedChance && config.bleedDamagePercent) {
+  if (wuxing === Wuxing.METAL && config.bleedChance && config.bleedDamagePercent && !isImmuneToStatus) {
     if (Math.random() * 100 < config.bleedChance) {
       const bleedPercent = config.bleedDoubled ? config.bleedDamagePercent * 2 : config.bleedDamagePercent;
 
@@ -205,7 +223,7 @@ export function applyAttackWuxingEffects(
   }
 
   // 水属性：减速和冻结
-  if (wuxing === Wuxing.WATER) {
+  if (wuxing === Wuxing.WATER && !isImmuneToStatus) {
     // 检查土属性免疫控制
     const isImmune = (defender.controlImmune ?? false) && defender.hp > defender.maxHp * 0.7;
 
@@ -253,7 +271,7 @@ export function applyAttackWuxingEffects(
   }
 
   // 火属性：灼烧
-  if (wuxing === Wuxing.FIRE && config.burnDamagePercent) {
+  if (wuxing === Wuxing.FIRE && config.burnDamagePercent && !isImmuneToStatus) {
     const burning = defender.statusEffects.burning;
 
     if (!burning) {

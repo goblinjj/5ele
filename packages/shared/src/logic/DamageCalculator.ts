@@ -91,13 +91,23 @@ export function calculateFinalDamage(
     defender.defenseWuxing
   );
 
+  // 五行圆满加成
+  let masteryBonus = 1.0;
+  if (attacker.hasWuxingMastery) {
+    if (effect === 'conquer') {
+      masteryBonus = 1.3;  // 五行克制伤害 +30%
+    } else if (effect === 'generate') {
+      masteryBonus = 1.5;  // 五行相生治疗 +50%
+    }
+  }
+
   // 最终伤害
   let finalDamage: number;
   if (multiplier < 0) {
     // 相生：治疗敌人
-    finalDamage = -Math.floor(baseDamage * Math.abs(multiplier));
+    finalDamage = -Math.floor(baseDamage * Math.abs(multiplier) * masteryBonus);
   } else {
-    finalDamage = Math.floor(baseDamage * multiplier);
+    finalDamage = Math.floor(baseDamage * multiplier * masteryBonus);
   }
 
   return {

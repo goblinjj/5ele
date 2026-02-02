@@ -8,6 +8,13 @@ import {
   Rarity,
   INVENTORY_SIZE,
   MAX_TREASURES,
+  StatusType,
+  STATUS_DEFINITIONS,
+  PlayerStatus,
+  getWuxingPassiveStatuses,
+  WuxingPassiveStatus,
+  getAttackWuxing,
+  getDefenseWuxing,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
@@ -28,6 +35,7 @@ export class InventoryScene extends Phaser.Scene {
   private popup?: Phaser.GameObjects.Container;
   private topMessage?: Phaser.GameObjects.Container;
   private specialNotification?: Phaser.GameObjects.Container;
+  private statusPopup?: Phaser.GameObjects.Container;
   private currentSlot?: SlotInfo;
   private popupMode: PopupMode = 'view';
   private firstSelectedSlot?: SlotInfo;
@@ -62,6 +70,9 @@ export class InventoryScene extends Phaser.Scene {
     // 上半部分：装备栏（武器、铠甲、法宝）
     this.createEquipmentSection();
 
+    // 中间：状态栏
+    this.createStatusBar();
+
     // 下半部分：背包栏
     this.createInventorySection();
 
@@ -70,7 +81,9 @@ export class InventoryScene extends Phaser.Scene {
 
     // ESC关闭
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (this.popup) {
+      if (this.statusPopup) {
+        this.closeStatusPopup();
+      } else if (this.popup) {
         this.closePopup();
       } else {
         this.closeScene();
@@ -118,7 +131,7 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
     const sectionY = headerHeight + height * 0.02;
-    const sectionHeight = height * 0.42;
+    const sectionHeight = height * 0.36;
 
     // 装备区域背景
     const sectionBg = this.add.graphics();
@@ -195,12 +208,257 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
+  private createStatusBar(): void {
+    const { width, height } = this.cameras.main;
+    const headerHeight = height * 0.08;
+    const topSectionHeight = height * 0.36;
+    const sectionY = headerHeight + topSectionHeight + height * 0.02;
+    const sectionHeight = height * 0.06;
+
+    // 状态栏背景
+    const sectionBg = this.add.graphics();
+    sectionBg.fillStyle(this.colors.inkBlack, 0.3);
+    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 6);
+    sectionBg.lineStyle(1, this.colors.goldAccent, 0.3);
+    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 6);
+
+    // 状态标题
+    this.add.text(width * 0.05, sectionY + sectionHeight / 2, '状态:', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#8b949e',
+    }).setOrigin(0, 0.5);
+
+    // 获取玩家状态
+    const playerStatuses = gameState.getStatuses();
+
+    // 获取五行被动状态
+    const equipment = {
+      weapon: gameState.getWeapon(),
+      armor: gameState.getArmor(),
+      treasures: gameState.getTreasures(),
+    };
+    const attackWuxing = getAttackWuxing(equipment);
+    const defenseWuxing = getDefenseWuxing(equipment);
+    const wuxingPassives = getWuxingPassiveStatuses(attackWuxing, defenseWuxing);
+
+    // 合并所有状态
+    const allStatuses: { type: StatusType; level?: number }[] = [
+      ...playerStatuses.map(s => ({ type: s.type })),
+      ...wuxingPassives.map(s => ({ type: s.type, level: s.level })),
+    ];
+
+    const startX = width * 0.12;
+    const labelHeight = sectionHeight * 0.7;
+
+    if (allStatuses.length === 0) {
+      // 无状态时显示提示
+      this.add.text(startX, sectionY + sectionHeight / 2, '暂无特殊状态', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontSM}px`,
+        color: '#484f58',
+        fontStyle: 'italic',
+      }).setOrigin(0, 0.5);
+    } else {
+      // 计算标签布局
+      const labelPadding = 8;
+      let currentX = startX;
+
+      // 显示状态标签
+      allStatuses.forEach((status) => {
+        const definition = STATUS_DEFINITIONS[status.type];
+        if (!definition) return;
+
+        // 计算标签宽度
+        const displayText = status.level ? `${definition.icon}${definition.name}` : `${definition.icon} ${definition.name}`;
+        const labelWidth = Math.max(50, displayText.length * 11 + 16);
+
+        // 检查是否超出屏幕
+        if (currentX + labelWidth > width * 0.86) return;
+
+        const statusColor = Phaser.Display.Color.HexStringToColor(definition.color).color;
+
+        // 状态标签背景
+        const labelBg = this.add.rectangle(
+          currentX + labelWidth / 2,
+          sectionY + sectionHeight / 2,
+          labelWidth,
+          labelHeight,
+          statusColor,
+          0.2
+        );
+        labelBg.setStrokeStyle(1, statusColor, 0.6);
+        labelBg.setInteractive({ useHandCursor: true });
+
+        // 状态图标和名称
+        const labelText = this.add.text(
+          currentX + labelWidth / 2,
+          sectionY + sectionHeight / 2,
+          displayText,
+          {
+            fontFamily: '"Noto Sans SC", sans-serif',
+            fontSize: `${uiConfig.fontXS}px`,
+            color: definition.color,
+            fontStyle: 'bold',
+          }
+        ).setOrigin(0.5);
+
+        // 点击事件
+        labelBg.on('pointerup', () => this.showStatusPopup(status.type));
+        labelBg.on('pointerover', () => {
+          labelBg.setFillStyle(statusColor, 0.4);
+        });
+        labelBg.on('pointerout', () => {
+          labelBg.setFillStyle(statusColor, 0.2);
+        });
+
+        currentX += labelWidth + labelPadding;
+      });
+    }
+
+    // 显示五行收集进度提示（如果没有五行圆满）
+    if (!gameState.hasStatus(StatusType.WUXING_MASTERY)) {
+      const treasures = gameState.getTreasures();
+      const uniqueWuxings = new Set(
+        treasures.map(t => t.wuxing).filter((w): w is Wuxing => w !== undefined)
+      );
+      const collected = uniqueWuxings.size;
+
+      if (collected > 0 && collected < 5) {
+        this.add.text(width * 0.88, sectionY + sectionHeight / 2, `五行进度: ${collected}/5`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontXS}px`,
+          color: '#8b949e',
+        }).setOrigin(1, 0.5);
+      }
+    }
+  }
+
+  private showStatusPopup(statusType: StatusType): void {
+    this.closeStatusPopup();
+
+    const definition = STATUS_DEFINITIONS[statusType];
+    if (!definition) return;
+
+    const { width, height } = this.cameras.main;
+
+    this.statusPopup = this.add.container(width / 2, height / 2);
+
+    // 背景遮罩
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
+    overlay.setInteractive();
+    overlay.on('pointerup', () => this.closeStatusPopup());
+    this.statusPopup.add(overlay);
+
+    // 弹窗尺寸
+    const panelWidth = Math.max(400, Math.min(500, width * 0.45));
+    const panelHeight = Math.max(280, Math.min(350, height * 0.5));
+    const statusColor = Phaser.Display.Color.HexStringToColor(definition.color).color;
+
+    // 弹窗背景
+    const panel = this.add.graphics();
+    panel.fillStyle(this.colors.inkBlack, 0.98);
+    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    panel.lineStyle(3, statusColor, 0.9);
+    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    this.statusPopup.add(panel);
+
+    // 图标
+    const iconBg = this.add.circle(0, -panelHeight * 0.28, 35, statusColor, 0.2);
+    iconBg.setStrokeStyle(2, statusColor, 0.8);
+    this.statusPopup.add(iconBg);
+
+    const iconText = this.add.text(0, -panelHeight * 0.28, definition.icon, {
+      fontSize: `${uiConfig.font2XL}px`,
+    }).setOrigin(0.5);
+    this.statusPopup.add(iconText);
+
+    // 标题
+    const titleText = this.add.text(0, -panelHeight * 0.12, definition.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontXL}px`,
+      color: definition.color,
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.statusPopup.add(titleText);
+
+    // 描述
+    const descText = this.add.text(0, panelHeight * 0.02, definition.description, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: '#8b949e',
+      wordWrap: { width: panelWidth * 0.85 },
+      align: 'center',
+    }).setOrigin(0.5, 0);
+    this.statusPopup.add(descText);
+
+    // 效果列表
+    let effectY = panelHeight * 0.15;
+    const effectsTitle = this.add.text(-panelWidth * 0.38, effectY, '效果:', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0, 0);
+    this.statusPopup.add(effectsTitle);
+
+    effectY += uiConfig.fontSM + 8;
+
+    definition.effects.forEach((effect, index) => {
+      const effectText = this.add.text(-panelWidth * 0.35, effectY, `• ${effect}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontSM}px`,
+        color: '#3fb950',
+      }).setOrigin(0, 0);
+      this.statusPopup!.add(effectText);
+      effectY += uiConfig.fontSM + 6;
+    });
+
+    // 关闭按钮
+    const closeBtnY = panelHeight / 2 - 30;
+    const closeBtn = this.add.rectangle(0, closeBtnY, 100, 36, this.colors.inkGrey);
+    closeBtn.setStrokeStyle(2, statusColor, 0.5);
+    closeBtn.setInteractive({ useHandCursor: true });
+
+    const closeBtnText = this.add.text(0, closeBtnY, '关闭', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    this.statusPopup.add([closeBtn, closeBtnText]);
+
+    closeBtn.on('pointerover', () => closeBtn.setFillStyle(statusColor, 0.5));
+    closeBtn.on('pointerout', () => closeBtn.setFillStyle(this.colors.inkGrey));
+    closeBtn.on('pointerup', () => this.closeStatusPopup());
+
+    // 入场动画
+    this.statusPopup.setAlpha(0);
+    this.statusPopup.setScale(0.9);
+    this.tweens.add({
+      targets: this.statusPopup,
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
+  }
+
+  private closeStatusPopup(): void {
+    if (this.statusPopup) {
+      this.statusPopup.destroy();
+      this.statusPopup = undefined;
+    }
+  }
+
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
-    const topSectionHeight = height * 0.42;
-    const sectionY = headerHeight + topSectionHeight + height * 0.04;
-    const sectionHeight = height * 0.40;
+    const topSectionHeight = height * 0.36;
+    const statusBarHeight = height * 0.08;
+    const sectionY = headerHeight + topSectionHeight + statusBarHeight + height * 0.04;
+    const sectionHeight = height * 0.38;
 
     // 背包区域背景
     const sectionBg = this.add.graphics();

@@ -75,6 +75,9 @@ export interface Combatant {
   canSurviveLethal?: boolean;      // 木Lv3+：致命保护
   canRevive?: boolean;             // 木Lv5：可以复活
   reviveHpPercent?: number;        // 木Lv5：复活血量百分比
+
+  // 特殊状态
+  hasWuxingMastery?: boolean;      // 五行圆满：集齐5种五行
 }
 
 /**
