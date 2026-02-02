@@ -11,6 +11,7 @@ import {
   BattleEvent,
   Combatant as EngineCombatant,
   BattleConfig,
+  RoundResult,
   generateEnemies,
   generateLoot,
   getTotalSpeed,
@@ -73,6 +74,8 @@ export class BattleScene extends Phaser.Scene {
 
   private inventoryButton?: Phaser.GameObjects.Container;
   private topBarHpText?: Phaser.GameObjects.Text;
+  private battleEngine?: BattleEngine;
+  private equipmentChanged: boolean = false;
 
   create(): void {
     this.createBackground();
@@ -219,7 +222,9 @@ export class BattleScene extends Phaser.Scene {
     this.scene.launch('InventoryScene');
     this.scene.get('InventoryScene').events.once('shutdown', () => {
       this.scene.resume();
-      // 刷新玩家显示（换装只影响下一回合战斗，当前战斗继续）
+      // 标记装备已更换，下一回合计算时会使用新装备
+      this.equipmentChanged = true;
+      // 刷新玩家显示
       this.refreshPlayerCombatant();
       this.updateTopBarStats();
     });
@@ -487,28 +492,94 @@ export class BattleScene extends Phaser.Scene {
       isPvP: false,
     };
 
-    const engine = new BattleEngine(this.engineCombatants, config);
-    const result = engine.run();
+    // 创建战斗引擎并初始化
+    this.battleEngine = new BattleEngine(this.engineCombatants, config);
+    this.equipmentChanged = false;
 
-    for (const event of result.events) {
+    // 播放初始化事件
+    const initEvents = this.battleEngine.initialize();
+    for (const event of initEvents) {
       await this.playEvent(event);
     }
 
-    const playerSurvivor = result.survivingCombatants.find(c => c.isPlayer);
-    if (playerSurvivor) {
-      gameState.getPlayerState().hp = playerSurvivor.hp;
+    // 逐回合计算和播放
+    while (!this.battleEngine.isBattleOver()) {
+      // 如果装备更换了，更新玩家数据
+      if (this.equipmentChanged) {
+        this.updateEnginePlayerData();
+        this.equipmentChanged = false;
+      }
+
+      // 计算单个回合
+      const roundResult = this.battleEngine.runSingleRound();
+
+      // 播放回合事件
+      for (const event of roundResult.events) {
+        await this.playEvent(event);
+      }
+
+      // 同步显示状态
+      this.syncDisplayFromEngine();
+
+      if (roundResult.isOver) {
+        break;
+      }
+    }
+
+    // 播放战斗结束事件
+    await this.playEvent({ type: 'battle_end' });
+
+    // 同步最终状态
+    const combatants = this.battleEngine.getCombatants();
+    const playerCombatant = combatants.find(c => c.isPlayer);
+    if (playerCombatant) {
+      gameState.getPlayerState().hp = playerCombatant.hp;
     } else {
       gameState.getPlayerState().hp = 0;
     }
 
     await this.delay(500);
 
-    if (result.winnerId) {
+    const winnerId = this.battleEngine.getWinnerId();
+    if (winnerId) {
       await this.showCenterText('胜利！', '#3fb950');
       await this.handleVictory();
     } else {
       await this.delay(500);
       this.showGameOver();
+    }
+  }
+
+  /**
+   * 更新战斗引擎中的玩家数据（换装后调用）
+   */
+  private updateEnginePlayerData(): void {
+    if (!this.battleEngine) return;
+
+    const newPlayerData = this.createPlayerCombatant();
+    this.battleEngine.updatePlayerCombatant({
+      attack: newPlayerData.attack,
+      defense: newPlayerData.defense,
+      speed: newPlayerData.speed,
+      attackWuxing: newPlayerData.attackWuxing,
+      defenseWuxing: newPlayerData.defenseWuxing,
+      skills: newPlayerData.skills,
+    });
+  }
+
+  /**
+   * 从引擎同步显示状态
+   */
+  private syncDisplayFromEngine(): void {
+    if (!this.battleEngine) return;
+
+    const combatants = this.battleEngine.getCombatants();
+    for (const combatant of combatants) {
+      const display = this.displayCombatants.get(combatant.id);
+      if (display) {
+        display.hp = combatant.hp;
+        display.wuxing = combatant.attackWuxing?.wuxing;
+      }
     }
   }
 
