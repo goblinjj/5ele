@@ -190,12 +190,14 @@ export class BattleEngine {
 
     // 应用伤害或治疗
     if (finalDamage >= 0) {
-      defender.hp = Math.max(0, defender.hp - finalDamage);
+      // 最低伤害为1（除非是相生治疗情况）
+      const actualDamage = Math.max(1, finalDamage);
+      defender.hp = Math.max(0, defender.hp - actualDamage);
       this.events.push({
         type: 'damage',
         actorId: attacker.id,
         targetId: defender.id,
-        value: finalDamage,
+        value: actualDamage,
         wuxingEffect: damageResult.wuxingEffect,
         isCritical: (hitResult.damageMultiplier ?? 1) > 1,
       });

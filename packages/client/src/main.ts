@@ -1,9 +1,24 @@
 /// <reference types="vite/client" />
 import Phaser from 'phaser';
 import { gameConfig } from './config/gameConfig.js';
+import { uiConfig } from './config/uiConfig.js';
 
 // 创建游戏实例
 const game = new Phaser.Game(gameConfig);
+
+// 监听游戏缩放变化，更新 UI 配置
+game.scale.on('resize', (gameSize: Phaser.Structs.Size) => {
+  uiConfig.init(gameSize.width, gameSize.height);
+});
+
+// 监听窗口大小变化，触发游戏重新布局
+let resizeTimeout: number;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = window.setTimeout(() => {
+    game.scale.refresh();
+  }, 100);
+});
 
 // 检测是否已经以 PWA 方式运行（全屏模式）
 function isRunningAsPWA(): boolean {

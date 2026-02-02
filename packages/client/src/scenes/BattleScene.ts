@@ -41,6 +41,7 @@ export class BattleScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
   private nodeType: NodeType | 'final' = NodeType.NORMAL_BATTLE;
   private round: number = 1;
+  private preGeneratedEnemies?: EngineCombatant[];
 
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
@@ -63,10 +64,11 @@ export class BattleScene extends Phaser.Scene {
     super({ key: 'BattleScene' });
   }
 
-  init(data: { mode: 'single' | 'multi'; nodeType: NodeType | 'final'; round: number }): void {
+  init(data: { mode: 'single' | 'multi'; nodeType: NodeType | 'final'; round: number; enemies?: EngineCombatant[] }): void {
     this.mode = data.mode || 'single';
     this.nodeType = data.nodeType || NodeType.NORMAL_BATTLE;
     this.round = data.round || 1;
+    this.preGeneratedEnemies = data.enemies;
   }
 
   private inventoryButton?: Phaser.GameObjects.Container;
@@ -256,14 +258,21 @@ export class BattleScene extends Phaser.Scene {
     };
     this.displayCombatants.set(playerCombatant.id, playerDisplay);
 
-    const playerState = gameState.getPlayerState();
-    const nodeTypeStr = this.getNodeTypeString();
-    const enemies = generateEnemies(
-      nodeTypeStr,
-      this.round,
-      playerState.monsterScaling,
-      playerState.monsterCountBonus
-    );
+    // 使用预生成的敌人，或者重新生成
+    let enemies: EngineCombatant[];
+    if (this.preGeneratedEnemies && this.preGeneratedEnemies.length > 0) {
+      // 深拷贝预生成的敌人，避免修改原数据
+      enemies = this.preGeneratedEnemies.map(e => ({ ...e }));
+    } else {
+      const playerState = gameState.getPlayerState();
+      const nodeTypeStr = this.getNodeTypeString();
+      enemies = generateEnemies(
+        nodeTypeStr,
+        this.round,
+        playerState.monsterScaling,
+        playerState.monsterCountBonus
+      );
+    }
     this.enemyCount = enemies.length;
 
     const totalEnemyWidth = (enemies.length - 1) * enemySpacing;
@@ -705,11 +714,16 @@ export class BattleScene extends Phaser.Scene {
     const startY = height * 0.22;
 
     let currentPopup: Phaser.GameObjects.Container | null = null;
+    let popupOverlay: Phaser.GameObjects.Rectangle | null = null;
 
     const closePopup = () => {
       if (currentPopup) {
         currentPopup.destroy();
         currentPopup = null;
+      }
+      if (popupOverlay) {
+        popupOverlay.destroy();
+        popupOverlay = null;
       }
     };
 
@@ -751,8 +765,20 @@ export class BattleScene extends Phaser.Scene {
 
       bg.on('pointerup', () => {
         closePopup();
+        // 创建点击其他区域关闭的遮罩
+        popupOverlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.5);
+        popupOverlay.setInteractive();
+        popupOverlay.on('pointerup', closePopup);
+        lootContainer.add(popupOverlay);
+
         currentPopup = this.createLootPopup(item, width / 2, height / 2);
         lootContainer.add(currentPopup);
+
+        // 连接弹窗内的关闭按钮
+        const closeBtn = currentPopup.getData('closeBtn') as Phaser.GameObjects.Rectangle;
+        if (closeBtn) {
+          closeBtn.on('pointerup', closePopup);
+        }
       });
     });
 
@@ -958,12 +984,41 @@ export class BattleScene extends Phaser.Scene {
       popup.add(skillDescText);
     }
 
-    const closeText = this.add.text(0, panelHeight / 2 - 25, '点击其他地方关闭', {
+    // 关闭按钮
+    const closeBtnSize = Math.max(36, panelHeight * 0.08);
+    const closeBtnX = panelWidth / 2 - closeBtnSize / 2 - 10;
+    const closeBtnY = -panelHeight / 2 + closeBtnSize / 2 + 10;
+
+    const closeBtnBg = this.add.rectangle(closeBtnX, closeBtnY, closeBtnSize, closeBtnSize, this.colors.inkGrey, 0.8);
+    closeBtnBg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
+    closeBtnBg.setInteractive({ useHandCursor: true });
+    popup.add(closeBtnBg);
+
+    const closeBtnText = this.add.text(closeBtnX, closeBtnY, '✕', {
+      fontFamily: 'Arial',
+      fontSize: `${uiConfig.fontLG}px`,
+      color: '#8b949e',
+    }).setOrigin(0.5);
+    popup.add(closeBtnText);
+
+    closeBtnBg.on('pointerover', () => {
+      closeBtnBg.setFillStyle(this.colors.redAccent, 0.9);
+      closeBtnText.setColor('#ffffff');
+    });
+    closeBtnBg.on('pointerout', () => {
+      closeBtnBg.setFillStyle(this.colors.inkGrey, 0.8);
+      closeBtnText.setColor('#8b949e');
+    });
+
+    const closeText = this.add.text(0, panelHeight / 2 - 25, '点击空白处或关闭按钮', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontXS}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
     popup.add(closeText);
+
+    // 标记关闭按钮，供外部使用
+    popup.setData('closeBtn', closeBtnBg);
 
     return popup;
   }

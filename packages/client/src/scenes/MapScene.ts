@@ -484,7 +484,7 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private selectNode(node: GameNode, index: number): void {
+  private selectNode(node: BattleNodeInfo, index: number): void {
     if (node.type === NodeType.REST) {
       this.showRestEffect();
     } else if (node.type === NodeType.NORMAL_BATTLE || node.type === NodeType.ELITE_BATTLE) {
@@ -494,12 +494,14 @@ export class MapScene extends Phaser.Scene {
         mode: this.mode,
         nodeType: nodeType,
         round: this.currentRound,
+        enemies: node.enemies, // 传递预生成的敌人
       });
     } else if (node.type === NodeType.STORY) {
       this.scene.start('BattleScene', {
         mode: this.mode,
         nodeType: node.type,
         round: this.currentRound,
+        enemies: node.enemies, // 传递预生成的敌人
       });
     } else {
       this.handleRandomEvent();

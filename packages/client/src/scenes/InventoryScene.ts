@@ -915,15 +915,31 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
 
-    const closeBtn = this.add.text(width * 0.97, headerHeight / 2, '✕', {
+    // 使用更大的点击区域
+    const btnSize = Math.max(44, headerHeight * 0.9);
+    const btnX = width - btnSize / 2 - 10;
+    const btnY = headerHeight / 2;
+
+    // 点击区域背景
+    const hitArea = this.add.rectangle(btnX, btnY, btnSize, btnSize, this.colors.inkGrey, 0.5);
+    hitArea.setStrokeStyle(1, this.colors.goldAccent, 0.3);
+    hitArea.setInteractive({ useHandCursor: true });
+
+    const closeText = this.add.text(btnX, btnY, '✕', {
       fontFamily: 'Arial',
       fontSize: `${uiConfig.fontXL}px`,
       color: '#8b949e',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5);
 
-    closeBtn.on('pointerover', () => closeBtn.setColor('#f0e6d3'));
-    closeBtn.on('pointerout', () => closeBtn.setColor('#8b949e'));
-    closeBtn.on('pointerup', () => this.closeScene());
+    hitArea.on('pointerover', () => {
+      hitArea.setFillStyle(this.colors.redAccent, 0.8);
+      closeText.setColor('#ffffff');
+    });
+    hitArea.on('pointerout', () => {
+      hitArea.setFillStyle(this.colors.inkGrey, 0.5);
+      closeText.setColor('#8b949e');
+    });
+    hitArea.on('pointerup', () => this.closeScene());
   }
 
   private closeScene(): void {
