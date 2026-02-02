@@ -113,19 +113,17 @@ export function processStartOfTurnEffects(combatant: Combatant): BattleEvent[] {
   // 重置每回合一次的致命保护
   effects.hasSurvivedLethal = false;
 
-  // 五行圆满：每回合恢复5%最大生命值
+  // 五行圆满：每回合恢复5%最大生命值（最少1点）
   if (combatant.hasWuxingMastery && combatant.hp < combatant.maxHp) {
-    const masteryHeal = Math.floor(combatant.maxHp * 0.05);
+    const masteryHeal = Math.max(1, Math.floor(combatant.maxHp * 0.05));
     const actualHeal = Math.min(masteryHeal, combatant.maxHp - combatant.hp);
-    if (actualHeal > 0) {
-      combatant.hp += actualHeal;
-      events.push({
-        type: 'status_heal',
-        targetId: combatant.id,
-        value: actualHeal,
-        message: '五行圆满',
-      });
-    }
+    combatant.hp += actualHeal;
+    events.push({
+      type: 'status_heal',
+      targetId: combatant.id,
+      value: actualHeal,
+      message: '五行圆满',
+    });
   }
 
   // 木属性：回复
@@ -137,8 +135,9 @@ export function processStartOfTurnEffects(combatant: Combatant): BattleEvent[] {
       regenPercent *= 2;
     }
 
-    const healAmount = Math.floor(combatant.maxHp * regenPercent / 100);
-    if (healAmount > 0 && combatant.hp < combatant.maxHp) {
+    // 最少恢复1点生命值
+    const healAmount = Math.max(1, Math.floor(combatant.maxHp * regenPercent / 100));
+    if (combatant.hp < combatant.maxHp) {
       const actualHeal = Math.min(healAmount, combatant.maxHp - combatant.hp);
       combatant.hp += actualHeal;
       events.push({

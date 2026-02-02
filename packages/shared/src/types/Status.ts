@@ -42,9 +42,119 @@ export interface StatusDefinition {
   id: StatusType;
   name: string;
   description: string;
-  effects: string[];  // 效果列表
+  effects: string[];  // 效果列表（静态描述或占位）
   icon: string;       // 显示图标
   color: string;      // 显示颜色
+}
+
+/**
+ * 根据等级生成具体效果描述
+ */
+export function getStatusEffectsForLevel(statusType: StatusType, level: number): string[] {
+  const clampedLevel = Math.max(1, Math.min(5, level));
+
+  switch (statusType) {
+    // 金属性
+    case StatusType.METAL_PENETRATE: {
+      const values = [10, 20, 35, 50, 70];
+      return [`无视敌人 ${values[clampedLevel - 1]}% 防御`];
+    }
+    case StatusType.METAL_BLEED: {
+      const chances = [0, 0, 15, 25, 100];
+      const damages = [0, 0, 5, 5, 10];
+      const doubled = clampedLevel >= 5;
+      return [
+        `${chances[clampedLevel - 1]}% 概率造成流血`,
+        `流血每回合造成 ${damages[clampedLevel - 1]}% 最大生命值伤害`,
+        '流血可叠加最多5层',
+        ...(doubled ? ['Lv5: 流血伤害翻倍'] : []),
+      ];
+    }
+
+    // 木属性
+    case StatusType.WOOD_REGEN: {
+      const regens = [3, 5, 8, 12, 15];
+      const doubleWhenLow = clampedLevel >= 4;
+      return [
+        `每回合恢复 ${regens[clampedLevel - 1]}% 最大生命值`,
+        ...(doubleWhenLow ? ['生命值低于30%时，回复量翻倍'] : []),
+      ];
+    }
+    case StatusType.WOOD_SURVIVE:
+      return ['每回合首次受到致命伤害时，保留 1 点生命值'];
+    case StatusType.WOOD_REVIVE:
+      return ['战斗中死亡时，以 50% 生命值复活', '每场战斗仅触发一次'];
+
+    // 水属性
+    case StatusType.WATER_SLOW: {
+      const chances = [15, 25, 35, 35, 35];
+      const reductions = [20, 30, 30, 30, 30];
+      const bonusDamage = clampedLevel >= 3;
+      return [
+        `${chances[clampedLevel - 1]}% 概率减速敌人`,
+        `减速 ${reductions[clampedLevel - 1]}%，持续2回合`,
+        ...(bonusDamage ? ['对减速目标伤害 +15%'] : []),
+      ];
+    }
+    case StatusType.WATER_FREEZE: {
+      const chances = [0, 0, 0, 20, 30];
+      return [
+        `${chances[clampedLevel - 1]}% 概率冻结敌人`,
+        '被冻结的敌人跳过下一回合',
+      ];
+    }
+    case StatusType.WATER_SHATTER:
+      return ['冻结解除时，对敌人造成 100% 攻击力的额外伤害'];
+
+    // 火属性
+    case StatusType.FIRE_BURN: {
+      const damages = [3, 5, 5, 5, 8];
+      const durations = [2, 3, 3, 3, 3];
+      return [
+        '攻击时对敌人施加灼烧',
+        `灼烧每回合造成 ${damages[clampedLevel - 1]}% 最大生命值伤害`,
+        `持续 ${durations[clampedLevel - 1]} 回合`,
+      ];
+    }
+    case StatusType.FIRE_STACK:
+      return ['灼烧效果可叠加', '最多叠加 3 层，每层独立造成伤害'];
+    case StatusType.FIRE_EXPLODE: {
+      const damages = [0, 0, 0, 20, 35];
+      return [
+        '灼烧叠满 3 层时自动引爆',
+        `引爆造成 ${damages[clampedLevel - 1]}% 最大生命值伤害`,
+        '引爆后清除所有灼烧层数',
+      ];
+    }
+    case StatusType.FIRE_EMBER:
+      return ['引爆后敌人进入余烬状态', '余烬状态下受到的火属性伤害 +50%'];
+
+    // 土属性
+    case StatusType.EARTH_REDUCE: {
+      const reductions = [10, 18, 25, 35, 45];
+      return [`受到的所有伤害减少 ${reductions[clampedLevel - 1]}%`];
+    }
+    case StatusType.EARTH_REFLECT: {
+      const reflects = [0, 0, 15, 25, 40];
+      return [`受到攻击时，反弹 ${reflects[clampedLevel - 1]}% 伤害给攻击者`];
+    }
+    case StatusType.EARTH_IMMUNE:
+      return ['生命值高于 70% 时', '免疫冻结、减速等控制效果'];
+    case StatusType.EARTH_REVENGE:
+      return ['每承受 3 次攻击后', '下一次攻击伤害 +100%'];
+
+    // 五行圆满
+    case StatusType.WUXING_MASTERY:
+      return [
+        '五行克制伤害 +30%',
+        '五行相生治疗 +50%',
+        '免疫所有负面状态效果',
+        '每回合恢复 5% 最大生命值',
+      ];
+
+    default:
+      return [];
+  }
 }
 
 /**

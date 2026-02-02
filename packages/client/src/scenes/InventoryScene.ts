@@ -13,6 +13,7 @@ import {
   PlayerStatus,
   getWuxingPassiveStatuses,
   WuxingPassiveStatus,
+  getStatusEffectsForLevel,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
@@ -299,8 +300,8 @@ export class InventoryScene extends Phaser.Scene {
           }
         ).setOrigin(0.5);
 
-        // 点击事件
-        labelBg.on('pointerup', () => this.showStatusPopup(status.type));
+        // 点击事件（传递等级）
+        labelBg.on('pointerup', () => this.showStatusPopup(status.type, status.level));
         labelBg.on('pointerover', () => {
           labelBg.setFillStyle(statusColor, 0.4);
         });
@@ -330,7 +331,7 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
-  private showStatusPopup(statusType: StatusType): void {
+  private showStatusPopup(statusType: StatusType, level?: number): void {
     this.closeStatusPopup();
 
     const definition = STATUS_DEFINITIONS[statusType];
@@ -369,8 +370,9 @@ export class InventoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.statusPopup.add(iconText);
 
-    // 标题
-    const titleText = this.add.text(0, -panelHeight * 0.12, definition.name, {
+    // 标题（显示等级）
+    const titleStr = level ? `${definition.name} Lv.${level}` : definition.name;
+    const titleText = this.add.text(0, -panelHeight * 0.12, titleStr, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontXL}px`,
       color: definition.color,
@@ -388,9 +390,13 @@ export class InventoryScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     this.statusPopup.add(descText);
 
-    // 效果列表
+    // 效果列表（根据等级获取具体效果）
+    const effects = level
+      ? getStatusEffectsForLevel(statusType, level)
+      : definition.effects;
+
     let effectY = panelHeight * 0.15;
-    const effectsTitle = this.add.text(-panelWidth * 0.38, effectY, '效果:', {
+    const effectsTitle = this.add.text(-panelWidth * 0.38, effectY, '当前效果:', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
@@ -400,7 +406,7 @@ export class InventoryScene extends Phaser.Scene {
 
     effectY += uiConfig.fontSM + 8;
 
-    definition.effects.forEach((effect, index) => {
+    effects.forEach((effect) => {
       const effectText = this.add.text(-panelWidth * 0.35, effectY, `• ${effect}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontSM}px`,
