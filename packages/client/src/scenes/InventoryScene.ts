@@ -11,6 +11,7 @@ import {
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
+import { uiConfig, LAYOUT } from '../config/uiConfig.js';
 
 type PopupMode = 'view' | 'select-synthesize' | 'select-devour';
 
@@ -89,20 +90,18 @@ export class InventoryScene extends Phaser.Scene {
     headerBg.lineBetween(0, headerHeight, width, headerHeight);
 
     // 标题
-    const titleSize = Math.max(18, Math.min(26, width * 0.022));
     this.add.text(width / 2, headerHeight / 2, '背包管理', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleSize}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     // 玩家状态（左侧）
     const player = gameState.getPlayerState();
-    const statsFontSize = Math.max(11, Math.min(15, width * 0.013));
     this.add.text(width * 0.03, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${statsFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
@@ -110,7 +109,7 @@ export class InventoryScene extends Phaser.Scene {
     const fragments = gameState.getFragmentCount();
     this.add.text(width * 0.92, headerHeight / 2, `💎 碎片: ${fragments}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${statsFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#a855f7',
     }).setOrigin(1, 0.5);
   }
@@ -130,8 +129,6 @@ export class InventoryScene extends Phaser.Scene {
 
     // 槽位大小 - 更大以填充空间
     const slotSize = Math.max(70, Math.min(90, height * 0.14));
-    const fontSize = Math.max(12, Math.min(16, width * 0.014));
-    const labelFontSize = Math.max(11, Math.min(14, width * 0.012));
 
     // === 左侧：武器和铠甲 ===
     const leftStartX = width * 0.08;
@@ -140,7 +137,7 @@ export class InventoryScene extends Phaser.Scene {
     // 武器
     this.add.text(leftStartX, equipY - slotSize * 0.7, '武器', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -154,7 +151,7 @@ export class InventoryScene extends Phaser.Scene {
     const armorX = leftStartX + slotSize * 1.4;
     this.add.text(armorX, equipY - slotSize * 0.7, '铠甲', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -176,7 +173,7 @@ export class InventoryScene extends Phaser.Scene {
     // 法宝标题
     this.add.text(treasureStartX, sectionY + 15, '法宝栏', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     });
@@ -212,14 +209,11 @@ export class InventoryScene extends Phaser.Scene {
     sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
     sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
 
-    const fontSize = Math.max(12, Math.min(16, width * 0.014));
-    const labelFontSize = Math.max(11, Math.min(14, width * 0.012));
-
     // 分区标题
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
     this.add.text(width * 0.05, sectionY + 15, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     });
@@ -348,11 +342,6 @@ export class InventoryScene extends Phaser.Scene {
     const panelWidth = Math.max(500, Math.min(700, width * 0.58));
     const panelHeight = Math.max(350, Math.min(450, height * 0.65));
     const borderColor = this.getRarityBorderColor(equipment.rarity);
-
-    // 响应式字体 - 更大
-    const titleFontSize = Math.max(24, Math.min(32, width * 0.028));
-    const labelFontSize = Math.max(18, Math.min(24, width * 0.02));
-    const textFontSize = Math.max(16, Math.min(22, width * 0.018));
     const iconRadius = Math.max(50, Math.min(70, panelHeight * 0.16));
 
     const panel = this.add.graphics();
@@ -362,10 +351,10 @@ export class InventoryScene extends Phaser.Scene {
     panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     this.popup.add(panel);
 
-    // 左右布局：左侧图标，右侧文字
-    const iconX = -panelWidth * 0.3;
-    const textX = panelWidth * 0.05;
-    const textWidth = panelWidth * 0.55;
+    // 左右布局：35% 图标，65% 文字
+    const iconX = uiConfig.getIconCenterX(panelWidth);
+    const textX = uiConfig.getTextStartX(panelWidth);
+    const textWidth = uiConfig.getTextWidth(panelWidth);
     const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
 
     // 左侧：装备图标
@@ -376,7 +365,7 @@ export class InventoryScene extends Phaser.Scene {
     const levelStr = equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-';
     const levelText = this.add.text(iconX, -panelHeight * 0.08, levelStr, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleFontSize + 4}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -385,7 +374,7 @@ export class InventoryScene extends Phaser.Scene {
     // 类型图标
     const typeIcon = this.getTypeIcon(equipment.type);
     const typeIconText = this.add.text(iconX, panelHeight * 0.1, typeIcon, {
-      fontSize: `${iconRadius * 0.5}px`,
+      fontSize: `${uiConfig.fontXL}px`,
     }).setOrigin(0.5);
     this.popup.add(typeIconText);
 
@@ -395,36 +384,36 @@ export class InventoryScene extends Phaser.Scene {
     // 名称
     const nameText = this.add.text(textX, yOffset, equipment.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleFontSize}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0, 0.5);
     this.popup.add(nameText);
 
-    yOffset += titleFontSize + 12;
+    yOffset += uiConfig.fontXL + 12;
 
     // 类型 + 稀有度
     const typeAndRarity = `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`;
     const typeRarityText = this.add.text(textX, yOffset, typeAndRarity, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: this.getRarityColor(equipment.rarity),
     }).setOrigin(0, 0.5);
     this.popup.add(typeRarityText);
 
-    yOffset += labelFontSize + 10;
+    yOffset += uiConfig.fontLG + 10;
 
     // 五行属性
     const wuxingName = equipment.wuxing !== undefined ? WUXING_NAMES[equipment.wuxing] : '无';
     const wuxingLevelStr = equipment.wuxing !== undefined ? ` Lv.${equipment.wuxingLevel ?? 1}` : '';
     const wuxingText = this.add.text(textX, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#' + color.toString(16).padStart(6, '0'),
     }).setOrigin(0, 0.5);
     this.popup.add(wuxingText);
 
-    yOffset += labelFontSize + 10;
+    yOffset += uiConfig.fontLG + 10;
 
     // 攻防
     const stats: string[] = [];
@@ -433,11 +422,11 @@ export class InventoryScene extends Phaser.Scene {
     if (stats.length > 0) {
       const statsText = this.add.text(textX, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${textFontSize}px`,
+        fontSize: `${uiConfig.fontMD}px`,
         color: '#f0e6d3',
       }).setOrigin(0, 0.5);
       this.popup.add(statsText);
-      yOffset += textFontSize + 10;
+      yOffset += uiConfig.fontMD + 10;
     }
 
     // 技能
@@ -445,16 +434,16 @@ export class InventoryScene extends Phaser.Scene {
       yOffset += 5;
       const skillNameText = this.add.text(textX, yOffset, `【${equipment.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${labelFontSize}px`,
+        fontSize: `${uiConfig.fontLG}px`,
         color: '#d4a853',
         fontStyle: 'bold',
       }).setOrigin(0, 0.5);
       this.popup.add(skillNameText);
 
-      yOffset += labelFontSize + 8;
+      yOffset += uiConfig.fontLG + 8;
       const skillDescText = this.add.text(textX, yOffset, equipment.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${textFontSize - 2}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#8b949e',
         wordWrap: { width: textWidth },
       }).setOrigin(0, 0);
@@ -466,14 +455,13 @@ export class InventoryScene extends Phaser.Scene {
     const btnWidth = Math.max(100, Math.min(130, panelWidth * 0.2));
     const btnHeight = Math.max(42, Math.min(55, height * 0.08));
     const btnSpacing = btnWidth * 1.2;
-    const btnFontSize = Math.max(16, Math.min(20, width * 0.017));
 
     if (slotInfo.type === 'inventory') {
-      this.createPopupButton(-btnSpacing, btnY, '装备', () => this.equipItem(slotInfo), btnWidth, btnHeight, btnFontSize);
-      this.createPopupButton(0, btnY, '合成', () => this.startSynthesizeMode(slotInfo), btnWidth, btnHeight, btnFontSize);
-      this.createPopupButton(btnSpacing, btnY, '吞噬', () => this.startDevourMode(slotInfo), btnWidth, btnHeight, btnFontSize);
+      this.createPopupButton(-btnSpacing, btnY, '装备', () => this.equipItem(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
+      this.createPopupButton(0, btnY, '合成', () => this.startSynthesizeMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
+      this.createPopupButton(btnSpacing, btnY, '吞噬', () => this.startDevourMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
     } else {
-      this.createPopupButton(0, btnY, '卸下', () => this.unequipItem(slotInfo), btnWidth, btnHeight, btnFontSize);
+      this.createPopupButton(0, btnY, '卸下', () => this.unequipItem(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
     }
   }
 
@@ -618,7 +606,6 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const btnWidth = Math.max(100, Math.min(130, width * 0.11));
     const btnHeight = Math.max(36, Math.min(46, height * 0.065));
-    const fontSize = Math.max(14, Math.min(17, width * 0.015));
 
     // 按钮放在消息下方（消息在 height * 0.50，按钮在 height * 0.56）
     this.cancelButton = this.add.container(width / 2, height * 0.56);
@@ -631,7 +618,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const cancelText = this.add.text(cancelBtnX, 0, '取消', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -660,7 +647,7 @@ export class InventoryScene extends Phaser.Scene {
 
       const toggleText = this.add.text(width * 0.12, 0, getToggleText(this.useFragmentsToggle), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${fontSize - 1}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#f0e6d3',
       }).setOrigin(0.5);
 
@@ -748,7 +735,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const title = this.add.text(0, -100, '✨ 神器出世 ✨', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '32px',
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -762,7 +749,7 @@ export class InventoryScene extends Phaser.Scene {
     const wuxingSymbol = equipment.wuxing !== undefined ? this.getWuxingSymbol(equipment.wuxing) : '神';
     const symbolText = this.add.text(0, -20, wuxingSymbol, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -770,7 +757,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const nameText = this.add.text(0, 50, equipment.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '24px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -778,7 +765,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const rarityText = this.add.text(0, 85, this.getRarityName(equipment.rarity), {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: this.getRarityColor(equipment.rarity),
     }).setOrigin(0.5);
     this.specialNotification.add(rarityText);
@@ -786,7 +773,7 @@ export class InventoryScene extends Phaser.Scene {
     if (equipment.skill) {
       const skillText = this.add.text(0, 115, `【${equipment.skill.name}】${equipment.skill.description}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#d4a853',
         wordWrap: { width: 280 },
         align: 'center',
@@ -800,7 +787,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const btnText = this.add.text(0, 180, '太棒了！', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -851,7 +838,6 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const msgWidth = Math.max(400, Math.min(650, width * 0.55));
     const msgHeight = Math.max(50, Math.min(60, height * 0.085));
-    const fontSize = Math.max(15, Math.min(20, width * 0.017));
 
     // 放在装备区和背包区之间（按钮会在下方）
     this.topMessage = this.add.container(width / 2, height * 0.50);
@@ -865,7 +851,7 @@ export class InventoryScene extends Phaser.Scene {
 
     const text = this.add.text(0, 0, message, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: color,
       align: 'center',
     }).setOrigin(0.5);
@@ -928,11 +914,10 @@ export class InventoryScene extends Phaser.Scene {
   private createCloseButton(): void {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
-    const fontSize = Math.max(20, Math.min(28, width * 0.022));
 
     const closeBtn = this.add.text(width * 0.97, headerHeight / 2, '✕', {
       fontFamily: 'Arial',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#8b949e',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { WUXING_COLORS, Wuxing } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+import { uiConfig } from '../config/uiConfig.js';
 
 /**
  * 主菜单场景 - 响应式布局（基于屏幕百分比）
@@ -29,7 +30,7 @@ export class MenuScene extends Phaser.Scene {
     // 版本号 - 底部 5%
     this.add.text(width / 2, height * 0.95, 'v0.3.0', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${Math.max(12, height * 0.02)}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#484f58',
     }).setOrigin(0.5);
   }
@@ -60,10 +61,9 @@ export class MenuScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 主标题 - 顶部 12%
-    const titleSize = Math.max(28, Math.min(48, width * 0.04));
     const title = this.add.text(width / 2, height * 0.12, '西游肉鸽', {
       fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
-      fontSize: `${titleSize}px`,
+      fontSize: `${uiConfig.font3XL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     });
@@ -81,10 +81,9 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 副标题 - 顶部 20%
-    const subTitleSize = Math.max(12, Math.min(16, width * 0.015));
     this.add.text(width / 2, height * 0.20, '五行策略 · 回合对战', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${subTitleSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
   }
@@ -109,10 +108,9 @@ export class MenuScene extends Phaser.Scene {
       const circle = this.add.circle(x, y, circleRadius, color, 0.8);
       circle.setStrokeStyle(2, 0xffffff, 0.3);
 
-      const symbolSize = Math.max(12, Math.min(18, width * 0.015));
       const symbol = this.add.text(x, y, wuxingSymbols[index], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${symbolSize}px`,
+        fontSize: `${uiConfig.fontMD}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
 
@@ -129,10 +127,9 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 相克说明 - 五行下方
-    const descSize = Math.max(10, Math.min(12, width * 0.01));
     this.add.text(width / 2, y + circleRadius + 25, '相克：金→木→土→水→火→金', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${descSize}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
   }
@@ -166,8 +163,6 @@ export class MenuScene extends Phaser.Scene {
     // 响应式按钮尺寸
     const buttonWidth = Math.max(160, Math.min(260, width * 0.2));
     const buttonHeight = Math.max(50, Math.min(70, height * 0.1));
-    const mainFontSize = Math.max(16, Math.min(24, width * 0.02));
-    const subFontSize = Math.max(10, Math.min(14, width * 0.012));
 
     const container = this.add.container(x, y);
 
@@ -179,14 +174,14 @@ export class MenuScene extends Phaser.Scene {
 
     const buttonText = this.add.text(0, -buttonHeight * 0.12, text, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${mainFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: disabled ? '#484f58' : '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     const buttonSubText = this.add.text(0, buttonHeight * 0.2, subText, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${subFontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: disabled ? '#30363d' : '#8b949e',
     }).setOrigin(0.5);
 
@@ -234,7 +229,7 @@ export class MenuScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const tip = this.add.text(width / 2, height * 0.78, '多人模式开发中...', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
 

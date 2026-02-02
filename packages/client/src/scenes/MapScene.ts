@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES, generateEnemies, Combatant } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+import { uiConfig, LAYOUT } from '../config/uiConfig.js';
 
 interface BattleNodeInfo extends GameNode {
   enemies?: Combatant[];
@@ -72,10 +73,9 @@ export class MapScene extends Phaser.Scene {
     headerBg.fillRect(0, 0, width, headerHeight);
 
     // 回合数
-    const fontSize = Math.max(16, Math.min(24, width * 0.02));
     this.add.text(width / 2, headerHeight / 2, `第 ${this.currentRound} / ${this.maxRounds} 轮`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -92,7 +92,6 @@ export class MapScene extends Phaser.Scene {
     statsBg.fillRoundedRect(width * 0.02, y - statHeight / 2, width * 0.96, statHeight, 8);
 
     const player = gameState.getPlayerState();
-    const fontSize = Math.max(10, Math.min(14, width * 0.012));
 
     // HP 条
     const hpBarWidth = width * 0.1;
@@ -112,7 +111,7 @@ export class MapScene extends Phaser.Scene {
 
     this.add.text(hpX + hpBarWidth / 2, y, `${player.hp}/${player.maxHp}`, {
       fontFamily: 'monospace',
-      fontSize: `${fontSize - 2}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -121,13 +120,13 @@ export class MapScene extends Phaser.Scene {
     const atkDefX = width * 0.18;
     this.add.text(atkDefX, y - 8, `⚔️ ${gameState.getTotalAttack()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#f85149',
     }).setOrigin(0, 0.5);
 
     this.add.text(atkDefX, y + 8, `🛡️ ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#58a6ff',
     }).setOrigin(0, 0.5);
 
@@ -142,7 +141,7 @@ export class MapScene extends Phaser.Scene {
       this.add.circle(wuxingX, y, circleSize, color).setStrokeStyle(1, 0xffffff, 0.5);
       this.add.text(wuxingX, y, `${weapon.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: `${fontSize - 2}px`,
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
       wuxingX += circleSize * 3;
@@ -153,7 +152,7 @@ export class MapScene extends Phaser.Scene {
       this.add.circle(wuxingX, y, circleSize, color).setStrokeStyle(1, 0xffffff, 0.5);
       this.add.text(wuxingX, y, `${armor.wuxingLevel ?? 1}`, {
         fontFamily: 'monospace',
-        fontSize: `${fontSize - 2}px`,
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
     }
@@ -163,7 +162,7 @@ export class MapScene extends Phaser.Scene {
     if (fragments > 0) {
       this.add.text(width * 0.96, y, `💎 ${fragments}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${fontSize}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#a855f7',
       }).setOrigin(1, 0.5);
     }
@@ -181,10 +180,9 @@ export class MapScene extends Phaser.Scene {
     bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
-    const fontSize = Math.max(12, Math.min(18, width * 0.015));
     const text = this.add.text(btnX, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -295,10 +293,9 @@ export class MapScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 标题 - 28%
-    const titleSize = Math.max(16, Math.min(24, width * 0.02));
     this.add.text(width / 2, height * 0.28, '选择下一步', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -330,12 +327,10 @@ export class MapScene extends Phaser.Scene {
     bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     container.add(bgGraphics);
 
-    // 左右布局：左侧图标区域，右侧文字区域
-    const iconAreaX = -cardWidth * 0.28;
-    const textAreaX = cardWidth * 0.08;
-    const nameFontSize = Math.max(18, Math.min(26, cardWidth * 0.085));
-    const descFontSize = Math.max(12, Math.min(18, cardWidth * 0.055));
-    const infoFontSize = Math.max(11, Math.min(16, cardWidth * 0.05));
+    // 左右布局：35% 图标区域，65% 文字区域
+    const iconAreaX = uiConfig.getIconCenterX(cardWidth);
+    const textAreaX = uiConfig.getTextStartX(cardWidth);
+    const textWidth = uiConfig.getTextWidth(cardWidth);
 
     // 如果是战斗节点，显示敌人预览
     if (node.enemies && node.enemies.length > 0) {
@@ -357,7 +352,7 @@ export class MapScene extends Phaser.Scene {
         const levelStr = enemy.attackWuxing?.level?.toString() ?? '?';
         const levelText = this.add.text(ex, ey, levelStr, {
           fontFamily: 'monospace',
-          fontSize: `${enemyIconSize * 0.65}px`,
+          fontSize: `${uiConfig.fontMD}px`,
           color: '#ffffff',
           fontStyle: 'bold',
         }).setOrigin(0.5);
@@ -370,17 +365,16 @@ export class MapScene extends Phaser.Scene {
       iconBg.setStrokeStyle(2, nodeColor, 0.6);
       container.add(iconBg);
 
-      const iconFontSize = Math.max(28, Math.min(42, cardWidth * 0.14));
       const icon = this.add.text(iconAreaX, 0, this.getNodeIcon(node.type), {
-        fontSize: `${iconFontSize}px`,
+        fontSize: `${uiConfig.fontXL}px`,
       }).setOrigin(0.5);
       container.add(icon);
     }
 
-    // 右侧文字区域
+    // 右侧文字区域（左对齐）
     const nameText = this.add.text(textAreaX, -cardHeight * 0.18, node.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${nameFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0, 0.5);
@@ -388,9 +382,9 @@ export class MapScene extends Phaser.Scene {
 
     const descText = this.add.text(textAreaX, cardHeight * 0.05, node.description, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${descFontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#8b949e',
-      wordWrap: { width: cardWidth * 0.52 },
+      wordWrap: { width: textWidth },
     }).setOrigin(0, 0.5);
     container.add(descText);
 
@@ -399,7 +393,7 @@ export class MapScene extends Phaser.Scene {
     if (infoText) {
       const info = this.add.text(textAreaX, cardHeight * 0.28, infoText, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${infoFontSize}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: this.getNodeInfoColor(node.type),
       }).setOrigin(0, 0.5);
       container.add(info);
@@ -528,12 +522,12 @@ export class MapScene extends Phaser.Scene {
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
     const icon = this.add.text(width / 2, height / 2 - panelHeight * 0.2, '🏕️', {
-      fontSize: '48px',
+      fontSize: `${uiConfig.font2XL}px`,
     }).setOrigin(0.5);
 
     const text = this.add.text(width / 2, height / 2 + panelHeight * 0.15, '休息中...\n生命值已恢复', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#3fb950',
       align: 'center',
     }).setOrigin(0.5);
@@ -578,12 +572,12 @@ export class MapScene extends Phaser.Scene {
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
     const icon = this.add.text(width / 2, height / 2 - panelHeight * 0.2, emoji, {
-      fontSize: '48px',
+      fontSize: `${uiConfig.font2XL}px`,
     }).setOrigin(0.5);
 
     const text = this.add.text(width / 2, height / 2 + panelHeight * 0.15, message, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: color,
       align: 'center',
     }).setOrigin(0.5);

@@ -20,6 +20,7 @@ import {
   getTotalDefense,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+import { uiConfig, LAYOUT } from '../config/uiConfig.js';
 
 interface DisplayCombatant {
   id: string;
@@ -115,18 +116,16 @@ export class BattleScene extends Phaser.Scene {
     const titleText = this.nodeType === 'final' ? '最终决战' :
                       this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
 
-    const titleSize = Math.max(18, Math.min(28, width * 0.022));
     this.add.text(width / 2, height * 0.065, titleText, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleSize}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const infoSize = Math.max(12, Math.min(16, width * 0.013));
     this.add.text(width * 0.04, height * 0.065, `第 ${this.round} 轮`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${infoSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
 
@@ -134,19 +133,17 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createPlayerStatusBar(x: number, y: number): void {
-    const { width } = this.cameras.main;
     const player = gameState.getPlayerState();
-    const fontSize = Math.max(10, Math.min(14, width * 0.011));
 
     this.topBarHpText = this.add.text(x, y - 12, `❤️ ${player.hp}/${player.maxHp}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#f85149',
     }).setOrigin(1, 0.5);
 
     this.add.text(x, y + 12, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize - 2}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#8b949e',
     }).setOrigin(1, 0.5);
   }
@@ -193,10 +190,9 @@ export class BattleScene extends Phaser.Scene {
     btnBg.setInteractive({ useHandCursor: true });
     this.inventoryButton.add(btnBg);
 
-    const fontSize = Math.max(10, Math.min(14, width * 0.011));
     const btnText = this.add.text(0, 0, '📦 背包', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${fontSize}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
     this.inventoryButton.add(btnText);
@@ -357,21 +353,19 @@ export class BattleScene extends Phaser.Scene {
     body.setStrokeStyle(3, this.colors.paperWhite, 0.6);
 
     const wuxingSymbol = this.getWuxingSymbol(combatant.wuxing);
-    const symbolSize = Math.max(16, Math.min(28, width * 0.022));
     const symbolText = this.add.text(0, 0, wuxingSymbol, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${combatant.isPlayer ? symbolSize : symbolSize * 0.85}px`,
+      fontSize: `${combatant.isPlayer ? uiConfig.fontLG : uiConfig.fontMD}px`,
       color: '#ffffff',
     }).setOrigin(0.5);
 
     const nameY = hpBarOffsetY - height * 0.035;
-    const nameSize = Math.max(10, Math.min(13, width * 0.01));
     const nameBg = this.add.rectangle(0, nameY, width * 0.09, height * 0.03, this.colors.inkBlack, 0.8);
     nameBg.setStrokeStyle(1, bodyColor, 0.5);
 
     const nameText = this.add.text(0, nameY, combatant.name, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${nameSize}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -401,20 +395,18 @@ export class BattleScene extends Phaser.Scene {
     hpBar.setName('hpBar');
     hpBar.setData('maxWidth', hpBarWidth);
 
-    const hpTextSize = Math.max(8, Math.min(10, width * 0.008));
     const hpText = this.add.text(0, hpBarOffsetY, `${combatant.hp}`, {
       fontFamily: 'monospace',
-      fontSize: `${hpTextSize}px`,
+      fontSize: `${uiConfig.fontXS - 2}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     hpText.setName('hpText');
 
     if (combatant.isPlayer) {
-      const markerSize = Math.max(9, Math.min(11, width * 0.009));
       const playerMarker = this.add.text(0, bodySize + height * 0.035, '▲ 玩家', {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${markerSize}px`,
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#d4a853',
       }).setOrigin(0.5);
       container.add(playerMarker);
@@ -695,10 +687,9 @@ export class BattleScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
-    const titleSize = Math.max(26, Math.min(36, width * 0.03));
     const title = this.add.text(width / 2, height * 0.08, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleSize}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -746,7 +737,7 @@ export class BattleScene extends Phaser.Scene {
       const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
       const levelText = this.add.text(0, -slotSize * 0.08, levelStr, {
         fontFamily: 'monospace',
-        fontSize: `${slotSize * 0.24}px`,
+        fontSize: `${uiConfig.fontMD}px`,
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
@@ -754,7 +745,7 @@ export class BattleScene extends Phaser.Scene {
 
       const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
       const typeText = this.add.text(0, slotSize * 0.3, typeIcon, {
-        fontSize: `${slotSize * 0.22}px`,
+        fontSize: `${uiConfig.fontMD}px`,
       }).setOrigin(0.5);
       slotContainer.add(typeText);
 
@@ -765,10 +756,9 @@ export class BattleScene extends Phaser.Scene {
       });
     });
 
-    const infoFontSize = Math.max(14, Math.min(18, width * 0.015));
     const countText = this.add.text(width / 2, startY + rows * slotSpacing + 25, `共 ${items.length} 件`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${infoFontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
     lootContainer.add(countText);
@@ -776,7 +766,7 @@ export class BattleScene extends Phaser.Scene {
     if (fragmentsGained > 0) {
       const fragmentText = this.add.text(width / 2, startY + rows * slotSpacing + 50, `${fragmentsGained} 件物品已炼化为碎片`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${infoFontSize - 2}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#a855f7',
       }).setOrigin(0.5);
       lootContainer.add(fragmentText);
@@ -786,7 +776,6 @@ export class BattleScene extends Phaser.Scene {
     const btnWidth = width * 0.15;
     const btnHeight = height * 0.08;
     const btnSpacing = width * 0.18;
-    const btnFontSize = Math.max(14, Math.min(18, width * 0.015));
 
     // 背包按钮
     const bagBtnBg = this.add.rectangle(width / 2 - btnSpacing / 2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
@@ -796,7 +785,7 @@ export class BattleScene extends Phaser.Scene {
 
     const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", serif',
-      fontSize: `${btnFontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
     lootContainer.add(bagBtnText);
@@ -825,7 +814,7 @@ export class BattleScene extends Phaser.Scene {
 
     const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续冒险', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${btnFontSize}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -868,16 +857,12 @@ export class BattleScene extends Phaser.Scene {
     bg.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     popup.add(bg);
 
-    // 响应式字体 - 更大
-    const titleFontSize = Math.max(24, Math.min(32, width * 0.028));
-    const labelFontSize = Math.max(18, Math.min(24, width * 0.02));
-    const textFontSize = Math.max(16, Math.min(22, width * 0.018));
     const iconRadius = Math.max(50, Math.min(70, panelHeight * 0.16));
 
-    // 左右布局：左侧图标，右侧文字
-    const iconX = -panelWidth * 0.3;
-    const textX = panelWidth * 0.05;
-    const textWidth = panelWidth * 0.55;
+    // 左右布局：35% 图标，65% 文字
+    const iconX = uiConfig.getIconCenterX(panelWidth);
+    const textX = uiConfig.getTextStartX(panelWidth);
+    const textWidth = uiConfig.getTextWidth(panelWidth);
     const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
 
     // 左侧：装备图标
@@ -888,7 +873,7 @@ export class BattleScene extends Phaser.Scene {
     const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
     const levelText = this.add.text(iconX, -panelHeight * 0.08, levelStr, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleFontSize + 4}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -897,7 +882,7 @@ export class BattleScene extends Phaser.Scene {
     // 类型图标
     const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
     const typeIconText = this.add.text(iconX, panelHeight * 0.1, typeIcon, {
-      fontSize: `${iconRadius * 0.5}px`,
+      fontSize: `${uiConfig.fontXL}px`,
     }).setOrigin(0.5);
     popup.add(typeIconText);
 
@@ -907,36 +892,36 @@ export class BattleScene extends Phaser.Scene {
     // 名称
     const nameText = this.add.text(textX, yOffset, item.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleFontSize}px`,
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0, 0.5);
     popup.add(nameText);
 
-    yOffset += titleFontSize + 12;
+    yOffset += uiConfig.fontXL + 12;
 
     // 类型 + 稀有度
     const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '法宝';
     const typeRarityText = this.add.text(textX, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: this.getRarityColor(item.rarity),
     }).setOrigin(0, 0.5);
     popup.add(typeRarityText);
 
-    yOffset += labelFontSize + 10;
+    yOffset += uiConfig.fontLG + 10;
 
     // 五行属性
     const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
     const wuxingLevelStr = item.wuxing !== undefined ? ` Lv.${item.wuxingLevel ?? 1}` : '';
     const wuxingText = this.add.text(textX, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),
     }).setOrigin(0, 0.5);
     popup.add(wuxingText);
 
-    yOffset += labelFontSize + 10;
+    yOffset += uiConfig.fontLG + 10;
 
     // 攻防
     const stats: string[] = [];
@@ -945,11 +930,11 @@ export class BattleScene extends Phaser.Scene {
     if (stats.length > 0) {
       const statsText = this.add.text(textX, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${textFontSize}px`,
+        fontSize: `${uiConfig.fontMD}px`,
         color: '#f0e6d3',
       }).setOrigin(0, 0.5);
       popup.add(statsText);
-      yOffset += textFontSize + 10;
+      yOffset += uiConfig.fontMD + 10;
     }
 
     // 技能
@@ -957,16 +942,16 @@ export class BattleScene extends Phaser.Scene {
       yOffset += 5;
       const skillNameText = this.add.text(textX, yOffset, `【${item.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${labelFontSize}px`,
+        fontSize: `${uiConfig.fontLG}px`,
         color: '#d4a853',
         fontStyle: 'bold',
       }).setOrigin(0, 0.5);
       popup.add(skillNameText);
 
-      yOffset += labelFontSize + 8;
+      yOffset += uiConfig.fontLG + 8;
       const skillDescText = this.add.text(textX, yOffset, item.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${textFontSize - 2}px`,
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#8b949e',
         wordWrap: { width: textWidth },
       }).setOrigin(0, 0);
@@ -975,7 +960,7 @@ export class BattleScene extends Phaser.Scene {
 
     const closeText = this.add.text(0, panelHeight / 2 - 25, '点击其他地方关闭', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${textFontSize - 3}px`,
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
     popup.add(closeText);
@@ -1111,7 +1096,7 @@ export class BattleScene extends Phaser.Scene {
 
       const centerText = this.add.text(width / 2, height / 2, text, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '42px',
+        fontSize: `${uiConfig.font2XL}px`,
         color: color,
         fontStyle: 'bold',
         stroke: '#000000',
@@ -1157,14 +1142,14 @@ export class BattleScene extends Phaser.Scene {
 
     this.add.text(width / 2, height / 2 - panelHeight * 0.25, '败 北', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '48px',
+      fontSize: `${uiConfig.font3XL}px`,
       color: '#f85149',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     this.add.text(width / 2, height / 2, '西游路漫漫，来日再战', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
 
@@ -1178,7 +1163,7 @@ export class BattleScene extends Phaser.Scene {
 
     const btnText = this.add.text(width / 2, btnY, '返回主菜单', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
@@ -1213,20 +1198,20 @@ export class BattleScene extends Phaser.Scene {
 
     this.add.text(width / 2, height / 2 - panelHeight * 0.28, '✨ 通关成功 ✨', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '42px',
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     this.add.text(width / 2, height / 2 - panelHeight * 0.05, '恭喜你完成了西游肉鸽！', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '18px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
     this.add.text(width / 2, height / 2 + panelHeight * 0.08, '取经路漫漫，终得正果', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
 
@@ -1240,7 +1225,7 @@ export class BattleScene extends Phaser.Scene {
 
     const btnText = this.add.text(width / 2, btnY, '再来一局', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { uiConfig } from '../config/uiConfig.js';
 
 /**
  * 启动场景 - 加载资源
@@ -12,6 +13,14 @@ export class BootScene extends Phaser.Scene {
     // 显示加载进度
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+
+    // 初始化全局 UI 配置
+    uiConfig.init(width, height);
+
+    // 开发模式下暴露 uiConfig，方便调试字体大小
+    if (import.meta.env.DEV) {
+      (window as any).uiConfig = uiConfig;
+    }
 
     const progressBar = this.add.graphics();
     const progressBox = this.add.graphics();
