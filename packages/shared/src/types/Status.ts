@@ -179,7 +179,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.METAL_PENETRATE]: {
     id: StatusType.METAL_PENETRATE,
     name: '破金',
-    description: '金属性武器的锐利之力，无视敌人部分防御。',
+    description: '金属性的锐利之力，无视敌人部分防御。',
     effects: ['无视敌人 10%-70% 防御（随等级提升）'],
     icon: '⚔',
     color: '#c0c0c0',
@@ -187,7 +187,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.METAL_BLEED]: {
     id: StatusType.METAL_BLEED,
     name: '裂伤',
-    description: '金属性武器的锋芒可造成流血效果。',
+    description: '金属性的锋芒可造成流血效果。',
     effects: ['攻击有概率造成流血', '流血每回合造成最大生命值百分比伤害', '流血可叠加'],
     icon: '🩸',
     color: '#c0c0c0',
@@ -197,7 +197,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WOOD_REGEN]: {
     id: StatusType.WOOD_REGEN,
     name: '生机',
-    description: '木属性铠甲蕴含的生命之力，持续恢复生命。',
+    description: '木属性蕴含的生命之力，持续恢复生命。',
     effects: ['每回合恢复 3%-15% 最大生命值（随等级提升）', '低血量时恢复翻倍（Lv4+）'],
     icon: '🌿',
     color: '#228b22',
@@ -205,7 +205,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WOOD_SURVIVE]: {
     id: StatusType.WOOD_SURVIVE,
     name: '不朽',
-    description: '木属性铠甲的生命守护，在致命一击时保留一丝生机。',
+    description: '木属性的生命守护，在致命一击时保留一丝生机。',
     effects: ['每回合首次受到致命伤害时，保留 1 点生命值'],
     icon: '🛡',
     color: '#228b22',
@@ -213,7 +213,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WOOD_REVIVE]: {
     id: StatusType.WOOD_REVIVE,
     name: '涅槃',
-    description: '木属性铠甲的究极力量，可从死亡中复生。',
+    description: '木属性的究极力量，可从死亡中复生。',
     effects: ['战斗中死亡时，以 50% 生命值复活（每场战斗一次）'],
     icon: '🌳',
     color: '#228b22',
@@ -223,7 +223,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WATER_SLOW]: {
     id: StatusType.WATER_SLOW,
     name: '寒息',
-    description: '水属性武器的寒气可减缓敌人行动。',
+    description: '水属性的寒气可减缓敌人行动。',
     effects: ['攻击有概率造成减速', '对减速目标伤害 +15%（Lv3+）'],
     icon: '❄',
     color: '#4169e1',
@@ -231,7 +231,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WATER_FREEZE]: {
     id: StatusType.WATER_FREEZE,
     name: '冰封',
-    description: '水属性武器的极寒之力可冻结敌人。',
+    description: '水属性的极寒之力可冻结敌人。',
     effects: ['攻击有概率冻结敌人', '被冻结的敌人跳过下一回合'],
     icon: '🧊',
     color: '#4169e1',
@@ -239,7 +239,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.WATER_SHATTER]: {
     id: StatusType.WATER_SHATTER,
     name: '冰碎',
-    description: '水属性武器的终极冰霜之力。',
+    description: '水属性的终极冰霜之力。',
     effects: ['冻结解除时对敌人造成额外伤害'],
     icon: '💎',
     color: '#4169e1',
@@ -249,7 +249,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.FIRE_BURN]: {
     id: StatusType.FIRE_BURN,
     name: '灼烧',
-    description: '火属性武器的炎热可灼伤敌人。',
+    description: '火属性的炎热可灼伤敌人。',
     effects: ['攻击造成灼烧效果', '灼烧每回合造成最大生命值百分比伤害'],
     icon: '🔥',
     color: '#ff4500',
@@ -257,7 +257,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.FIRE_STACK]: {
     id: StatusType.FIRE_STACK,
     name: '烈焰',
-    description: '火属性武器的烈焰可以层层叠加。',
+    description: '火属性的烈焰可以层层叠加。',
     effects: ['灼烧可叠加至 3 层', '每层增加灼烧伤害'],
     icon: '🔥',
     color: '#ff4500',
@@ -265,7 +265,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.FIRE_EXPLODE]: {
     id: StatusType.FIRE_EXPLODE,
     name: '引爆',
-    description: '火属性武器的爆裂之力。',
+    description: '火属性的爆裂之力。',
     effects: ['灼烧叠满 3 层时引爆', '引爆造成最大生命值 20%-35% 伤害'],
     icon: '💥',
     color: '#ff4500',
@@ -273,7 +273,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.FIRE_EMBER]: {
     id: StatusType.FIRE_EMBER,
     name: '余烬',
-    description: '火属性武器的究极火焰之力。',
+    description: '火属性的究极火焰之力。',
     effects: ['引爆后敌人进入余烬状态', '余烬状态下受到的火属性伤害 +50%'],
     icon: '🌋',
     color: '#ff4500',
@@ -283,7 +283,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.EARTH_REDUCE]: {
     id: StatusType.EARTH_REDUCE,
     name: '坚韧',
-    description: '土属性铠甲的防护之力，减少受到的伤害。',
+    description: '土属性的防护之力，减少受到的伤害。',
     effects: ['受到的所有伤害减少 10%-45%（随等级提升）'],
     icon: '🪨',
     color: '#8b4513',
@@ -291,7 +291,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.EARTH_REFLECT]: {
     id: StatusType.EARTH_REFLECT,
     name: '反震',
-    description: '土属性铠甲可以反弹部分伤害给攻击者。',
+    description: '土属性可以反弹部分伤害给攻击者。',
     effects: ['受到攻击时反弹 15%-40% 伤害给攻击者'],
     icon: '↩',
     color: '#8b4513',
@@ -299,7 +299,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.EARTH_IMMUNE]: {
     id: StatusType.EARTH_IMMUNE,
     name: '不动',
-    description: '土属性铠甲的稳固之力，高血量时免疫控制。',
+    description: '土属性的稳固之力，高血量时免疫控制。',
     effects: ['生命值高于 70% 时免疫冻结、减速等控制效果'],
     icon: '⛰',
     color: '#8b4513',
@@ -307,7 +307,7 @@ export const STATUS_DEFINITIONS: Record<StatusType, StatusDefinition> = {
   [StatusType.EARTH_REVENGE]: {
     id: StatusType.EARTH_REVENGE,
     name: '蓄力',
-    description: '土属性铠甲的积蓄之力，承受攻击后爆发。',
+    description: '土属性的积蓄之力，承受攻击后爆发。',
     effects: ['每承受 3 次攻击后', '下一次攻击伤害 +100%'],
     icon: '💪',
     color: '#8b4513',
@@ -351,7 +351,7 @@ export interface WuxingPassiveStatus {
 
 /**
  * 根据装备获取激活的五行被动状态
- * 统计所有装备(武器+铠甲+法宝)的五行，相同五行等级相加
+ * 统计所有装备的五行，相同五行等级相加
  */
 export function getWuxingPassiveStatuses(equipment: PlayerEquipment): WuxingPassiveStatus[] {
   const statuses: WuxingPassiveStatus[] = [];

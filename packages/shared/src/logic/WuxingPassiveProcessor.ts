@@ -380,10 +380,10 @@ export function applyDefenseWuxingEffects(
   let reflectDamage = 0;
   let damageReduced = 0;
 
-  // 土属性减伤
+  // 土属性减伤（最少减少1点伤害）
   const damageReduction = defender.damageReduction ?? 0;
   if (damageReduction > 0) {
-    const reduction = Math.floor(damage * damageReduction / 100);
+    const reduction = Math.max(1, Math.floor(damage * damageReduction / 100));
     damageReduced = reduction;
     modifiedDamage = Math.max(1, damage - reduction);
   }

@@ -132,18 +132,36 @@ export const BOSS_ENEMIES: EnemyTemplate[] = [
 ];
 
 /**
- * 根据回合数计算基础怪物数量
- * 回合1: 1只, 回合2-3: 1-2只, 回合4-5: 2只, 回合6+: 2-3只
+ * 根据回合数计算普通战斗怪物数量
+ * 回合1: 1只, 回合2: 1-2只, 回合3: 2只, 回合4: 2-3只, 回合5+: 3只
  */
-function getBaseMonsterCount(round: number): number {
+function getNormalMonsterCount(round: number): number {
   if (round === 1) {
     return 1;
-  } else if (round <= 3) {
+  } else if (round === 2) {
     return Math.random() < 0.5 ? 1 : 2;
-  } else if (round <= 5) {
+  } else if (round === 3) {
     return 2;
+  } else if (round === 4) {
+    return Math.random() < 0.5 ? 2 : 3;
   } else {
-    return Math.random() < 0.6 ? 2 : 3;
+    return 3;
+  }
+}
+
+/**
+ * 根据回合数计算精英战斗小兵数量
+ * 回合1-2: 0只, 回合3: 1只, 回合4: 1-2只, 回合5+: 2只
+ */
+function getEliteMinionCount(round: number): number {
+  if (round <= 2) {
+    return 0;
+  } else if (round === 3) {
+    return 1;
+  } else if (round === 4) {
+    return Math.random() < 0.5 ? 1 : 2;
+  } else {
+    return 2;
   }
 }
 
@@ -166,21 +184,22 @@ export function generateEnemies(
 
   if (nodeType === 'normal') {
     // 普通战斗：根据回合数逐渐增加怪物数量
-    const baseCount = getBaseMonsterCount(round);
+    const baseCount = getNormalMonsterCount(round);
     const count = Math.min(baseCount + monsterCountBonus, 4); // 最多4个
     for (let i = 0; i < count; i++) {
       const template = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
       enemies.push(createCombatantFromTemplate(template, i, scaling));
     }
   } else if (nodeType === 'elite') {
-    // 精英战斗：1个精英怪 + 可能1个小怪（回合4+）
-    const template = ELITE_ENEMIES[Math.floor(Math.random() * ELITE_ENEMIES.length)];
-    enemies.push(createCombatantFromTemplate(template, 0, scaling));
+    // 精英战斗：1个精英怪 + 随回合增加的小兵
+    const eliteTemplate = ELITE_ENEMIES[Math.floor(Math.random() * ELITE_ENEMIES.length)];
+    enemies.push(createCombatantFromTemplate(eliteTemplate, 0, scaling));
 
-    // 回合4以后，精英战有50%概率带1个小怪
-    if (round >= 4 && Math.random() < 0.5) {
+    // 根据回合数添加小兵
+    const minionCount = getEliteMinionCount(round);
+    for (let i = 0; i < minionCount; i++) {
       const minionTemplate = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
-      enemies.push(createCombatantFromTemplate(minionTemplate, 1, scaling * 0.8));
+      enemies.push(createCombatantFromTemplate(minionTemplate, i + 1, scaling * 0.8));
     }
   } else {
     // Boss 战斗：1个Boss + 2个小兵
@@ -206,11 +225,11 @@ export function getEnemyCount(
   monsterCountBonus: number = 0
 ): number {
   if (nodeType === 'normal') {
-    const baseCount = getBaseMonsterCount(round);
+    const baseCount = getNormalMonsterCount(round);
     return Math.min(baseCount + monsterCountBonus, 4);
   } else if (nodeType === 'elite') {
-    // 精英战斗：1个精英怪 + 可能1个小怪（回合4+）
-    return round >= 4 && Math.random() < 0.5 ? 2 : 1;
+    // 精英战斗：1个精英怪 + 小兵
+    return 1 + getEliteMinionCount(round);
   } else {
     // Boss战斗：1 Boss + 2小兵
     return 3;

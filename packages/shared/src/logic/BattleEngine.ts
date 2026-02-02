@@ -321,6 +321,22 @@ export class BattleEngine {
     const totalIgnoreDefense = skillIgnoreDefense + wuxingIgnoreDefense;
     const damageResult = calculateFinalDamage(attacker, defender, totalIgnoreDefense);
 
+    // 金属性破防额外伤害（计算破防带来的伤害提升）
+    if (wuxingIgnoreDefense > 0 && damageResult.damage > 0) {
+      // 计算无破防时的伤害
+      const damageWithoutPenetrate = calculateFinalDamage(attacker, defender, skillIgnoreDefense);
+      const penetrateBonusDamage = Math.max(0, damageResult.damage - damageWithoutPenetrate.damage);
+      if (penetrateBonusDamage > 0) {
+        events.push({
+          type: 'armor_penetrate',
+          actorId: attacker.id,
+          targetId: defender.id,
+          value: penetrateBonusDamage,
+          message: '破金',
+        });
+      }
+    }
+
     // 处理攻击技能
     const hitResult = processOnHitSkills(attacker, defender, damageResult.damage);
     events.push(...hitResult.events);

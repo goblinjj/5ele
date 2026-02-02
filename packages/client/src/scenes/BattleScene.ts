@@ -743,6 +743,18 @@ export class BattleScene extends Phaser.Scene {
         }
         break;
 
+      case 'armor_penetrate':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            // 显示破金额外伤害（伤害已包含在主伤害中，这里只是展示效果）
+            const skillName = event.message || '破金';
+            this.showFloatingText(target, `${skillName} +${event.value}`, '#c0c0c0', 18, -60);
+            await this.delay(damageDelay / 4);
+          }
+        }
+        break;
+
       case 'damage_reduced':
         if (event.targetId && event.value !== undefined) {
           const target = this.displayCombatants.get(event.targetId);
