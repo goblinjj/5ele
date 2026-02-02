@@ -330,25 +330,34 @@ export class MapScene extends Phaser.Scene {
     bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     container.add(bgGraphics);
 
+    // 左右布局：左侧图标区域，右侧文字区域
+    const iconAreaX = -cardWidth * 0.28;
+    const textAreaX = cardWidth * 0.08;
+    const nameFontSize = Math.max(18, Math.min(26, cardWidth * 0.085));
+    const descFontSize = Math.max(12, Math.min(18, cardWidth * 0.055));
+    const infoFontSize = Math.max(11, Math.min(16, cardWidth * 0.05));
+
     // 如果是战斗节点，显示敌人预览
     if (node.enemies && node.enemies.length > 0) {
-      const enemyIconSize = Math.max(18, Math.min(28, cardWidth * 0.09));
-      const enemySpacing = enemyIconSize * 1.4;
-      const enemyStartX = -((node.enemies.length - 1) * enemySpacing) / 2;
-      const enemyY = -cardHeight * 0.18;
+      const enemyIconSize = Math.max(22, Math.min(32, cardWidth * 0.11));
+      const enemySpacing = enemyIconSize * 1.3;
+      const maxPerRow = 2;
 
       node.enemies.forEach((enemy, i) => {
-        const ex = enemyStartX + i * enemySpacing;
+        const row = Math.floor(i / maxPerRow);
+        const col = i % maxPerRow;
+        const ex = iconAreaX - (maxPerRow - 1) * enemySpacing / 2 + col * enemySpacing;
+        const ey = -cardHeight * 0.1 + row * enemySpacing;
         const enemyColor = enemy.attackWuxing?.wuxing !== undefined ? WUXING_COLORS[enemy.attackWuxing.wuxing] : 0x8b949e;
 
-        const enemyIcon = this.add.circle(ex, enemyY, enemyIconSize, enemyColor, 0.9);
+        const enemyIcon = this.add.circle(ex, ey, enemyIconSize, enemyColor, 0.9);
         enemyIcon.setStrokeStyle(2, 0xffffff, 0.5);
         container.add(enemyIcon);
 
         const levelStr = enemy.attackWuxing?.level?.toString() ?? '?';
-        const levelText = this.add.text(ex, enemyY, levelStr, {
+        const levelText = this.add.text(ex, ey, levelStr, {
           fontFamily: 'monospace',
-          fontSize: `${enemyIconSize * 0.6}px`,
+          fontSize: `${enemyIconSize * 0.65}px`,
           color: '#ffffff',
           fontStyle: 'bold',
         }).setOrigin(0.5);
@@ -356,46 +365,43 @@ export class MapScene extends Phaser.Scene {
       });
     } else {
       // 非战斗节点显示图标
-      const iconSize = Math.max(25, Math.min(40, cardWidth * 0.12));
-      const iconBg = this.add.circle(0, -cardHeight * 0.22, iconSize, nodeColor, 0.3);
+      const iconSize = Math.max(35, Math.min(50, cardWidth * 0.16));
+      const iconBg = this.add.circle(iconAreaX, 0, iconSize, nodeColor, 0.3);
       iconBg.setStrokeStyle(2, nodeColor, 0.6);
       container.add(iconBg);
 
-      const iconFontSize = Math.max(20, Math.min(36, cardWidth * 0.1));
-      const icon = this.add.text(0, -cardHeight * 0.22, this.getNodeIcon(node.type), {
+      const iconFontSize = Math.max(28, Math.min(42, cardWidth * 0.14));
+      const icon = this.add.text(iconAreaX, 0, this.getNodeIcon(node.type), {
         fontSize: `${iconFontSize}px`,
       }).setOrigin(0.5);
       container.add(icon);
     }
 
-    // 名称居中
-    const nameFontSize = Math.max(14, Math.min(22, cardWidth * 0.065));
-    const nameText = this.add.text(0, cardHeight * 0.08, node.name, {
+    // 右侧文字区域
+    const nameText = this.add.text(textAreaX, -cardHeight * 0.18, node.name, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${nameFontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     container.add(nameText);
 
-    // 描述居中
-    const descFontSize = Math.max(10, Math.min(14, cardWidth * 0.04));
-    const descText = this.add.text(0, cardHeight * 0.25, node.description, {
+    const descText = this.add.text(textAreaX, cardHeight * 0.05, node.description, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${descFontSize}px`,
       color: '#8b949e',
-    }).setOrigin(0.5);
+      wordWrap: { width: cardWidth * 0.52 },
+    }).setOrigin(0, 0.5);
     container.add(descText);
 
     // 额外信息
     const infoText = this.getNodeInfo(node.type);
     if (infoText) {
-      const infoFontSize = Math.max(9, Math.min(12, cardWidth * 0.035));
-      const info = this.add.text(0, cardHeight * 0.38, infoText, {
+      const info = this.add.text(textAreaX, cardHeight * 0.28, infoText, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${infoFontSize}px`,
         color: this.getNodeInfoColor(node.type),
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       container.add(info);
     }
 

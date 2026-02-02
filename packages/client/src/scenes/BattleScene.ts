@@ -70,6 +70,7 @@ export class BattleScene extends Phaser.Scene {
 
   private inventoryButton?: Phaser.GameObjects.Container;
   private isBattleRunning: boolean = false;
+  private topBarHpText?: Phaser.GameObjects.Text;
 
   create(): void {
     this.createBackground();
@@ -137,7 +138,7 @@ export class BattleScene extends Phaser.Scene {
     const player = gameState.getPlayerState();
     const fontSize = Math.max(10, Math.min(14, width * 0.011));
 
-    this.add.text(x, y - 12, `❤️ ${player.hp}/${player.maxHp}`, {
+    this.topBarHpText = this.add.text(x, y - 12, `❤️ ${player.hp}/${player.maxHp}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${fontSize}px`,
       color: '#f85149',
@@ -148,6 +149,13 @@ export class BattleScene extends Phaser.Scene {
       fontSize: `${fontSize - 2}px`,
       color: '#8b949e',
     }).setOrigin(1, 0.5);
+  }
+
+  private updateTopBarHp(): void {
+    if (this.topBarHpText) {
+      const player = gameState.getPlayerState();
+      this.topBarHpText.setText(`❤️ ${player.hp}/${player.maxHp}`);
+    }
   }
 
   private createBattleField(): void {
@@ -544,6 +552,11 @@ export class BattleScene extends Phaser.Scene {
             this.showDamage(target, event.value, event.isCritical || false);
             this.createHitParticles(target);
             this.updateHpBar(target);
+            // 如果是玩家受伤，更新顶部血条
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
             await this.delay(damageDelay);
           }
         }
@@ -560,6 +573,11 @@ export class BattleScene extends Phaser.Scene {
             this.showHeal(target, event.value);
             this.createHealParticles(target);
             this.updateHpBar(target);
+            // 如果是玩家治疗，更新顶部血条
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
             await this.delay(damageDelay);
           }
         }
@@ -838,9 +856,9 @@ export class BattleScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const popup = this.add.container(x, y);
 
-    // 响应式尺寸
-    const panelWidth = Math.max(320, Math.min(420, width * 0.35));
-    const panelHeight = item.skill ? Math.max(340, height * 0.52) : Math.max(280, height * 0.42);
+    // 响应式尺寸 - 更大的弹窗
+    const panelWidth = Math.max(500, Math.min(700, width * 0.58));
+    const panelHeight = Math.max(320, Math.min(420, height * 0.6));
     const borderColor = this.getRarityBorderColor(item.rarity);
 
     const bg = this.add.graphics();
@@ -850,82 +868,114 @@ export class BattleScene extends Phaser.Scene {
     bg.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     popup.add(bg);
 
-    // 响应式字体
-    const nameFontSize = Math.max(20, Math.min(26, width * 0.022));
-    const labelFontSize = Math.max(14, Math.min(18, width * 0.015));
-    const textFontSize = Math.max(15, Math.min(20, width * 0.017));
+    // 响应式字体 - 更大
+    const titleFontSize = Math.max(24, Math.min(32, width * 0.028));
+    const labelFontSize = Math.max(18, Math.min(24, width * 0.02));
+    const textFontSize = Math.max(16, Math.min(22, width * 0.018));
+    const iconRadius = Math.max(50, Math.min(70, panelHeight * 0.16));
 
-    let yOffset = -panelHeight / 2 + 30;
+    // 左右布局：左侧图标，右侧文字
+    const iconX = -panelWidth * 0.3;
+    const textX = panelWidth * 0.05;
+    const textWidth = panelWidth * 0.55;
+    const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
 
-    const nameText = this.add.text(0, yOffset, item.name, {
+    // 左侧：装备图标
+    const icon = this.add.circle(iconX, -panelHeight * 0.08, iconRadius, wuxingColor);
+    icon.setStrokeStyle(4, 0xffffff, 0.6);
+    popup.add(icon);
+
+    const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
+    const levelText = this.add.text(iconX, -panelHeight * 0.08, levelStr, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${nameFontSize}px`,
-      color: '#f0e6d3',
+      fontSize: `${titleFontSize + 4}px`,
+      color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
+    popup.add(levelText);
+
+    // 类型图标
+    const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
+    const typeIconText = this.add.text(iconX, panelHeight * 0.1, typeIcon, {
+      fontSize: `${iconRadius * 0.5}px`,
+    }).setOrigin(0.5);
+    popup.add(typeIconText);
+
+    // 右侧：文字信息
+    let yOffset = -panelHeight * 0.32;
+
+    // 名称
+    const nameText = this.add.text(textX, yOffset, item.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${titleFontSize}px`,
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    }).setOrigin(0, 0.5);
     popup.add(nameText);
 
-    yOffset += 32;
+    yOffset += titleFontSize + 12;
 
+    // 类型 + 稀有度
     const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '法宝';
-    const typeRarityText = this.add.text(0, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
+    const typeRarityText = this.add.text(textX, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
       color: this.getRarityColor(item.rarity),
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     popup.add(typeRarityText);
 
-    yOffset += 28;
+    yOffset += labelFontSize + 10;
 
-    const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
+    // 五行属性
     const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
     const wuxingLevelStr = item.wuxing !== undefined ? ` Lv.${item.wuxingLevel ?? 1}` : '';
-    const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
+    const wuxingText = this.add.text(textX, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     popup.add(wuxingText);
 
-    yOffset += 28;
+    yOffset += labelFontSize + 10;
 
+    // 攻防
     const stats: string[] = [];
     if (item.attack) stats.push(`攻击 +${item.attack}`);
     if (item.defense) stats.push(`防御 +${item.defense}`);
     if (stats.length > 0) {
-      const statsText = this.add.text(0, yOffset, stats.join('   '), {
+      const statsText = this.add.text(textX, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${textFontSize}px`,
         color: '#f0e6d3',
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       popup.add(statsText);
-      yOffset += 28;
+      yOffset += textFontSize + 10;
     }
 
+    // 技能
     if (item.skill) {
-      yOffset += 8;
-      const skillNameText = this.add.text(0, yOffset, `【${item.skill.name}】`, {
+      yOffset += 5;
+      const skillNameText = this.add.text(textX, yOffset, `【${item.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${labelFontSize}px`,
         color: '#d4a853',
         fontStyle: 'bold',
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       popup.add(skillNameText);
 
-      yOffset += 24;
-      const skillDescText = this.add.text(0, yOffset, item.skill.description, {
+      yOffset += labelFontSize + 8;
+      const skillDescText = this.add.text(textX, yOffset, item.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${labelFontSize - 2}px`,
+        fontSize: `${textFontSize - 2}px`,
         color: '#8b949e',
-        wordWrap: { width: panelWidth * 0.85 },
-        align: 'center',
-      }).setOrigin(0.5, 0);
+        wordWrap: { width: textWidth },
+      }).setOrigin(0, 0);
       popup.add(skillDescText);
     }
 
     const closeText = this.add.text(0, panelHeight / 2 - 25, '点击其他地方关闭', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${labelFontSize - 3}px`,
+      fontSize: `${textFontSize - 3}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
     popup.add(closeText);

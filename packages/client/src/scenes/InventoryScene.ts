@@ -344,16 +344,16 @@ export class InventoryScene extends Phaser.Scene {
     overlay.on('pointerup', () => this.closePopup());
     this.popup.add(overlay);
 
-    // 响应式尺寸
-    const panelWidth = Math.max(360, Math.min(480, width * 0.4));
-    const panelHeight = equipment.skill ? Math.max(420, height * 0.62) : Math.max(360, height * 0.52);
+    // 响应式尺寸 - 更大的弹窗
+    const panelWidth = Math.max(500, Math.min(700, width * 0.58));
+    const panelHeight = Math.max(350, Math.min(450, height * 0.65));
     const borderColor = this.getRarityBorderColor(equipment.rarity);
 
-    // 响应式字体
-    const titleFontSize = Math.max(22, Math.min(28, width * 0.024));
-    const labelFontSize = Math.max(16, Math.min(20, width * 0.017));
-    const textFontSize = Math.max(17, Math.min(22, width * 0.018));
-    const iconRadius = Math.max(35, Math.min(45, width * 0.038));
+    // 响应式字体 - 更大
+    const titleFontSize = Math.max(24, Math.min(32, width * 0.028));
+    const labelFontSize = Math.max(18, Math.min(24, width * 0.02));
+    const textFontSize = Math.max(16, Math.min(22, width * 0.018));
+    const iconRadius = Math.max(50, Math.min(70, panelHeight * 0.16));
 
     const panel = this.add.graphics();
     panel.fillStyle(this.colors.inkBlack, 0.98);
@@ -362,100 +362,111 @@ export class InventoryScene extends Phaser.Scene {
     panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     this.popup.add(panel);
 
-    let yOffset = -panelHeight / 2 + 35;
-
-    // 装备图标
+    // 左右布局：左侧图标，右侧文字
+    const iconX = -panelWidth * 0.3;
+    const textX = panelWidth * 0.05;
+    const textWidth = panelWidth * 0.55;
     const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
-    const icon = this.add.circle(0, yOffset, iconRadius, color);
-    icon.setStrokeStyle(3, 0xffffff, 0.5);
+
+    // 左侧：装备图标
+    const icon = this.add.circle(iconX, -panelHeight * 0.08, iconRadius, color);
+    icon.setStrokeStyle(4, 0xffffff, 0.6);
     this.popup.add(icon);
 
     const levelStr = equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-';
-    const levelText = this.add.text(0, yOffset, levelStr, {
+    const levelText = this.add.text(iconX, -panelHeight * 0.08, levelStr, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${titleFontSize}px`,
+      fontSize: `${titleFontSize + 4}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.popup.add(levelText);
 
-    yOffset += iconRadius + 25;
+    // 类型图标
+    const typeIcon = this.getTypeIcon(equipment.type);
+    const typeIconText = this.add.text(iconX, panelHeight * 0.1, typeIcon, {
+      fontSize: `${iconRadius * 0.5}px`,
+    }).setOrigin(0.5);
+    this.popup.add(typeIconText);
+
+    // 右侧：文字信息
+    let yOffset = -panelHeight * 0.32;
 
     // 名称
-    const nameText = this.add.text(0, yOffset, equipment.name, {
+    const nameText = this.add.text(textX, yOffset, equipment.name, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${titleFontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     this.popup.add(nameText);
 
-    yOffset += 32;
+    yOffset += titleFontSize + 12;
 
     // 类型 + 稀有度
     const typeAndRarity = `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`;
-    const typeRarityText = this.add.text(0, yOffset, typeAndRarity, {
+    const typeRarityText = this.add.text(textX, yOffset, typeAndRarity, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
       color: this.getRarityColor(equipment.rarity),
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     this.popup.add(typeRarityText);
 
-    yOffset += 28;
+    yOffset += labelFontSize + 10;
 
     // 五行属性
     const wuxingName = equipment.wuxing !== undefined ? WUXING_NAMES[equipment.wuxing] : '无';
     const wuxingLevelStr = equipment.wuxing !== undefined ? ` Lv.${equipment.wuxingLevel ?? 1}` : '';
-    const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
+    const wuxingText = this.add.text(textX, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${labelFontSize}px`,
       color: '#' + color.toString(16).padStart(6, '0'),
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
     this.popup.add(wuxingText);
 
-    yOffset += 30;
+    yOffset += labelFontSize + 10;
 
     // 攻防
     const stats: string[] = [];
     if (equipment.attack) stats.push(`攻击 +${equipment.attack}`);
     if (equipment.defense) stats.push(`防御 +${equipment.defense}`);
     if (stats.length > 0) {
-      const statsText = this.add.text(0, yOffset, stats.join('   '), {
+      const statsText = this.add.text(textX, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${textFontSize}px`,
         color: '#f0e6d3',
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       this.popup.add(statsText);
-      yOffset += 30;
+      yOffset += textFontSize + 10;
     }
 
     // 技能
     if (equipment.skill) {
-      const skillNameText = this.add.text(0, yOffset, `【${equipment.skill.name}】`, {
+      yOffset += 5;
+      const skillNameText = this.add.text(textX, yOffset, `【${equipment.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${labelFontSize}px`,
         color: '#d4a853',
         fontStyle: 'bold',
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       this.popup.add(skillNameText);
 
-      yOffset += 26;
-      const skillDescText = this.add.text(0, yOffset, equipment.skill.description, {
+      yOffset += labelFontSize + 8;
+      const skillDescText = this.add.text(textX, yOffset, equipment.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${labelFontSize - 2}px`,
+        fontSize: `${textFontSize - 2}px`,
         color: '#8b949e',
-        wordWrap: { width: panelWidth * 0.85 },
-        align: 'center',
-      }).setOrigin(0.5, 0);
+        wordWrap: { width: textWidth },
+      }).setOrigin(0, 0);
       this.popup.add(skillDescText);
     }
 
     // 按钮区域
-    const btnY = panelHeight / 2 - 55;
-    const btnWidth = Math.max(85, Math.min(100, panelWidth * 0.25));
-    const btnHeight = Math.max(38, Math.min(48, height * 0.07));
-    const btnSpacing = btnWidth * 1.15;
-    const btnFontSize = Math.max(14, Math.min(18, width * 0.015));
+    const btnY = panelHeight / 2 - panelHeight * 0.15;
+    const btnWidth = Math.max(100, Math.min(130, panelWidth * 0.2));
+    const btnHeight = Math.max(42, Math.min(55, height * 0.08));
+    const btnSpacing = btnWidth * 1.2;
+    const btnFontSize = Math.max(16, Math.min(20, width * 0.017));
 
     if (slotInfo.type === 'inventory') {
       this.createPopupButton(-btnSpacing, btnY, '装备', () => this.equipItem(slotInfo), btnWidth, btnHeight, btnFontSize);
@@ -605,15 +616,15 @@ export class InventoryScene extends Phaser.Scene {
     this.hideCancelButton();
 
     const { width, height } = this.cameras.main;
-    const btnWidth = Math.max(90, Math.min(110, width * 0.09));
-    const btnHeight = Math.max(32, Math.min(40, height * 0.055));
-    const fontSize = Math.max(12, Math.min(15, width * 0.013));
+    const btnWidth = Math.max(100, Math.min(130, width * 0.11));
+    const btnHeight = Math.max(36, Math.min(46, height * 0.065));
+    const fontSize = Math.max(14, Math.min(17, width * 0.015));
 
-    // 放在屏幕中间（装备区和背包区之间）
-    this.cancelButton = this.add.container(width / 2, height * 0.52);
+    // 按钮放在消息下方（消息在 height * 0.50，按钮在 height * 0.56）
+    this.cancelButton = this.add.container(width / 2, height * 0.56);
 
     // 取消按钮
-    const cancelBtnX = showFragmentToggle ? -width * 0.12 : 0;
+    const cancelBtnX = showFragmentToggle ? -width * 0.1 : 0;
     const cancelBg = this.add.rectangle(cancelBtnX, 0, btnWidth, btnHeight, this.colors.redAccent);
     cancelBg.setStrokeStyle(2, 0xffffff, 0.5);
     cancelBg.setInteractive({ useHandCursor: true });
@@ -634,17 +645,16 @@ export class InventoryScene extends Phaser.Scene {
     // 碎片开关（仅合成模式）
     if (showFragmentToggle) {
       const fragments = gameState.getFragmentCount();
-      const bonusPercent = fragments * 5; // 每个碎片 +5%
 
       const getToggleText = (useFragments: boolean) => {
         if (fragments === 0) {
           return '无碎片';
         }
-        return useFragments ? `✓ 碎片 (+${bonusPercent}%)` : '不使用碎片';
+        return useFragments ? '✓ 使用碎片' : '不使用碎片';
       };
 
-      const toggleWidth = Math.max(140, Math.min(180, width * 0.15));
-      const toggleBg = this.add.rectangle(width * 0.12, 0, toggleWidth, btnHeight, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
+      const toggleWidth = Math.max(130, Math.min(160, width * 0.14));
+      const toggleBg = this.add.rectangle(width * 0.1, 0, toggleWidth, btnHeight, this.useFragmentsToggle ? this.colors.greenAccent : this.colors.inkGrey);
       toggleBg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
       toggleBg.setInteractive({ useHandCursor: true });
 
@@ -839,12 +849,12 @@ export class InventoryScene extends Phaser.Scene {
     this.closeTopMessage();
 
     const { width, height } = this.cameras.main;
-    const msgWidth = Math.max(350, Math.min(600, width * 0.5));
-    const msgHeight = Math.max(45, Math.min(55, height * 0.08));
-    const fontSize = Math.max(13, Math.min(17, width * 0.014));
+    const msgWidth = Math.max(400, Math.min(650, width * 0.55));
+    const msgHeight = Math.max(50, Math.min(60, height * 0.085));
+    const fontSize = Math.max(15, Math.min(20, width * 0.017));
 
-    // 放在装备区和背包区之间
-    this.topMessage = this.add.container(width / 2, height * 0.52);
+    // 放在装备区和背包区之间（按钮会在下方）
+    this.topMessage = this.add.container(width / 2, height * 0.50);
 
     const bg = this.add.graphics();
     bg.fillStyle(this.colors.inkBlack, 0.98);
