@@ -711,7 +711,9 @@ export class BattleScene extends Phaser.Scene {
           if (target) {
             const color = event.statusType === 'bleeding' ? '#c94a4a' : '#ff9500';
             target.hp = Math.max(0, target.hp - event.value);
-            this.showFloatingText(target, `-${event.value}`, color, 20, -100);
+            // 显示技能名称和伤害值
+            const skillName = event.message || (event.statusType === 'bleeding' ? '流血' : '灼烧');
+            this.showFloatingText(target, `${skillName} -${event.value}`, color, 20, -100);
             this.updateHpBar(target);
             if (target.isPlayer) {
               gameState.getPlayerState().hp = target.hp;
@@ -727,7 +729,9 @@ export class BattleScene extends Phaser.Scene {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             target.hp = Math.min(target.maxHp, target.hp + event.value);
-            this.showFloatingText(target, `+${event.value}`, '#22c55e', 20, -100);
+            // 显示技能名称和回复值
+            const skillName = event.message || '生机';
+            this.showFloatingText(target, `${skillName} +${event.value}`, '#22c55e', 20, -100);
             this.createHealParticles(target);
             this.updateHpBar(target);
             if (target.isPlayer) {
@@ -739,12 +743,24 @@ export class BattleScene extends Phaser.Scene {
         }
         break;
 
+      case 'damage_reduced':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            // 显示坚韧减伤效果（不减少HP，只是显示减少了多少伤害）
+            const skillName = event.message || '坚韧';
+            this.showFloatingText(target, `${skillName} -${event.value}`, '#8b5a2b', 18, -80);
+            await this.delay(damageDelay / 4);
+          }
+        }
+        break;
+
       case 'reflect_damage':
         if (event.targetId && event.value !== undefined) {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             target.hp = Math.max(0, target.hp - event.value);
-            this.showFloatingText(target, `反弹 -${event.value}`, '#eab308', 22, -100);
+            this.showFloatingText(target, `反震 -${event.value}`, '#eab308', 22, -100);
             this.createHitParticles(target);
             this.updateHpBar(target);
             if (target.isPlayer) {
@@ -797,7 +813,8 @@ export class BattleScene extends Phaser.Scene {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             target.hp = Math.max(0, target.hp - event.value);
-            this.showFloatingText(target, `引爆! -${event.value}`, '#ff6b6b', 28, -100);
+            const skillName = event.message || '灼烧引爆';
+            this.showFloatingText(target, `${skillName} -${event.value}`, '#ff6b6b', 28, -100);
             this.createExplosionParticles(target);
             this.updateHpBar(target);
             if (target.isPlayer) {
@@ -814,7 +831,8 @@ export class BattleScene extends Phaser.Scene {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
             target.hp = Math.max(0, target.hp - event.value);
-            this.showFloatingText(target, `冰碎! -${event.value}`, '#58a6ff', 24, -100);
+            const skillName = event.message || '冻结破碎';
+            this.showFloatingText(target, `${skillName} -${event.value}`, '#58a6ff', 24, -100);
             this.createHitParticles(target);
             this.updateHpBar(target);
             if (target.isPlayer) {

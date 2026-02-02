@@ -374,15 +374,17 @@ export function applyDefenseWuxingEffects(
   attacker: Combatant,
   defender: Combatant,
   damage: number
-): { events: BattleEvent[]; modifiedDamage: number; reflectDamage: number } {
+): { events: BattleEvent[]; modifiedDamage: number; reflectDamage: number; damageReduced: number } {
   const events: BattleEvent[] = [];
   let modifiedDamage = damage;
   let reflectDamage = 0;
+  let damageReduced = 0;
 
   // 土属性减伤
   const damageReduction = defender.damageReduction ?? 0;
   if (damageReduction > 0) {
     const reduction = Math.floor(damage * damageReduction / 100);
+    damageReduced = reduction;
     modifiedDamage = Math.max(1, damage - reduction);
   }
 
@@ -398,7 +400,7 @@ export function applyDefenseWuxingEffects(
     defender.revengeStacks = (defender.revengeStacks ?? 0) + 1;
   }
 
-  return { events, modifiedDamage, reflectDamage };
+  return { events, modifiedDamage, reflectDamage, damageReduced };
 }
 
 /**

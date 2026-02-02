@@ -104,6 +104,7 @@ export type BattleEventType =
   | 'status_applied'    // 状态效果施加
   | 'status_damage'     // 状态伤害 (流血/灼烧)
   | 'status_heal'       // 状态回复 (木回复)
+  | 'damage_reduced'    // 土属性减伤触发
   | 'reflect_damage'    // 反弹伤害
   | 'survive_lethal'    // 致命保护触发
   | 'revive'            // 复活

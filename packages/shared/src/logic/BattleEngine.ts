@@ -354,6 +354,16 @@ export class BattleEngine {
       events.push(...defenseEffects.events);
       actualDamage = defenseEffects.modifiedDamage;
 
+      // 如果减伤触发，显示坚韧效果
+      if (defenseEffects.damageReduced > 0) {
+        events.push({
+          type: 'damage_reduced',
+          targetId: defender.id,
+          value: defenseEffects.damageReduced,
+          message: '坚韧',
+        });
+      }
+
       // 应用伤害
       defender.hp = Math.max(0, defender.hp - actualDamage);
       events.push({
