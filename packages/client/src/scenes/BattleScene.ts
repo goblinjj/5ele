@@ -74,6 +74,8 @@ export class BattleScene extends Phaser.Scene {
   private inventoryButton?: Phaser.GameObjects.Container;
   private isBattleRunning: boolean = false;
   private topBarHpText?: Phaser.GameObjects.Text;
+  private equipmentChangedDuringBattle: boolean = false;
+  private battleAborted: boolean = false;
 
   create(): void {
     this.createBackground();
@@ -224,6 +226,10 @@ export class BattleScene extends Phaser.Scene {
       this.refreshPlayerCombatant();
       // 更新顶部状态栏显示
       this.updateTopBarStats();
+      // 如果战斗正在进行中，标记需要重新计算战斗
+      if (this.isBattleRunning) {
+        this.equipmentChangedDuringBattle = true;
+      }
     });
   }
 
@@ -482,7 +488,11 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async runBattle(): Promise<void> {
+    // 重置战斗状态标志
+    this.equipmentChangedDuringBattle = false;
+    this.battleAborted = false;
     this.isBattleRunning = true;
+
     await this.showCenterText('战斗开始！', '#f0e6d3');
 
     const config: BattleConfig = {
@@ -494,7 +504,20 @@ export class BattleScene extends Phaser.Scene {
     const result = engine.run();
 
     for (const event of result.events) {
+      // 检查是否需要中止战斗（装备更换）
+      if (this.battleAborted) {
+        break;
+      }
       await this.playEvent(event);
+    }
+
+    // 如果战斗被中止（装备更换），重新开始战斗
+    if (this.battleAborted) {
+      await this.showCenterText('装备更换，重新战斗！', '#d4a853');
+      // 重置敌人血量
+      this.resetEnemyHp();
+      await this.runBattle();
+      return;
     }
 
     const playerSurvivor = result.survivingCombatants.find(c => c.isPlayer);
@@ -504,6 +527,7 @@ export class BattleScene extends Phaser.Scene {
       gameState.getPlayerState().hp = 0;
     }
 
+    this.isBattleRunning = false;
     await this.delay(500);
 
     if (result.winnerId) {
@@ -515,7 +539,31 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  private resetEnemyHp(): void {
+    // 重置敌人HP到初始状态
+    for (const combatant of this.engineCombatants) {
+      if (!combatant.isPlayer) {
+        combatant.hp = combatant.maxHp;
+        const display = this.displayCombatants.get(combatant.id);
+        if (display) {
+          display.hp = combatant.maxHp;
+          // 重建敌人sprite以显示满血
+          if (display.sprite) {
+            display.sprite.destroy();
+          }
+          display.sprite = this.createCombatantSprite(display, 0);
+        }
+      }
+    }
+  }
+
   private async playEvent(event: BattleEvent): Promise<void> {
+    // 如果装备更换，标记中止战斗
+    if (this.equipmentChangedDuringBattle) {
+      this.battleAborted = true;
+      return;
+    }
+
     const damageDelay = 400;
     const turnDelay = 600;
 
@@ -613,12 +661,180 @@ export class BattleScene extends Phaser.Scene {
         }
         break;
 
+      // 五行状态效果事件
+      case 'status_applied':
+        if (event.targetId) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            const statusColors: Record<string, string> = {
+              bleeding: '#c94a4a',   // 红色 - 流血
+              burning: '#ff9500',    // 橙色 - 灼烧
+              slowed: '#58a6ff',     // 蓝色 - 减速
+              frozen: '#58a6ff',     // 蓝色 - 冻结
+              embers: '#ff6b6b',     // 红橙色 - 余烬
+            };
+            const color = statusColors[event.statusType || ''] || '#d4a853';
+            const stackStr = event.stacks && event.stacks > 1 ? ` x${event.stacks}` : '';
+            this.showStatus(target, `${event.message || event.statusType}${stackStr}`, color);
+            await this.delay(damageDelay / 2);
+          }
+        }
+        break;
+
+      case 'status_damage':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            const color = event.statusType === 'bleeding' ? '#c94a4a' : '#ff9500';
+            target.hp = Math.max(0, target.hp - event.value);
+            this.showFloatingText(target, `-${event.value}`, color, 20, -100);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay / 2);
+          }
+        }
+        break;
+
+      case 'status_heal':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = Math.min(target.maxHp, target.hp + event.value);
+            this.showFloatingText(target, `+${event.value}`, '#22c55e', 20, -100);
+            this.createHealParticles(target);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay / 2);
+          }
+        }
+        break;
+
+      case 'reflect_damage':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = Math.max(0, target.hp - event.value);
+            this.showFloatingText(target, `反弹 -${event.value}`, '#eab308', 22, -100);
+            this.createHitParticles(target);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay);
+          }
+        }
+        break;
+
+      case 'survive_lethal':
+        if (event.targetId) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = 1;
+            this.showFloatingText(target, '不朽!', '#22c55e', 26, -130);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay);
+          }
+        }
+        break;
+
+      case 'revive':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = event.value;
+            // 重建精灵显示复活
+            if (target.sprite) {
+              target.sprite.destroy();
+            }
+            target.sprite = this.createCombatantSprite(target, 0);
+            this.showFloatingText(target, '涅槃重生!', '#d4a853', 28, -130);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(turnDelay);
+          }
+        }
+        break;
+
+      case 'burn_explode':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = Math.max(0, target.hp - event.value);
+            this.showFloatingText(target, `引爆! -${event.value}`, '#ff6b6b', 28, -100);
+            this.createExplosionParticles(target);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay);
+          }
+        }
+        break;
+
+      case 'freeze_shatter':
+        if (event.targetId && event.value !== undefined) {
+          const target = this.displayCombatants.get(event.targetId);
+          if (target) {
+            target.hp = Math.max(0, target.hp - event.value);
+            this.showFloatingText(target, `冰碎! -${event.value}`, '#58a6ff', 24, -100);
+            this.createHitParticles(target);
+            this.updateHpBar(target);
+            if (target.isPlayer) {
+              gameState.getPlayerState().hp = target.hp;
+              this.updateTopBarHp();
+            }
+            await this.delay(damageDelay);
+          }
+        }
+        break;
+
       case 'round_end':
         await this.delay(turnDelay);
         break;
 
       case 'battle_end':
         break;
+    }
+  }
+
+  private createExplosionParticles(target: DisplayCombatant): void {
+    if (!target.sprite) return;
+
+    // 火焰爆炸粒子效果
+    for (let i = 0; i < 15; i++) {
+      const angle = (i / 15) * Math.PI * 2;
+      const particle = this.add.circle(
+        target.x,
+        target.y,
+        Phaser.Math.Between(5, 12),
+        Phaser.Math.Between(0, 1) > 0.5 ? 0xff6b6b : 0xff9500
+      );
+
+      const distance = Phaser.Math.Between(60, 120);
+      this.tweens.add({
+        targets: particle,
+        x: target.x + Math.cos(angle) * distance,
+        y: target.y + Math.sin(angle) * distance,
+        alpha: 0,
+        scale: 0,
+        duration: 500,
+        ease: 'Power2.easeOut',
+        onComplete: () => particle.destroy(),
+      });
     }
   }
 

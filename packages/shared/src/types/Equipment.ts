@@ -89,7 +89,7 @@ export interface Equipment {
 export interface PlayerEquipment {
   weapon: Equipment | null;     // 武器 x1
   armor: Equipment | null;      // 铠甲 x1
-  treasures: Equipment[];       // 法宝 x5-8
+  treasures: Equipment[];       // 法宝 x5
 }
 
 /**

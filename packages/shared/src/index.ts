@@ -5,5 +5,6 @@ export * from './logic/BattleTypes.js';
 export * from './logic/DamageCalculator.js';
 export * from './logic/SpeedResolver.js';
 export * from './logic/SkillProcessor.js';
+export * from './logic/WuxingPassiveProcessor.js';
 export * from './logic/BattleEngine.js';
 export * from './logic/LootGenerator.js';

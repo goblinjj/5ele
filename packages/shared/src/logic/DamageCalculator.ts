@@ -1,4 +1,4 @@
-import { WuxingLevel, getWuxingRelation } from '../types/Wuxing.js';
+import { WuxingLevel, getWuxingRelation, WUXING_CONQUER_BONUS } from '../types/Wuxing.js';
 import { Combatant } from './BattleTypes.js';
 
 /**
@@ -19,36 +19,52 @@ export function calculateBaseDamage(attack: number, defense: number): number {
 
 /**
  * 计算五行伤害修正
+ * 克制加成根据攻击方等级从 WUXING_CONQUER_BONUS 表获取
  */
 export function calculateWuxingMultiplier(
   attackWuxing: WuxingLevel | null,
   defenseWuxing: WuxingLevel | null
 ): { multiplier: number; effect: 'conquer' | 'generate' | 'neutral' } {
   // 无五行攻击 = 纯物理
-  if (!attackWuxing || !defenseWuxing) {
+  if (!attackWuxing) {
+    return { multiplier: 1.0, effect: 'neutral' };
+  }
+
+  // 无五行防御 = 无克制关系，但有等级加成
+  if (!defenseWuxing) {
     return { multiplier: 1.0, effect: 'neutral' };
   }
 
   const relation = getWuxingRelation(attackWuxing.wuxing, defenseWuxing.wuxing);
-  const levelDiff = attackWuxing.level - defenseWuxing.level;
+  const attackLevel = Math.max(1, Math.min(5, attackWuxing.level));
+  const defenseLevel = Math.max(1, Math.min(5, defenseWuxing.level));
 
   switch (relation) {
     case 'conquer':
-      // 相克：基础 1.5 倍，每级差 ±10%
+      // 相克：根据攻击方等级获取加成
+      // Lv1: +20%, Lv2: +30%, Lv3: +40%, Lv4: +55%, Lv5: +75%
+      const bonus = WUXING_CONQUER_BONUS[attackLevel] || WUXING_CONQUER_BONUS[1];
+      // 防御方等级提供抵抗 (按表中的 resistReduction)
+      const defenseBonus = WUXING_CONQUER_BONUS[defenseLevel] || WUXING_CONQUER_BONUS[1];
+      const finalBonus = bonus.damageBonus - defenseBonus.resistReduction;
       return {
-        multiplier: 1.5 + levelDiff * 0.1,
+        multiplier: 1 + Math.max(0.1, finalBonus), // 最低 +10%
         effect: 'conquer',
       };
+
     case 'generate':
-      // 相生：治疗敌人，基础 -0.5 倍
+      // 相生：治疗敌人，基础 -0.5 倍，等级差影响治疗量
+      const levelDiff = attackLevel - defenseLevel;
       return {
         multiplier: -(0.5 + levelDiff * 0.05),
         effect: 'generate',
       };
+
     default:
       // 中性：每级差 ±5%
+      const neutralLevelDiff = attackLevel - defenseLevel;
       return {
-        multiplier: 1.0 + levelDiff * 0.05,
+        multiplier: 1.0 + neutralLevelDiff * 0.05,
         effect: 'neutral',
       };
   }

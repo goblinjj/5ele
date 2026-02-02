@@ -9,7 +9,7 @@ export const INVENTORY_SIZE = 10;
 /**
  * 最大法宝数量
  */
-export const MAX_TREASURES = 8;
+export const MAX_TREASURES = 5;
 
 /**
  * 背包

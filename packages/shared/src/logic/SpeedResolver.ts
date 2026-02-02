@@ -5,11 +5,19 @@ import { Combatant } from './BattleTypes.js';
  * 计算战斗者的最终速度
  */
 export function calculateCombatantSpeed(combatant: Combatant): number {
-  const baseSpeed = combatant.speed;
-  const wuxingMod = combatant.attackWuxing
-    ? WUXING_SPEED_MODIFIER[combatant.attackWuxing.wuxing]
-    : 0;
-  return baseSpeed + wuxingMod;
+  let speed = combatant.speed;
+
+  // 五行速度修正
+  if (combatant.attackWuxing) {
+    speed += WUXING_SPEED_MODIFIER[combatant.attackWuxing.wuxing];
+  }
+
+  // 水属性减速状态
+  if (combatant.statusEffects?.slowed && combatant.statusEffects.slowed.turnsLeft > 0) {
+    speed = Math.floor(speed * (1 - combatant.statusEffects.slowed.speedReduction / 100));
+  }
+
+  return Math.max(0, speed);
 }
 
 /**
