@@ -72,10 +72,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private inventoryButton?: Phaser.GameObjects.Container;
-  private isBattleRunning: boolean = false;
   private topBarHpText?: Phaser.GameObjects.Text;
-  private equipmentChangedDuringBattle: boolean = false;
-  private battleAborted: boolean = false;
 
   create(): void {
     this.createBackground();
@@ -222,14 +219,9 @@ export class BattleScene extends Phaser.Scene {
     this.scene.launch('InventoryScene');
     this.scene.get('InventoryScene').events.once('shutdown', () => {
       this.scene.resume();
-      // 总是刷新玩家显示和数据
+      // 刷新玩家显示（换装只影响下一回合战斗，当前战斗继续）
       this.refreshPlayerCombatant();
-      // 更新顶部状态栏显示
       this.updateTopBarStats();
-      // 如果战斗正在进行中，标记需要重新计算战斗
-      if (this.isBattleRunning) {
-        this.equipmentChangedDuringBattle = true;
-      }
     });
   }
 
@@ -488,11 +480,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async runBattle(): Promise<void> {
-    // 重置战斗状态标志
-    this.equipmentChangedDuringBattle = false;
-    this.battleAborted = false;
-    this.isBattleRunning = true;
-
     await this.showCenterText('战斗开始！', '#f0e6d3');
 
     const config: BattleConfig = {
@@ -504,20 +491,7 @@ export class BattleScene extends Phaser.Scene {
     const result = engine.run();
 
     for (const event of result.events) {
-      // 检查是否需要中止战斗（装备更换）
-      if (this.battleAborted) {
-        break;
-      }
       await this.playEvent(event);
-    }
-
-    // 如果战斗被中止（装备更换），重新开始战斗
-    if (this.battleAborted) {
-      await this.showCenterText('装备更换，重新战斗！', '#d4a853');
-      // 重置敌人血量
-      this.resetEnemyHp();
-      await this.runBattle();
-      return;
     }
 
     const playerSurvivor = result.survivingCombatants.find(c => c.isPlayer);
@@ -527,7 +501,6 @@ export class BattleScene extends Phaser.Scene {
       gameState.getPlayerState().hp = 0;
     }
 
-    this.isBattleRunning = false;
     await this.delay(500);
 
     if (result.winnerId) {
@@ -539,31 +512,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private resetEnemyHp(): void {
-    // 重置敌人HP到初始状态
-    for (const combatant of this.engineCombatants) {
-      if (!combatant.isPlayer) {
-        combatant.hp = combatant.maxHp;
-        const display = this.displayCombatants.get(combatant.id);
-        if (display) {
-          display.hp = combatant.maxHp;
-          // 重建敌人sprite以显示满血
-          if (display.sprite) {
-            display.sprite.destroy();
-          }
-          display.sprite = this.createCombatantSprite(display, 0);
-        }
-      }
-    }
-  }
-
   private async playEvent(event: BattleEvent): Promise<void> {
-    // 如果装备更换，标记中止战斗
-    if (this.equipmentChangedDuringBattle) {
-      this.battleAborted = true;
-      return;
-    }
-
     const damageDelay = 400;
     const turnDelay = 600;
 
