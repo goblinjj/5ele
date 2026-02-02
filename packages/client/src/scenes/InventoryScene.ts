@@ -13,8 +13,6 @@ import {
   PlayerStatus,
   getWuxingPassiveStatuses,
   WuxingPassiveStatus,
-  getAttackWuxing,
-  getDefenseWuxing,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
@@ -232,15 +230,13 @@ export class InventoryScene extends Phaser.Scene {
     // 获取玩家状态
     const playerStatuses = gameState.getStatuses();
 
-    // 获取五行被动状态
+    // 获取五行被动状态（统计所有装备的五行）
     const equipment = {
       weapon: gameState.getWeapon(),
       armor: gameState.getArmor(),
       treasures: gameState.getTreasures(),
     };
-    const attackWuxing = getAttackWuxing(equipment);
-    const defenseWuxing = getDefenseWuxing(equipment);
-    const wuxingPassives = getWuxingPassiveStatuses(attackWuxing, defenseWuxing);
+    const wuxingPassives = getWuxingPassiveStatuses(equipment);
 
     // 合并所有状态
     const allStatuses: { type: StatusType; level?: number }[] = [

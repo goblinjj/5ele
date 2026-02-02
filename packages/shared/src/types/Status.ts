@@ -1,4 +1,5 @@
-import { Wuxing, WUXING_COLORS } from './Wuxing.js';
+import { Wuxing } from './Wuxing.js';
+import { PlayerEquipment, getAllWuxingLevels } from './Equipment.js';
 
 /**
  * 角色状态类型
@@ -235,59 +236,57 @@ export function getStatusDisplayInfo(statusType: StatusType): StatusDefinition |
 export interface WuxingPassiveStatus {
   type: StatusType;
   level: number;
-  fromWeapon: boolean;  // 来自武器（攻击五行）还是铠甲（防御五行）
+  wuxing: Wuxing;
 }
 
 /**
- * 根据装备五行等级获取激活的五行被动状态
+ * 根据装备获取激活的五行被动状态
+ * 统计所有装备(武器+铠甲+法宝)的五行，相同五行等级相加
  */
-export function getWuxingPassiveStatuses(
-  attackWuxing: { wuxing: Wuxing; level: number } | null,
-  defenseWuxing: { wuxing: Wuxing; level: number } | null
-): WuxingPassiveStatus[] {
+export function getWuxingPassiveStatuses(equipment: PlayerEquipment): WuxingPassiveStatus[] {
   const statuses: WuxingPassiveStatus[] = [];
+  const wuxingLevels = getAllWuxingLevels(equipment);
 
-  // 攻击五行被动（武器）
-  if (attackWuxing) {
-    const { wuxing, level } = attackWuxing;
-
+  // 遍历所有五行类型
+  wuxingLevels.forEach((level, wuxing) => {
     switch (wuxing) {
       case Wuxing.METAL:
-        statuses.push({ type: StatusType.METAL_PENETRATE, level, fromWeapon: true });
-        if (level >= 3) statuses.push({ type: StatusType.METAL_BLEED, level, fromWeapon: true });
+        // 金: 破防(Lv1+) + 流血(Lv3+)
+        statuses.push({ type: StatusType.METAL_PENETRATE, level, wuxing });
+        if (level >= 3) statuses.push({ type: StatusType.METAL_BLEED, level, wuxing });
         break;
-      case Wuxing.WATER:
-        statuses.push({ type: StatusType.WATER_SLOW, level, fromWeapon: true });
-        if (level >= 4) statuses.push({ type: StatusType.WATER_FREEZE, level, fromWeapon: true });
-        if (level >= 5) statuses.push({ type: StatusType.WATER_SHATTER, level, fromWeapon: true });
-        break;
-      case Wuxing.FIRE:
-        statuses.push({ type: StatusType.FIRE_BURN, level, fromWeapon: true });
-        if (level >= 3) statuses.push({ type: StatusType.FIRE_STACK, level, fromWeapon: true });
-        if (level >= 4) statuses.push({ type: StatusType.FIRE_EXPLODE, level, fromWeapon: true });
-        if (level >= 5) statuses.push({ type: StatusType.FIRE_EMBER, level, fromWeapon: true });
-        break;
-    }
-  }
 
-  // 防御五行被动（铠甲）
-  if (defenseWuxing) {
-    const { wuxing, level } = defenseWuxing;
-
-    switch (wuxing) {
       case Wuxing.WOOD:
-        statuses.push({ type: StatusType.WOOD_REGEN, level, fromWeapon: false });
-        if (level >= 3) statuses.push({ type: StatusType.WOOD_SURVIVE, level, fromWeapon: false });
-        if (level >= 5) statuses.push({ type: StatusType.WOOD_REVIVE, level, fromWeapon: false });
+        // 木: 生机(Lv1+) + 不朽(Lv3+) + 涅槃(Lv5+)
+        statuses.push({ type: StatusType.WOOD_REGEN, level, wuxing });
+        if (level >= 3) statuses.push({ type: StatusType.WOOD_SURVIVE, level, wuxing });
+        if (level >= 5) statuses.push({ type: StatusType.WOOD_REVIVE, level, wuxing });
         break;
+
+      case Wuxing.WATER:
+        // 水: 寒息(Lv1+) + 冰封(Lv4+) + 冰碎(Lv5+)
+        statuses.push({ type: StatusType.WATER_SLOW, level, wuxing });
+        if (level >= 4) statuses.push({ type: StatusType.WATER_FREEZE, level, wuxing });
+        if (level >= 5) statuses.push({ type: StatusType.WATER_SHATTER, level, wuxing });
+        break;
+
+      case Wuxing.FIRE:
+        // 火: 灼烧(Lv1+) + 烈焰(Lv3+) + 引爆(Lv4+) + 余烬(Lv5+)
+        statuses.push({ type: StatusType.FIRE_BURN, level, wuxing });
+        if (level >= 3) statuses.push({ type: StatusType.FIRE_STACK, level, wuxing });
+        if (level >= 4) statuses.push({ type: StatusType.FIRE_EXPLODE, level, wuxing });
+        if (level >= 5) statuses.push({ type: StatusType.FIRE_EMBER, level, wuxing });
+        break;
+
       case Wuxing.EARTH:
-        statuses.push({ type: StatusType.EARTH_REDUCE, level, fromWeapon: false });
-        if (level >= 3) statuses.push({ type: StatusType.EARTH_REFLECT, level, fromWeapon: false });
-        if (level >= 4) statuses.push({ type: StatusType.EARTH_IMMUNE, level, fromWeapon: false });
-        if (level >= 5) statuses.push({ type: StatusType.EARTH_REVENGE, level, fromWeapon: false });
+        // 土: 坚韧(Lv1+) + 反震(Lv3+) + 不动(Lv4+) + 蓄力(Lv5+)
+        statuses.push({ type: StatusType.EARTH_REDUCE, level, wuxing });
+        if (level >= 3) statuses.push({ type: StatusType.EARTH_REFLECT, level, wuxing });
+        if (level >= 4) statuses.push({ type: StatusType.EARTH_IMMUNE, level, wuxing });
+        if (level >= 5) statuses.push({ type: StatusType.EARTH_REVENGE, level, wuxing });
         break;
     }
-  }
+  });
 
   return statuses;
 }

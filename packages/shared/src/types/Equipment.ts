@@ -180,3 +180,33 @@ export function getTotalSpeed(equipment: PlayerEquipment): number {
 
   return speed;
 }
+
+/**
+ * 计算所有装备的五行等级汇总
+ * 统计武器+铠甲+所有法宝的五行，相同五行等级相加
+ */
+export function getAllWuxingLevels(equipment: PlayerEquipment): Map<Wuxing, number> {
+  const wuxingLevels = new Map<Wuxing, number>();
+
+  // 武器
+  if (equipment.weapon?.wuxing !== undefined) {
+    const level = equipment.weapon.wuxingLevel ?? 1;
+    wuxingLevels.set(equipment.weapon.wuxing, (wuxingLevels.get(equipment.weapon.wuxing) ?? 0) + level);
+  }
+
+  // 铠甲
+  if (equipment.armor?.wuxing !== undefined) {
+    const level = equipment.armor.wuxingLevel ?? 1;
+    wuxingLevels.set(equipment.armor.wuxing, (wuxingLevels.get(equipment.armor.wuxing) ?? 0) + level);
+  }
+
+  // 法宝
+  for (const treasure of equipment.treasures) {
+    if (treasure.wuxing !== undefined) {
+      const level = treasure.wuxingLevel ?? 1;
+      wuxingLevels.set(treasure.wuxing, (wuxingLevels.get(treasure.wuxing) ?? 0) + level);
+    }
+  }
+
+  return wuxingLevels;
+}

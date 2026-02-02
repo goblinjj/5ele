@@ -19,6 +19,7 @@ import {
   getDefenseWuxing,
   getTotalAttack,
   getTotalDefense,
+  getAllWuxingLevels,
   StatusType,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
@@ -339,6 +340,7 @@ export class BattleScene extends Phaser.Scene {
       frozen: false,
       attackDebuff: 0,
       hasWuxingMastery: gameState.hasStatus(StatusType.WUXING_MASTERY),
+      allWuxingLevels: getAllWuxingLevels(equipment),
     };
   }
 

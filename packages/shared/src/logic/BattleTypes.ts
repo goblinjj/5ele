@@ -1,4 +1,4 @@
-import { WuxingLevel } from '../types/Wuxing.js';
+import { WuxingLevel, Wuxing } from '../types/Wuxing.js';
 import { Skill } from '../types/Equipment.js';
 
 /**
@@ -78,6 +78,9 @@ export interface Combatant {
 
   // 特殊状态
   hasWuxingMastery?: boolean;      // 五行圆满：集齐5种五行
+
+  // 所有五行等级汇总（用于计算被动效果）
+  allWuxingLevels?: Map<Wuxing, number>;  // Wuxing -> level
 }
 
 /**
