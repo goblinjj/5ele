@@ -214,11 +214,17 @@ export class BattleScene extends Phaser.Scene {
     this.scene.launch('InventoryScene');
     this.scene.get('InventoryScene').events.once('shutdown', () => {
       this.scene.resume();
-      // 如果战斗还没开始或正在进行中，更新玩家数据
-      if (!this.isBattleRunning) {
-        this.refreshPlayerCombatant();
-      }
+      // 总是刷新玩家显示和数据
+      this.refreshPlayerCombatant();
+      // 更新顶部状态栏显示
+      this.updateTopBarStats();
     });
+  }
+
+  private updateTopBarStats(): void {
+    // 这里可以更新顶部状态栏，但由于顶部栏是静态创建的，
+    // 最简单的方式是不做任何事情（下次战斗会正确显示）
+    // 如果需要实时更新，可以将状态栏元素保存为类成员变量
   }
 
   private initCombatants(): void {
@@ -671,7 +677,7 @@ export class BattleScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
-    const titleSize = Math.max(20, Math.min(28, width * 0.022));
+    const titleSize = Math.max(26, Math.min(36, width * 0.03));
     const title = this.add.text(width / 2, height * 0.08, '战利品', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${titleSize}px`,
@@ -680,12 +686,14 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     lootContainer.add(title);
 
-    const slotSize = Math.max(50, Math.min(65, width * 0.05));
-    const cols = Math.min(items.length, 10);
+    // 增大槽位尺寸
+    const slotSize = Math.max(70, Math.min(95, width * 0.075));
+    const cols = Math.min(items.length, 8);
     const rows = Math.ceil(items.length / cols);
-    const gridWidth = cols * slotSize;
-    const startX = (width - gridWidth) / 2 + slotSize / 2;
-    const startY = height * 0.2;
+    const slotSpacing = slotSize * 1.1;
+    const gridWidth = cols * slotSpacing;
+    const startX = (width - gridWidth) / 2 + slotSpacing / 2;
+    const startY = height * 0.22;
 
     let currentPopup: Phaser.GameObjects.Container | null = null;
 
@@ -699,8 +707,8 @@ export class BattleScene extends Phaser.Scene {
     items.forEach((item, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = startX + col * slotSize;
-      const y = startY + row * slotSize;
+      const x = startX + col * slotSpacing;
+      const y = startY + row * slotSpacing;
 
       const slotContainer = this.add.container(x, y);
       lootContainer.add(slotContainer);
@@ -708,27 +716,27 @@ export class BattleScene extends Phaser.Scene {
       const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
       const borderColor = this.getRarityBorderColor(item.rarity);
 
-      const bg = this.add.rectangle(0, 0, slotSize * 0.85, slotSize * 0.85, this.colors.inkBlack, 0.9);
-      bg.setStrokeStyle(2, borderColor, 0.8);
+      const bg = this.add.rectangle(0, 0, slotSize * 0.9, slotSize * 0.9, this.colors.inkBlack, 0.9);
+      bg.setStrokeStyle(3, borderColor, 0.8);
       bg.setInteractive({ useHandCursor: true });
       slotContainer.add(bg);
 
-      const icon = this.add.circle(0, -3, slotSize * 0.28, wuxingColor);
-      icon.setStrokeStyle(2, 0xffffff, 0.4);
+      const icon = this.add.circle(0, -slotSize * 0.08, slotSize * 0.32, wuxingColor);
+      icon.setStrokeStyle(2, 0xffffff, 0.5);
       slotContainer.add(icon);
 
       const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
-      const levelText = this.add.text(0, -3, levelStr, {
+      const levelText = this.add.text(0, -slotSize * 0.08, levelStr, {
         fontFamily: 'monospace',
-        fontSize: `${slotSize * 0.18}px`,
+        fontSize: `${slotSize * 0.24}px`,
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       slotContainer.add(levelText);
 
       const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '💎';
-      const typeText = this.add.text(0, slotSize * 0.28, typeIcon, {
-        fontSize: `${slotSize * 0.15}px`,
+      const typeText = this.add.text(0, slotSize * 0.3, typeIcon, {
+        fontSize: `${slotSize * 0.22}px`,
       }).setOrigin(0.5);
       slotContainer.add(typeText);
 
@@ -739,26 +747,28 @@ export class BattleScene extends Phaser.Scene {
       });
     });
 
-    const countText = this.add.text(width / 2, startY + rows * slotSize + 30, `共 ${items.length} 件`, {
+    const infoFontSize = Math.max(14, Math.min(18, width * 0.015));
+    const countText = this.add.text(width / 2, startY + rows * slotSpacing + 25, `共 ${items.length} 件`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '14px',
+      fontSize: `${infoFontSize}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
     lootContainer.add(countText);
 
     if (fragmentsGained > 0) {
-      const fragmentText = this.add.text(width / 2, startY + rows * slotSize + 55, `${fragmentsGained} 件物品已炼化为碎片`, {
+      const fragmentText = this.add.text(width / 2, startY + rows * slotSpacing + 50, `${fragmentsGained} 件物品已炼化为碎片`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: `${infoFontSize - 2}px`,
         color: '#a855f7',
       }).setOrigin(0.5);
       lootContainer.add(fragmentText);
     }
 
-    const btnY = height * 0.86;
-    const btnWidth = width * 0.12;
-    const btnHeight = height * 0.065;
-    const btnSpacing = width * 0.14;
+    const btnY = height * 0.88;
+    const btnWidth = width * 0.15;
+    const btnHeight = height * 0.08;
+    const btnSpacing = width * 0.18;
+    const btnFontSize = Math.max(14, Math.min(18, width * 0.015));
 
     // 背包按钮
     const bagBtnBg = this.add.rectangle(width / 2 - btnSpacing / 2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
@@ -768,7 +778,7 @@ export class BattleScene extends Phaser.Scene {
 
     const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 背包', {
       fontFamily: '"Noto Sans SC", serif',
-      fontSize: `${Math.max(12, width * 0.012)}px`,
+      fontSize: `${btnFontSize}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
     lootContainer.add(bagBtnText);
@@ -797,7 +807,7 @@ export class BattleScene extends Phaser.Scene {
 
     const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续冒险', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${Math.max(12, width * 0.012)}px`,
+      fontSize: `${btnFontSize}px`,
       color: '#0d1117',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -825,52 +835,59 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createLootPopup(item: Equipment, x: number, y: number): Phaser.GameObjects.Container {
-    const { width } = this.cameras.main;
+    const { width, height } = this.cameras.main;
     const popup = this.add.container(x, y);
 
-    const panelHeight = item.skill ? 280 : 220;
+    // 响应式尺寸
+    const panelWidth = Math.max(320, Math.min(420, width * 0.35));
+    const panelHeight = item.skill ? Math.max(340, height * 0.52) : Math.max(280, height * 0.42);
     const borderColor = this.getRarityBorderColor(item.rarity);
 
     const bg = this.add.graphics();
     bg.fillStyle(this.colors.inkBlack, 0.98);
-    bg.fillRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
+    bg.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     bg.lineStyle(3, borderColor, 0.9);
-    bg.strokeRoundedRect(-140, -panelHeight / 2, 280, panelHeight, 12);
+    bg.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     popup.add(bg);
 
-    let yOffset = -panelHeight / 2 + 25;
+    // 响应式字体
+    const nameFontSize = Math.max(20, Math.min(26, width * 0.022));
+    const labelFontSize = Math.max(14, Math.min(18, width * 0.015));
+    const textFontSize = Math.max(15, Math.min(20, width * 0.017));
+
+    let yOffset = -panelHeight / 2 + 30;
 
     const nameText = this.add.text(0, yOffset, item.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '18px',
+      fontSize: `${nameFontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     popup.add(nameText);
 
-    yOffset += 25;
+    yOffset += 32;
 
     const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '法宝';
     const typeRarityText = this.add.text(0, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: this.getRarityColor(item.rarity),
     }).setOrigin(0.5);
     popup.add(typeRarityText);
 
-    yOffset += 22;
+    yOffset += 28;
 
     const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
     const wuxingName = item.wuxing !== undefined ? WUXING_NAMES[item.wuxing] : '无';
     const wuxingLevelStr = item.wuxing !== undefined ? ` Lv.${item.wuxingLevel ?? 1}` : '';
     const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
     popup.add(wuxingText);
 
-    yOffset += 22;
+    yOffset += 28;
 
     const stats: string[] = [];
     if (item.attack) stats.push(`攻击 +${item.attack}`);
@@ -878,37 +895,37 @@ export class BattleScene extends Phaser.Scene {
     if (stats.length > 0) {
       const statsText = this.add.text(0, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '13px',
+        fontSize: `${textFontSize}px`,
         color: '#f0e6d3',
       }).setOrigin(0.5);
       popup.add(statsText);
-      yOffset += 22;
+      yOffset += 28;
     }
 
     if (item.skill) {
-      yOffset += 5;
+      yOffset += 8;
       const skillNameText = this.add.text(0, yOffset, `【${item.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: `${labelFontSize}px`,
         color: '#d4a853',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       popup.add(skillNameText);
 
-      yOffset += 18;
+      yOffset += 24;
       const skillDescText = this.add.text(0, yOffset, item.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
+        fontSize: `${labelFontSize - 2}px`,
         color: '#8b949e',
-        wordWrap: { width: 240 },
+        wordWrap: { width: panelWidth * 0.85 },
         align: 'center',
       }).setOrigin(0.5, 0);
       popup.add(skillDescText);
     }
 
-    const closeText = this.add.text(0, panelHeight / 2 - 20, '点击其他地方关闭', {
+    const closeText = this.add.text(0, panelHeight / 2 - 25, '点击其他地方关闭', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '10px',
+      fontSize: `${labelFontSize - 3}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
     popup.add(closeText);

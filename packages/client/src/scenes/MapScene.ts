@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
-import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES } from '@xiyou/shared';
+import { NodeType, GameNode, WUXING_COLORS, WUXING_NAMES, generateEnemies, Combatant } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+
+interface BattleNodeInfo extends GameNode {
+  enemies?: Combatant[];
+}
 
 /**
  * 地图场景 - 响应式布局（基于屏幕百分比）
@@ -9,7 +13,7 @@ export class MapScene extends Phaser.Scene {
   private mode: 'single' | 'multi' = 'single';
   private currentRound: number = 1;
   private maxRounds: number = 7; // 第7轮为最终局
-  private nodeOptions: GameNode[] = [];
+  private nodeOptions: BattleNodeInfo[] = [];
 
   private readonly colors = {
     bgDark: 0x0d1117,
@@ -204,13 +208,16 @@ export class MapScene extends Phaser.Scene {
 
   private generateNodeOptions(): void {
     this.nodeOptions = [];
+    const playerState = gameState.getPlayerState();
 
     // 第7轮是最终局，只有一个选择：最终Boss战斗
     if (this.currentRound >= this.maxRounds) {
+      const enemies = generateEnemies('final', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
       this.nodeOptions.push({
-        type: NodeType.ELITE_BATTLE, // 将作为 'final' 处理
+        type: NodeType.ELITE_BATTLE,
         name: '最终决战',
         description: '与混世魔王的最终对决',
+        enemies: enemies,
       });
       return;
     }
@@ -218,16 +225,20 @@ export class MapScene extends Phaser.Scene {
     // 第一个必定是战斗节点
     const battleRoll = Math.random();
     if (battleRoll < 0.7) {
+      const enemies = generateEnemies('normal', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
       this.nodeOptions.push({
         type: NodeType.NORMAL_BATTLE,
         name: '普通战斗',
         description: '遭遇一群小妖怪',
+        enemies: enemies,
       });
     } else {
+      const enemies = generateEnemies('elite', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
       this.nodeOptions.push({
         type: NodeType.ELITE_BATTLE,
         name: '精英战斗',
         description: '遭遇强力妖怪，奖励丰厚',
+        enemies: enemies,
       });
     }
 
@@ -245,11 +256,13 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private randomNode(): GameNode {
+  private randomNode(): BattleNodeInfo {
     const roll = Math.random();
+    const playerState = gameState.getPlayerState();
     let type: NodeType;
     let name: string;
     let description: string;
+    let enemies: Combatant[] | undefined;
 
     if (roll < 0.35) {
       type = NodeType.REST;
@@ -259,6 +272,7 @@ export class MapScene extends Phaser.Scene {
       type = NodeType.NORMAL_BATTLE;
       name = '普通战斗';
       description = '遭遇一群小妖怪';
+      enemies = generateEnemies('normal', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
     } else if (roll < 0.75) {
       type = NodeType.RANDOM_EVENT;
       name = '随机事件';
@@ -267,13 +281,14 @@ export class MapScene extends Phaser.Scene {
       type = NodeType.ELITE_BATTLE;
       name = '精英战斗';
       description = '遭遇强力妖怪，奖励丰厚';
+      enemies = generateEnemies('elite', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
     } else {
       type = NodeType.STORY;
       name = '西游奇遇';
       description = '进入一段特殊剧情';
     }
 
-    return { type, name, description };
+    return { type, name, description, enemies };
   }
 
   private displayNodes(): void {
@@ -300,7 +315,7 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
-  private createNodeCard(x: number, y: number, node: GameNode, index: number, cardWidth: number, cardHeight: number): void {
+  private createNodeCard(x: number, y: number, node: BattleNodeInfo, index: number, cardWidth: number, cardHeight: number): void {
     const { width, height } = this.cameras.main;
     const nodeColor = this.getNodeColor(node.type);
 
@@ -315,17 +330,43 @@ export class MapScene extends Phaser.Scene {
     bgGraphics.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
     container.add(bgGraphics);
 
-    // 顶部图标
-    const iconSize = Math.max(25, Math.min(40, cardWidth * 0.12));
-    const iconBg = this.add.circle(0, -cardHeight * 0.22, iconSize, nodeColor, 0.3);
-    iconBg.setStrokeStyle(2, nodeColor, 0.6);
-    container.add(iconBg);
+    // 如果是战斗节点，显示敌人预览
+    if (node.enemies && node.enemies.length > 0) {
+      const enemyIconSize = Math.max(18, Math.min(28, cardWidth * 0.09));
+      const enemySpacing = enemyIconSize * 1.4;
+      const enemyStartX = -((node.enemies.length - 1) * enemySpacing) / 2;
+      const enemyY = -cardHeight * 0.18;
 
-    const iconFontSize = Math.max(20, Math.min(36, cardWidth * 0.1));
-    const icon = this.add.text(0, -cardHeight * 0.22, this.getNodeIcon(node.type), {
-      fontSize: `${iconFontSize}px`,
-    }).setOrigin(0.5);
-    container.add(icon);
+      node.enemies.forEach((enemy, i) => {
+        const ex = enemyStartX + i * enemySpacing;
+        const enemyColor = enemy.attackWuxing?.wuxing !== undefined ? WUXING_COLORS[enemy.attackWuxing.wuxing] : 0x8b949e;
+
+        const enemyIcon = this.add.circle(ex, enemyY, enemyIconSize, enemyColor, 0.9);
+        enemyIcon.setStrokeStyle(2, 0xffffff, 0.5);
+        container.add(enemyIcon);
+
+        const levelStr = enemy.attackWuxing?.level?.toString() ?? '?';
+        const levelText = this.add.text(ex, enemyY, levelStr, {
+          fontFamily: 'monospace',
+          fontSize: `${enemyIconSize * 0.6}px`,
+          color: '#ffffff',
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
+        container.add(levelText);
+      });
+    } else {
+      // 非战斗节点显示图标
+      const iconSize = Math.max(25, Math.min(40, cardWidth * 0.12));
+      const iconBg = this.add.circle(0, -cardHeight * 0.22, iconSize, nodeColor, 0.3);
+      iconBg.setStrokeStyle(2, nodeColor, 0.6);
+      container.add(iconBg);
+
+      const iconFontSize = Math.max(20, Math.min(36, cardWidth * 0.1));
+      const icon = this.add.text(0, -cardHeight * 0.22, this.getNodeIcon(node.type), {
+        fontSize: `${iconFontSize}px`,
+      }).setOrigin(0.5);
+      container.add(icon);
+    }
 
     // 名称居中
     const nameFontSize = Math.max(14, Math.min(22, cardWidth * 0.065));

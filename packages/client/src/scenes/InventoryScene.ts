@@ -344,68 +344,76 @@ export class InventoryScene extends Phaser.Scene {
     overlay.on('pointerup', () => this.closePopup());
     this.popup.add(overlay);
 
-    // 弹窗面板
-    const panelHeight = equipment.skill ? 380 : 320;
+    // 响应式尺寸
+    const panelWidth = Math.max(360, Math.min(480, width * 0.4));
+    const panelHeight = equipment.skill ? Math.max(420, height * 0.62) : Math.max(360, height * 0.52);
     const borderColor = this.getRarityBorderColor(equipment.rarity);
+
+    // 响应式字体
+    const titleFontSize = Math.max(22, Math.min(28, width * 0.024));
+    const labelFontSize = Math.max(16, Math.min(20, width * 0.017));
+    const textFontSize = Math.max(17, Math.min(22, width * 0.018));
+    const iconRadius = Math.max(35, Math.min(45, width * 0.038));
+
     const panel = this.add.graphics();
     panel.fillStyle(this.colors.inkBlack, 0.98);
-    panel.fillRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
+    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     panel.lineStyle(3, borderColor, 0.9);
-    panel.strokeRoundedRect(-150, -panelHeight / 2, 300, panelHeight, 12);
+    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
     this.popup.add(panel);
 
-    let yOffset = -panelHeight / 2 + 25;
+    let yOffset = -panelHeight / 2 + 35;
 
     // 装备图标
     const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
-    const icon = this.add.circle(0, yOffset, 30, color);
+    const icon = this.add.circle(0, yOffset, iconRadius, color);
     icon.setStrokeStyle(3, 0xffffff, 0.5);
     this.popup.add(icon);
 
     const levelStr = equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-';
     const levelText = this.add.text(0, yOffset, levelStr, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '20px',
+      fontSize: `${titleFontSize}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.popup.add(levelText);
 
-    yOffset += 45;
+    yOffset += iconRadius + 25;
 
     // 名称
     const nameText = this.add.text(0, yOffset, equipment.name, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '20px',
+      fontSize: `${titleFontSize}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.popup.add(nameText);
 
-    yOffset += 25;
+    yOffset += 32;
 
     // 类型 + 稀有度
     const typeAndRarity = `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`;
     const typeRarityText = this.add.text(0, yOffset, typeAndRarity, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '12px',
+      fontSize: `${labelFontSize}px`,
       color: this.getRarityColor(equipment.rarity),
     }).setOrigin(0.5);
     this.popup.add(typeRarityText);
 
-    yOffset += 22;
+    yOffset += 28;
 
     // 五行属性
     const wuxingName = equipment.wuxing !== undefined ? WUXING_NAMES[equipment.wuxing] : '无';
     const wuxingLevelStr = equipment.wuxing !== undefined ? ` Lv.${equipment.wuxingLevel ?? 1}` : '';
     const wuxingText = this.add.text(0, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '13px',
+      fontSize: `${labelFontSize}px`,
       color: '#' + color.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
     this.popup.add(wuxingText);
 
-    yOffset += 25;
+    yOffset += 30;
 
     // 攻防
     const stats: string[] = [];
@@ -414,59 +422,60 @@ export class InventoryScene extends Phaser.Scene {
     if (stats.length > 0) {
       const statsText = this.add.text(0, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '14px',
+        fontSize: `${textFontSize}px`,
         color: '#f0e6d3',
       }).setOrigin(0.5);
       this.popup.add(statsText);
-      yOffset += 25;
+      yOffset += 30;
     }
 
     // 技能
     if (equipment.skill) {
       const skillNameText = this.add.text(0, yOffset, `【${equipment.skill.name}】`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '13px',
+        fontSize: `${labelFontSize}px`,
         color: '#d4a853',
         fontStyle: 'bold',
       }).setOrigin(0.5);
       this.popup.add(skillNameText);
 
-      yOffset += 18;
+      yOffset += 26;
       const skillDescText = this.add.text(0, yOffset, equipment.skill.description, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
+        fontSize: `${labelFontSize - 2}px`,
         color: '#8b949e',
-        wordWrap: { width: 260 },
+        wordWrap: { width: panelWidth * 0.85 },
         align: 'center',
       }).setOrigin(0.5, 0);
       this.popup.add(skillDescText);
     }
 
     // 按钮区域
-    yOffset = panelHeight / 2 - 50;
+    const btnY = panelHeight / 2 - 55;
+    const btnWidth = Math.max(85, Math.min(100, panelWidth * 0.25));
+    const btnHeight = Math.max(38, Math.min(48, height * 0.07));
+    const btnSpacing = btnWidth * 1.15;
+    const btnFontSize = Math.max(14, Math.min(18, width * 0.015));
 
     if (slotInfo.type === 'inventory') {
-      this.createPopupButton(-90, yOffset, '装备', () => this.equipItem(slotInfo));
-      this.createPopupButton(0, yOffset, '合成', () => this.startSynthesizeMode(slotInfo));
-      this.createPopupButton(90, yOffset, '吞噬', () => this.startDevourMode(slotInfo));
+      this.createPopupButton(-btnSpacing, btnY, '装备', () => this.equipItem(slotInfo), btnWidth, btnHeight, btnFontSize);
+      this.createPopupButton(0, btnY, '合成', () => this.startSynthesizeMode(slotInfo), btnWidth, btnHeight, btnFontSize);
+      this.createPopupButton(btnSpacing, btnY, '吞噬', () => this.startDevourMode(slotInfo), btnWidth, btnHeight, btnFontSize);
     } else {
-      this.createPopupButton(0, yOffset, '卸下', () => this.unequipItem(slotInfo));
+      this.createPopupButton(0, btnY, '卸下', () => this.unequipItem(slotInfo), btnWidth, btnHeight, btnFontSize);
     }
   }
 
-  private createPopupButton(x: number, y: number, text: string, onClick: () => void): void {
+  private createPopupButton(x: number, y: number, text: string, onClick: () => void, btnWidth: number = 85, btnHeight: number = 38, fontSize: number = 15): void {
     if (!this.popup) return;
 
-    const btnWidth = 70;
-    const btnHeight = 32;
-
     const bg = this.add.rectangle(x, y, btnWidth, btnHeight, this.colors.inkGrey);
-    bg.setStrokeStyle(1, this.colors.goldAccent, 0.5);
+    bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
     const btnText = this.add.text(x, y, text, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '13px',
+      fontSize: `${fontSize}px`,
       color: '#f0e6d3',
     }).setOrigin(0.5);
 
