@@ -1552,13 +1552,6 @@ export class BattleScene extends Phaser.Scene {
       { text: '', color: '' },
       { text: '新的残魂会诞生，', color: '#8b949e' },
       { text: '背负同样的使命，踏上同样的路。', color: '#8b949e' },
-      { text: '', color: '' },
-      { text: '这一切有意义吗？', color: '#6e7681' },
-      { text: '', color: '' },
-      { text: '也许没有。', color: '#6e7681' },
-      { text: '但你依然去做了。', color: '#f0e6d3' },
-      { text: '', color: '' },
-      { text: '这就是无极。', color: '#d4a853', emphasis: true },
     ];
 
     let yOffset = height / 2 - panelHeight * 0.25;
