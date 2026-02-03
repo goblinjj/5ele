@@ -19,6 +19,7 @@ export interface SynthesisResult {
   fragmentsGained: number;   // 获得的碎片数量
   message: string;
   isSpecial?: boolean;       // 是否为特殊重组（传说器物）
+  successRate?: number;      // 本次成功率（百分比，0-100）
 }
 
 /**
@@ -28,6 +29,7 @@ export interface DevourResult {
   success: boolean;
   upgradedItem?: Equipment;
   message: string;
+  successRate?: number;      // 本次成功率（百分比，0-100）
 }
 
 /**
@@ -150,6 +152,7 @@ export class SynthesisSystem {
     }
 
     // 检查特殊配方
+    const recipe = checkRecipe(item1, item2);
     const specialResult = this.checkSpecialRecipe(item1, item2);
     if (specialResult) {
       // 移除两件装备（先移除较大索引）
@@ -163,13 +166,15 @@ export class SynthesisSystem {
       // 添加结果
       gameState.addToInventory(specialResult);
 
+      const displayRate = recipe ? Math.min(Math.round(recipe.successRate * 100), 100) : 100;
       return {
         success: true,
         result: specialResult,
         destroyedItems: [item1, item2],
         fragmentsGained: 0,
-        message: `重组成功！获得了 ${specialResult.name}！`,
+        message: `重组成功！获得了 ${specialResult.name}！[成功率: ${displayRate}%]`,
         isSpecial: true,
+        successRate: displayRate,
       };
     }
 
@@ -201,6 +206,9 @@ export class SynthesisSystem {
       gameState.removeFromInventory(slot1);
     }
 
+    // 计算显示用的成功率（百分比，最高100%）
+    const displayRate = Math.min(Math.round(finalRate * 100), 100);
+
     if (success) {
       // 成功：第一件装备升级
       const upgradedItem = this.upgradeEquipment(item1);
@@ -211,7 +219,8 @@ export class SynthesisSystem {
         result: upgradedItem,
         destroyedItems: [item1, item2],
         fragmentsGained: 0,
-        message: `重组成功！${upgradedItem.name} 升级了！`,
+        message: `重组成功！${upgradedItem.name} 升级了！[成功率: ${displayRate}%]`,
+        successRate: displayRate,
       };
     } else {
       // 失败：获得2个碎片
@@ -222,7 +231,8 @@ export class SynthesisSystem {
         success: false,
         destroyedItems: [item1, item2],
         fragmentsGained: 2,
-        message: `重组失败... ${item1.name} 和 ${item2.name} 归元为2个碎片`,
+        message: `重组失败... ${item1.name} 和 ${item2.name} 归元为2个碎片 [成功率: ${displayRate}%]`,
+        successRate: displayRate,
       };
     }
   }
@@ -254,6 +264,8 @@ export class SynthesisSystem {
 
     // 判断吞噬是否成功
     const roll = Math.random();
+    const displayRate = Math.round(DEVOUR_BASE_RATE * 100);
+
     if (roll < DEVOUR_BASE_RATE) {
       // 成功：目标装备升级
       const upgraded = this.upgradeEquipment(target);
@@ -263,12 +275,14 @@ export class SynthesisSystem {
       return {
         success: true,
         upgradedItem: upgraded,
-        message: `归元成功！${upgraded.name} 变得更强了！`,
+        message: `归元成功！${upgraded.name} 变得更强了！[成功率: ${displayRate}%]`,
+        successRate: displayRate,
       };
     } else {
       return {
         success: false,
-        message: `归元失败... ${sacrifice.name} 消散了`,
+        message: `归元失败... ${sacrifice.name} 消散了 [成功率: ${displayRate}%]`,
+        successRate: displayRate,
       };
     }
   }

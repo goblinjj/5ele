@@ -846,17 +846,9 @@ export class InventoryScene extends Phaser.Scene {
   private showSynthesizeOptions(): void {
     const { width, height } = this.cameras.main;
     const fragments = gameState.getFragmentCount();
-    const firstItem = this.firstSelectedSlot?.equipment;
-
-    // 获取第一件器物的属性名
-    let wuxingInfo = '';
-    if (firstItem?.wuxing !== undefined) {
-      const wuxingName = WUXING_NAMES[firstItem.wuxing];
-      wuxingInfo = ` [${wuxingName}] 相生60% 相助50% 相耗40% 相克30% 相泻20%`;
-    }
 
     // 显示选择提示和碎片开关
-    this.showTopMessage(`选择辅器物进行重组${wuxingInfo}`, '#d4a853', false);
+    this.showTopMessage(`选择辅器物进行重组 (碎片: ${fragments})`, '#d4a853', false);
     this.showCancelButton(true); // 始终显示碎片开关
   }
 
