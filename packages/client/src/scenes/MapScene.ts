@@ -180,7 +180,7 @@ export class MapScene extends Phaser.Scene {
     bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
-    const text = this.add.text(btnX, btnY, '📦 背包', {
+    const text = this.add.text(btnX, btnY, '📦 灵囊', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',
