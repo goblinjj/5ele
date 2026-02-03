@@ -202,6 +202,11 @@ export class MapScene extends Phaser.Scene {
   private openInventory(): void {
     this.scene.pause();
     this.scene.launch('InventoryScene');
+    // 监听灵囊关闭事件，刷新界面
+    this.scene.get('InventoryScene').events.once('shutdown', () => {
+      // 重启当前场景以刷新所有显示
+      this.scene.restart({ mode: this.mode, round: this.currentRound });
+    });
   }
 
   private generateNodeOptions(): void {

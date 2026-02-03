@@ -1212,6 +1212,6 @@ export class InventoryScene extends Phaser.Scene {
 
   private closeScene(): void {
     this.scene.stop();
-    this.scene.resume('MapScene');
+    // MapScene 会在 shutdown 事件中处理刷新
   }
 }
