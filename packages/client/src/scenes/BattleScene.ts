@@ -196,7 +196,7 @@ export class BattleScene extends Phaser.Scene {
     btnBg.setInteractive({ useHandCursor: true });
     this.inventoryButton.add(btnBg);
 
-    const btnText = this.add.text(0, 0, '📦 背包', {
+    const btnText = this.add.text(0, 0, '📦 灵囊', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#f0e6d3',
@@ -546,7 +546,7 @@ export class BattleScene extends Phaser.Scene {
 
     const winnerId = this.battleEngine.getWinnerId();
     if (winnerId) {
-      await this.showCenterText('胜利！', '#3fb950');
+      await this.showCenterText('净化！', '#3fb950');
       await this.handleVictory();
     } else {
       await this.delay(500);
@@ -966,7 +966,7 @@ export class BattleScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
     lootContainer.add(overlay);
 
-    const title = this.add.text(width / 2, height * 0.08, '战利品', {
+    const title = this.add.text(width / 2, height * 0.08, '塑形器物', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
@@ -1060,7 +1060,7 @@ export class BattleScene extends Phaser.Scene {
     lootContainer.add(countText);
 
     if (fragmentsGained > 0) {
-      const fragmentText = this.add.text(width / 2, startY + rows * slotSpacing + 50, `${fragmentsGained} 件物品已炼化为碎片`, {
+      const fragmentText = this.add.text(width / 2, startY + rows * slotSpacing + 50, `${fragmentsGained} 件器物已归元为碎片`, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontSM}px`,
         color: '#a855f7',
@@ -1079,7 +1079,7 @@ export class BattleScene extends Phaser.Scene {
     bagBtnBg.setInteractive({ useHandCursor: true });
     lootContainer.add(bagBtnBg);
 
-    const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 背包', {
+    const bagBtnText = this.add.text(width / 2 - btnSpacing / 2, btnY, '📦 灵囊', {
       fontFamily: '"Noto Sans SC", serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',
@@ -1108,7 +1108,7 @@ export class BattleScene extends Phaser.Scene {
     continueBtnBg.setInteractive({ useHandCursor: true });
     lootContainer.add(continueBtnBg);
 
-    const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续探索', {
+    const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '选择气穴', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
@@ -1197,7 +1197,7 @@ export class BattleScene extends Phaser.Scene {
     yOffset += uiConfig.fontXL + 12;
 
     // 类型 + 稀有度
-    const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '法宝';
+    const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '灵器';
     const typeRarityText = this.add.text(textX, yOffset, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontLG}px`,
@@ -1465,7 +1465,7 @@ export class BattleScene extends Phaser.Scene {
     panelBg.lineStyle(2, this.colors.redAccent, 0.6);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    this.add.text(width / 2, height / 2 - panelHeight * 0.38, '意志消散', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.38, '崩坏', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.font2XL}px`,
       color: '#f85149',

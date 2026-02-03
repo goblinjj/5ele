@@ -131,7 +131,7 @@ export class SynthesisSystem {
         success: false,
         destroyedItems: [],
         fragmentsGained: 0,
-        message: '请选择两件装备进行合成',
+        message: '请选择两件器物进行重组',
       };
     }
 
@@ -173,7 +173,7 @@ export class SynthesisSystem {
         result: specialResult,
         destroyedItems: [item1, item2],
         fragmentsGained: 0,
-        message: `合成成功！获得了 ${specialResult.name}！`,
+        message: `重组成功！获得了 ${specialResult.name}！`,
         isSpecial: true,
       };
     }
@@ -216,7 +216,7 @@ export class SynthesisSystem {
         result: upgradedItem,
         destroyedItems: [item1, item2],
         fragmentsGained: 0,
-        message: `合成成功！${upgradedItem.name} 升级了！`,
+        message: `重组成功！${upgradedItem.name} 升级了！`,
       };
     } else {
       // 失败：获得2个碎片
@@ -227,7 +227,7 @@ export class SynthesisSystem {
         success: false,
         destroyedItems: [item1, item2],
         fragmentsGained: 2,
-        message: `合成失败... ${item1.name} 和 ${item2.name} 分解成了2个碎片`,
+        message: `重组失败... ${item1.name} 和 ${item2.name} 归元为2个碎片`,
       };
     }
   }
@@ -243,14 +243,14 @@ export class SynthesisSystem {
     if (!target || !sacrifice) {
       return {
         success: false,
-        message: '请选择目标装备和祭品装备',
+        message: '请选择目标器物和祭品器物',
       };
     }
 
     if (targetSlot === sacrificeSlot) {
       return {
         success: false,
-        message: '不能吞噬自己',
+        message: '不能归元自己',
       };
     }
 
@@ -268,12 +268,12 @@ export class SynthesisSystem {
       return {
         success: true,
         upgradedItem: upgraded,
-        message: `吞噬成功！${upgraded.name} 变得更强了！`,
+        message: `归元成功！${upgraded.name} 变得更强了！`,
       };
     } else {
       return {
         success: false,
-        message: `吞噬失败... ${sacrifice.name} 消失了`,
+        message: `归元失败... ${sacrifice.name} 消散了`,
       };
     }
   }

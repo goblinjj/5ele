@@ -109,7 +109,7 @@ export class PrologueScene extends Phaser.Scene {
     const lineHeight = uiConfig.fontLG + 16;
     const startY = height * 0.5 - (totalLines * lineHeight) / 2;
 
-    // 同时创建所有文字，使用错开的延迟实现快速依次出现
+    // 同时创建所有文字，立即显示（1秒内全部淡入完成）
     this.textLines.forEach((line, index) => {
       const y = startY + index * lineHeight;
       const isEmphasis = index === this.textLines.length - 1;
@@ -123,14 +123,11 @@ export class PrologueScene extends Phaser.Scene {
 
       this.displayedTexts.push(text);
 
-      // 每行间隔约80ms，总共约1秒显示完
-      const delay = index * 80;
-
+      // 所有文字同时开始淡入，1秒内完成
       this.tweens.add({
         targets: text,
         alpha: 1,
-        duration: 300,
-        delay: delay,
+        duration: 1000,
         ease: 'Power2.easeOut',
       });
     });

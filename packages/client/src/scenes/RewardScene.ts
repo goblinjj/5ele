@@ -243,7 +243,7 @@ export class RewardScene extends Phaser.Scene {
 
     // 类型
     const typeName = equip.type === EquipmentType.WEAPON ? '武器' :
-                     equip.type === EquipmentType.ARMOR ? '铠甲' : '法宝';
+                     equip.type === EquipmentType.ARMOR ? '铠甲' : '灵器';
     this.add.text(x, y + 25, typeName, {
       fontFamily: 'Arial',
       fontSize: '14px',

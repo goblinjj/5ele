@@ -293,7 +293,7 @@ export class MapScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 标题 - 28%
-    this.add.text(width / 2, height * 0.28, '选择下一步', {
+    this.add.text(width / 2, height * 0.28, '选择气穴', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',

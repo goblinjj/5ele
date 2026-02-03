@@ -28,7 +28,7 @@ interface SlotInfo {
 }
 
 /**
- * 背包管理场景 - 横屏优化 (1280x720)
+ * 灵囊管理场景 - 横屏优化 (1280x720)
  */
 export class InventoryScene extends Phaser.Scene {
   private popup?: Phaser.GameObjects.Container;
@@ -66,7 +66,7 @@ export class InventoryScene extends Phaser.Scene {
     // 标题栏
     this.createHeader();
 
-    // 上半部分：装备栏（武器、铠甲、法宝）
+    // 上半部分：装备栏（武器、铠甲、灵器）
     this.createEquipmentSection();
 
     // 中间：状态栏
@@ -102,7 +102,7 @@ export class InventoryScene extends Phaser.Scene {
     headerBg.lineBetween(0, headerHeight, width, headerHeight);
 
     // 标题
-    this.add.text(width / 2, headerHeight / 2, '背包管理', {
+    this.add.text(width / 2, headerHeight / 2, '灵囊管理', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontXL}px`,
       color: '#f0e6d3',
@@ -178,19 +178,19 @@ export class InventoryScene extends Phaser.Scene {
     sectionBg.lineStyle(1, this.colors.inkGrey, 0.4);
     sectionBg.lineBetween(dividerX, sectionY + 15, dividerX, sectionY + sectionHeight - 15);
 
-    // === 右侧：法宝 ===
+    // === 右侧：灵器 ===
     const treasureStartX = width * 0.35;
     const treasures = gameState.getTreasures();
 
-    // 法宝标题
-    this.add.text(treasureStartX, sectionY + 15, '法宝栏', {
+    // 灵器标题
+    this.add.text(treasureStartX, sectionY + 15, '灵器栏', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     });
 
-    // 6个法宝槽位，一行显示
+    // 6个灵器槽位，一行显示
     const availableTreasureWidth = width * 0.62;
     const treasureSpacing = availableTreasureWidth / MAX_TREASURES;
     const treasureSlotSize = Math.min(treasureSpacing * 0.85, slotSize * 0.9);
@@ -471,7 +471,7 @@ export class InventoryScene extends Phaser.Scene {
 
     // 分区标题
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
-    this.add.text(width * 0.05, sectionY + 15, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
+    this.add.text(width * 0.05, sectionY + 15, `灵囊 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
@@ -718,8 +718,8 @@ export class InventoryScene extends Phaser.Scene {
 
     if (slotInfo.type === 'inventory') {
       this.createPopupButton(-btnSpacing, btnY, '装备', () => this.equipItem(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
-      this.createPopupButton(0, btnY, '合成', () => this.startSynthesizeMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
-      this.createPopupButton(btnSpacing, btnY, '吞噬', () => this.startDevourMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
+      this.createPopupButton(0, btnY, '重组', () => this.startSynthesizeMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
+      this.createPopupButton(btnSpacing, btnY, '归元', () => this.startDevourMode(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
     } else {
       this.createPopupButton(0, btnY, '卸下', () => this.unequipItem(slotInfo), btnWidth, btnHeight, uiConfig.fontMD);
     }
@@ -781,7 +781,7 @@ export class InventoryScene extends Phaser.Scene {
         break;
       case EquipmentType.TREASURE:
         if (gameState.getTreasures().length >= MAX_TREASURES) {
-          this.showTopMessage('法宝栏已满！', '#f85149');
+          this.showTopMessage('灵器栏已满！', '#f85149');
           return;
         }
         success = gameState.equipTreasure(slotInfo.index);
@@ -804,7 +804,7 @@ export class InventoryScene extends Phaser.Scene {
     this.closePopup();
 
     if (gameState.isInventoryFull()) {
-      this.showTopMessage('背包已满！', '#f85149');
+      this.showTopMessage('灵囊已满！', '#f85149');
       return;
     }
 
@@ -848,7 +848,7 @@ export class InventoryScene extends Phaser.Scene {
     const fragments = gameState.getFragmentCount();
 
     // 显示选择提示和碎片开关（始终显示开关）
-    this.showTopMessage(`选择另一件装备进行合成 (碎片: ${fragments})`, '#d4a853', false);
+    this.showTopMessage(`选择另一件器物进行重组 (碎片: ${fragments})`, '#d4a853', false);
     this.showCancelButton(true); // 始终显示碎片开关
   }
 
@@ -856,7 +856,7 @@ export class InventoryScene extends Phaser.Scene {
     this.closePopup();
     this.popupMode = 'select-devour';
     this.firstSelectedSlot = slotInfo;
-    this.showTopMessage('选择要吞噬的装备', '#d4a853', false);
+    this.showTopMessage('选择要归元的器物', '#d4a853', false);
     this.showCancelButton(false);
   }
 
@@ -1166,8 +1166,8 @@ export class InventoryScene extends Phaser.Scene {
     switch (type) {
       case EquipmentType.WEAPON: return '武器';
       case EquipmentType.ARMOR: return '铠甲';
-      case EquipmentType.TREASURE: return '法宝';
-      default: return '装备';
+      case EquipmentType.TREASURE: return '灵器';
+      default: return '器物';
     }
   }
 
