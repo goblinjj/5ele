@@ -119,7 +119,7 @@ export class BattleScene extends Phaser.Scene {
     topBarBg.lineStyle(1, this.colors.goldAccent, 0.4);
     topBarBg.strokeRoundedRect(width * 0.02, height * 0.02, width * 0.96, height * 0.13, 8);
 
-    const titleText = this.nodeType === 'final' ? '最终决战' :
+    const titleText = this.nodeType === 'final' ? '病变核心' :
                       this.nodeType === NodeType.ELITE_BATTLE ? '精英战斗' : '战斗';
 
     this.add.text(width / 2, height * 0.065, titleText, {

@@ -218,8 +218,8 @@ export class MapScene extends Phaser.Scene {
       const enemies = generateEnemies('final', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
       this.nodeOptions.push({
         type: NodeType.ELITE_BATTLE,
-        name: '最终决战',
-        description: '与混世魔王的最终对决',
+        name: '病变核心',
+        description: '净化区域深处的病变之源',
         enemies: enemies,
       });
       return;
