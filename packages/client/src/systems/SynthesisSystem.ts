@@ -3,7 +3,6 @@ import {
   Wuxing,
   WUXING_GENERATES,
   WUXING_CONQUERS,
-  getWuxingRelation,
   checkRecipe,
   getLegendaryEquipment,
   SPECIAL_RECIPES,
@@ -11,19 +10,19 @@ import {
 import { gameState } from './GameStateManager.js';
 
 /**
- * 合成结果
+ * 重组结果
  */
 export interface SynthesisResult {
   success: boolean;
   result?: Equipment;        // 成功时的产物
-  destroyedItems: Equipment[]; // 被销毁的装备（两件都会销毁）
+  destroyedItems: Equipment[]; // 被销毁的器物（两件都会销毁）
   fragmentsGained: number;   // 获得的碎片数量
   message: string;
-  isSpecial?: boolean;       // 是否为特殊合成（传说装备）
+  isSpecial?: boolean;       // 是否为特殊重组（传说器物）
 }
 
 /**
- * 吞噬结果
+ * 归元结果
  */
 export interface DevourResult {
   success: boolean;
@@ -32,28 +31,24 @@ export interface DevourResult {
 }
 
 /**
- * 合成概率表（黑盒，不暴露给玩家）
+ * 五行重组关系类型
+ * 相生（辅生主）: 60% - 土生金、水生木、金生水、木生火、火生土
+ * 相助（同属性）: 50%
+ * 相耗（主克辅）: 40% - 金克木、木克土、土克水、水克火、火克金
+ * 相克（辅克主）: 30%
+ * 相泻（主生辅）: 20%
  */
-const SYNTHESIS_RATES = {
-  same: 0.5, // 同属性 50%
+type SynthesisRelation = 'generate' | 'assist' | 'consume' | 'conquer' | 'drain';
 
-  // 相生概率（因属性而异）
-  generate: {
-    [Wuxing.METAL]: 0.3,
-    [Wuxing.WATER]: 0.2,
-    [Wuxing.WOOD]: 0.3,
-    [Wuxing.FIRE]: 0.2,
-    [Wuxing.EARTH]: 0.3,
-  } as Record<Wuxing, number>,
-
-  // 相克概率（因属性而异）
-  conquer: {
-    [Wuxing.METAL]: 0.2,
-    [Wuxing.WATER]: 0.3,
-    [Wuxing.WOOD]: 0.2,
-    [Wuxing.FIRE]: 0.3,
-    [Wuxing.EARTH]: 0.2,
-  } as Record<Wuxing, number>,
+/**
+ * 重组概率表
+ */
+const SYNTHESIS_RATES: Record<SynthesisRelation, number> = {
+  generate: 0.6,  // 相生（辅生主）60%
+  assist: 0.5,    // 相助（同属性）50%
+  consume: 0.4,   // 相耗（主克辅）40%
+  conquer: 0.3,   // 相克（辅克主）30%
+  drain: 0.2,     // 相泻（主生辅）20%
 };
 
 /**
@@ -279,25 +274,48 @@ export class SynthesisSystem {
   }
 
   /**
-   * 获取合成基础概率
+   * 获取五行重组关系
+   * @param primary 主器物（最终升级的器物）
+   * @param secondary 辅器物（作为材料的器物）
    */
-  private static getBaseRate(wuxing1: Wuxing, wuxing2: Wuxing): number {
-    if (wuxing1 === wuxing2) {
-      return SYNTHESIS_RATES.same;
+  private static getSynthesisRelation(primary: Wuxing, secondary: Wuxing): SynthesisRelation {
+    // 相助：同属性
+    if (primary === secondary) {
+      return 'assist';
     }
 
-    const relation = getWuxingRelation(wuxing1, wuxing2);
-
-    if (relation === 'generate') {
-      return SYNTHESIS_RATES.generate[wuxing1];
+    // 相生：辅生主（辅的生目标是主）
+    if (WUXING_GENERATES[secondary] === primary) {
+      return 'generate';
     }
 
-    if (relation === 'conquer') {
-      return SYNTHESIS_RATES.conquer[wuxing1];
+    // 相耗：主克辅（主的克目标是辅）
+    if (WUXING_CONQUERS[primary] === secondary) {
+      return 'consume';
     }
 
-    // 无关系，取中间值
-    return 0.3;
+    // 相克：辅克主（辅的克目标是主）
+    if (WUXING_CONQUERS[secondary] === primary) {
+      return 'conquer';
+    }
+
+    // 相泻：主生辅（主的生目标是辅）
+    if (WUXING_GENERATES[primary] === secondary) {
+      return 'drain';
+    }
+
+    // 理论上不会到这里，但作为保底
+    return 'assist';
+  }
+
+  /**
+   * 获取重组基础概率
+   * @param primary 主器物属性
+   * @param secondary 辅器物属性
+   */
+  private static getBaseRate(primary: Wuxing, secondary: Wuxing): number {
+    const relation = this.getSynthesisRelation(primary, secondary);
+    return SYNTHESIS_RATES[relation];
   }
 
   /**
