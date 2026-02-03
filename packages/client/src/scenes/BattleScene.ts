@@ -1102,13 +1102,13 @@ export class BattleScene extends Phaser.Scene {
       });
     });
 
-    // 继续冒险按钮
+    // 继续探索按钮
     const continueBtnBg = this.add.rectangle(width / 2 + btnSpacing / 2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
     continueBtnBg.setStrokeStyle(2, 0xffffff, 0.5);
     continueBtnBg.setInteractive({ useHandCursor: true });
     lootContainer.add(continueBtnBg);
 
-    const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续冒险', {
+    const continueBtnText = this.add.text(width / 2 + btnSpacing / 2, btnY, '继续探索', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
@@ -1457,30 +1457,44 @@ export class BattleScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    const panelWidth = width * 0.35;
-    const panelHeight = height * 0.38;
+    const panelWidth = width * 0.45;
+    const panelHeight = height * 0.55;
     const panelBg = this.add.graphics();
     panelBg.fillStyle(this.colors.inkBlack, 0.95);
     panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
     panelBg.lineStyle(2, this.colors.redAccent, 0.6);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    this.add.text(width / 2, height / 2 - panelHeight * 0.25, '败 北', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.38, '意志消散', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.font3XL}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#f85149',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2, '西游路漫漫，来日再战', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5);
+    // 结语文字
+    const epilogueLines = [
+      '你的意志被妖异吞噬，',
+      '未能完成使命。',
+      '',
+      '但本源不会停止。',
+      '新的残魂将会诞生，',
+      '继续这场永无止境的净化之旅。',
+    ];
 
-    const btnWidth = panelWidth * 0.5;
+    let yOffset = height / 2 - panelHeight * 0.18;
+    epilogueLines.forEach(line => {
+      this.add.text(width / 2, yOffset, line, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontMD}px`,
+        color: line === '' ? '#8b949e' : '#a0a0a0',
+      }).setOrigin(0.5);
+      yOffset += line === '' ? 10 : 28;
+    });
+
+    const btnWidth = panelWidth * 0.4;
     const btnHeight = height * 0.065;
-    const btnY = height / 2 + panelHeight * 0.3;
+    const btnY = height / 2 + panelHeight * 0.38;
 
     const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, this.colors.inkGrey);
     btnBg.setStrokeStyle(2, this.colors.paperCream, 0.5);
@@ -1511,38 +1525,61 @@ export class BattleScene extends Phaser.Scene {
   private showGameComplete(): void {
     const { width, height } = this.cameras.main;
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.95);
 
-    const panelWidth = width * 0.4;
-    const panelHeight = height * 0.45;
+    const panelWidth = width * 0.55;
+    const panelHeight = height * 0.75;
     const panelBg = this.add.graphics();
     panelBg.fillStyle(this.colors.inkBlack, 0.95);
     panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
     panelBg.lineStyle(2, this.colors.goldAccent, 0.8);
     panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
 
-    this.add.text(width / 2, height / 2 - panelHeight * 0.28, '✨ 通关成功 ✨', {
+    this.add.text(width / 2, height / 2 - panelHeight * 0.4, '使命完成', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 - panelHeight * 0.05, '恭喜你完成了西游肉鸽！', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#f0e6d3',
-    }).setOrigin(0.5);
+    // 结语文字 - 完整版
+    const epilogueLines = [
+      { text: '使命完成。你将回归本源，不留下任何痕迹。', color: '#f0e6d3' },
+      { text: '', color: '' },
+      { text: '你不知道自己从何而来。', color: '#a0a0a0' },
+      { text: '你从未见过本源的模样。', color: '#a0a0a0' },
+      { text: '你只是被赋予了使命，然后去做了。', color: '#a0a0a0' },
+      { text: '', color: '' },
+      { text: '新的残魂会诞生，', color: '#8b949e' },
+      { text: '背负同样的使命，踏上同样的路。', color: '#8b949e' },
+      { text: '', color: '' },
+      { text: '这一切有意义吗？', color: '#6e7681' },
+      { text: '', color: '' },
+      { text: '也许没有。', color: '#6e7681' },
+      { text: '但你依然去做了。', color: '#f0e6d3' },
+      { text: '', color: '' },
+      { text: '这就是无极。', color: '#d4a853', emphasis: true },
+    ];
 
-    this.add.text(width / 2, height / 2 + panelHeight * 0.08, '取经路漫漫，终得正果', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5);
+    let yOffset = height / 2 - panelHeight * 0.25;
+    epilogueLines.forEach(line => {
+      if (line.text === '') {
+        yOffset += 12;
+        return;
+      }
+      const isEmphasis = (line as { emphasis?: boolean }).emphasis;
+      this.add.text(width / 2, yOffset, line.text, {
+        fontFamily: isEmphasis ? '"Noto Serif SC", serif' : '"Noto Sans SC", sans-serif',
+        fontSize: `${isEmphasis ? uiConfig.fontXL : uiConfig.fontMD}px`,
+        color: line.color,
+        fontStyle: isEmphasis ? 'bold' : 'normal',
+      }).setOrigin(0.5);
+      yOffset += isEmphasis ? 35 : 26;
+    });
 
-    const btnWidth = panelWidth * 0.4;
+    const btnWidth = panelWidth * 0.3;
     const btnHeight = height * 0.065;
-    const btnY = height / 2 + panelHeight * 0.3;
+    const btnY = height / 2 + panelHeight * 0.4;
 
     const btnBg = this.add.rectangle(width / 2, btnY, btnWidth, btnHeight, this.colors.goldAccent);
     btnBg.setStrokeStyle(2, 0xffffff, 0.5);

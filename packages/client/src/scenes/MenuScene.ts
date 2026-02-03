@@ -61,7 +61,7 @@ export class MenuScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 主标题 - 顶部 12%
-    const title = this.add.text(width / 2, height * 0.12, '西游肉鸽', {
+    const title = this.add.text(width / 2, height * 0.12, '无极', {
       fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
       fontSize: `${uiConfig.font3XL}px`,
       color: '#f0e6d3',
@@ -81,7 +81,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 副标题 - 顶部 20%
-    this.add.text(width / 2, height * 0.20, '五行策略 · 回合对战', {
+    this.add.text(width / 2, height * 0.20, '五行轮转 · 意志之争', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#8b949e',
@@ -222,7 +222,7 @@ export class MenuScene extends Phaser.Scene {
 
   private startSinglePlayer(): void {
     gameState.reset();
-    this.scene.start('MapScene', { mode: 'single', round: 1 });
+    this.scene.start('PrologueScene');
   }
 
   private startMultiPlayer(): void {

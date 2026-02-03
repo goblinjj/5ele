@@ -415,7 +415,7 @@ export class RewardScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 + 20, '你成功完成了西游试炼', {
+    this.add.text(width / 2, height / 2 + 20, '你成功净化了这片区域', {
       fontFamily: 'Arial',
       fontSize: '24px',
       color: '#ffffff',

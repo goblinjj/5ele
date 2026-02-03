@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from '../scenes/BootScene.js';
 import { MenuScene } from '../scenes/MenuScene.js';
+import { PrologueScene } from '../scenes/PrologueScene.js';
 import { MapScene } from '../scenes/MapScene.js';
 import { BattleScene } from '../scenes/BattleScene.js';
 import { RewardScene } from '../scenes/RewardScene.js';
@@ -16,7 +17,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   height: GAME_HEIGHT,
   parent: 'game-container',
   backgroundColor: '#0d1117',
-  scene: [BootScene, MenuScene, MapScene, BattleScene, RewardScene, InventoryScene],
+  scene: [BootScene, MenuScene, PrologueScene, MapScene, BattleScene, RewardScene, InventoryScene],
   physics: {
     default: 'arcade',
     arcade: {

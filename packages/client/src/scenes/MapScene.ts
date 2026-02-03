@@ -227,7 +227,7 @@ export class MapScene extends Phaser.Scene {
       this.nodeOptions.push({
         type: NodeType.NORMAL_BATTLE,
         name: '普通战斗',
-        description: '遭遇一群小妖怪',
+        description: '遭遇一群妖异',
         enemies: enemies,
       });
     } else {
@@ -235,7 +235,7 @@ export class MapScene extends Phaser.Scene {
       this.nodeOptions.push({
         type: NodeType.ELITE_BATTLE,
         name: '精英战斗',
-        description: '遭遇强力妖怪，奖励丰厚',
+        description: '遭遇强大妖异，五行之力充沛',
         enemies: enemies,
       });
     }
@@ -269,7 +269,7 @@ export class MapScene extends Phaser.Scene {
     } else if (roll < 0.55) {
       type = NodeType.NORMAL_BATTLE;
       name = '普通战斗';
-      description = '遭遇一群小妖怪';
+      description = '遭遇一群妖异';
       enemies = generateEnemies('normal', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
     } else if (roll < 0.75) {
       type = NodeType.RANDOM_EVENT;
@@ -278,12 +278,12 @@ export class MapScene extends Phaser.Scene {
     } else if (roll < 0.88) {
       type = NodeType.ELITE_BATTLE;
       name = '精英战斗';
-      description = '遭遇强力妖怪，奖励丰厚';
+      description = '遭遇强大妖异，五行之力充沛';
       enemies = generateEnemies('elite', this.currentRound, playerState.monsterScaling, playerState.monsterCountBonus);
     } else {
       type = NodeType.STORY;
-      name = '西游奇遇';
-      description = '进入一段特殊剧情';
+      name = '命脉奇遇';
+      description = '探索五行脉络的奥秘';
     }
 
     return { type, name, description, enemies };
