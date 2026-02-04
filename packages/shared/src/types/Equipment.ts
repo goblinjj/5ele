@@ -1,4 +1,5 @@
 import { Wuxing, WuxingLevel } from './Wuxing.js';
+import { AttributeSkillId } from '../data/AttributeSkillDatabase.js';
 
 /**
  * 装备类型
@@ -21,42 +22,15 @@ export enum Rarity {
 }
 
 /**
- * 技能触发类型
+ * 品质对应的五行等级
  */
-export enum SkillTrigger {
-  PASSIVE = 'passive',           // 被动，始终生效
-  ON_HIT = 'onHit',              // 攻击时触发
-  ON_DEFEND = 'onDefend',        // 被攻击时触发
-  BATTLE_START = 'battleStart',  // 战斗开始时触发
-  BATTLE_END = 'battleEnd',      // 战斗结束时触发
-}
-
-/**
- * 技能定义
- */
-export interface Skill {
-  id: string;
-  name: string;
-  description: string;
-  trigger: SkillTrigger;
-
-  // 触发概率（0-1，仅对触发型技能有效）
-  triggerChance?: number;
-
-  // 效果
-  damage?: number;           // 造成伤害
-  heal?: number;             // 回复生命
-  selfDamage?: number;       // 自损（黑魔法）
-  attackBonus?: number;      // 攻击加成
-  defenseBonus?: number;     // 防御加成
-  wuxingLevelBonus?: number; // 五行等级加成
-  damageMultiplier?: number; // 伤害倍率（如2.0表示双倍伤害）
-  ignoreDefense?: number;    // 无视防御
-  dodge?: boolean;           // 闪避
-
-  // 五行相关
-  wuxing?: Wuxing;
-}
+export const RARITY_WUXING_LEVEL: Record<Rarity, number> = {
+  [Rarity.COMMON]: 1,
+  [Rarity.UNCOMMON]: 2,
+  [Rarity.RARE]: 3,
+  [Rarity.EPIC]: 4,
+  [Rarity.LEGENDARY]: 5,
+};
 
 /**
  * 装备定义
@@ -67,19 +41,19 @@ export interface Equipment {
   type: EquipmentType;
   rarity: Rarity;
 
-  // 五行属性（可选，无属性装备没有五行）
+  // 五行属性（可选，初始武器无五行）
   wuxing?: Wuxing;
-  wuxingLevel?: number;
+  wuxingLevel?: number;  // 由品质决定，1-5
 
   // 基础属性（低数值系统）
   attack?: number;   // 攻击力 1-10
   defense?: number;  // 防御力 1-10
   speed?: number;    // 速度 0-3
 
-  // 附带技能
-  skill?: Skill;
+  // 属性技能列表（新系统，可选）
+  attributeSkills?: AttributeSkillId[];
 
-  // 升级等级
+  // 强化等级 +0~+4，决定技能数量上限
   upgradeLevel: number;
 }
 
@@ -183,7 +157,7 @@ export function getTotalSpeed(equipment: PlayerEquipment): number {
 
 /**
  * 计算所有装备的五行等级汇总
- * 统计武器+铠甲+所有法宝的五行，相同五行等级相加
+ * 统计武器+铠甲+所有法宝的五行，相同五行等级相加（上限10）
  */
 export function getAllWuxingLevels(equipment: PlayerEquipment): Map<Wuxing, number> {
   const wuxingLevels = new Map<Wuxing, number>();
@@ -208,5 +182,34 @@ export function getAllWuxingLevels(equipment: PlayerEquipment): Map<Wuxing, numb
     }
   }
 
+  // 上限10
+  for (const [wuxing, level] of wuxingLevels) {
+    wuxingLevels.set(wuxing, Math.min(10, level));
+  }
+
   return wuxingLevels;
 }
+
+/**
+ * 收集所有装备的属性技能（扁平化列表）
+ */
+export function getAllAttributeSkills(equipment: PlayerEquipment): AttributeSkillId[] {
+  const skills: AttributeSkillId[] = [];
+
+  if (equipment.weapon?.attributeSkills) {
+    skills.push(...equipment.weapon.attributeSkills);
+  }
+
+  if (equipment.armor?.attributeSkills) {
+    skills.push(...equipment.armor.attributeSkills);
+  }
+
+  for (const treasure of equipment.treasures) {
+    if (treasure.attributeSkills) {
+      skills.push(...treasure.attributeSkills);
+    }
+  }
+
+  return skills;
+}
+

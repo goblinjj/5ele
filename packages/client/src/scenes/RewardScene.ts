@@ -10,6 +10,7 @@ import {
   INVENTORY_SIZE,
   BOSS_DROPS,
   getLegendaryEquipment,
+  getEquipmentSkillsDisplay,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 
@@ -271,15 +272,16 @@ export class RewardScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // 技能描述
-    if (equip.skill) {
-      this.add.text(x, y + 115, `【${equip.skill.name}】`, {
+    const skills = getEquipmentSkillsDisplay(equip, equip.wuxingLevel ?? 1);
+    if (skills.length > 0) {
+      this.add.text(x, y + 115, `【${skills[0].name}】`, {
         fontFamily: 'Arial',
         fontSize: '12px',
         color: '#fbbf24',
         fontStyle: 'bold',
       }).setOrigin(0.5);
 
-      this.add.text(x, y + 130, equip.skill.description, {
+      this.add.text(x, y + 130, skills[0].description, {
         fontFamily: 'Arial',
         fontSize: '11px',
         color: '#cccccc',

@@ -4,14 +4,12 @@ import {
   WUXING_COLORS,
   WUXING_NAMES,
   NodeType,
-  Skill,
   Equipment,
   Rarity,
   BattleEngine,
   BattleEvent,
   Combatant as EngineCombatant,
   BattleConfig,
-  RoundResult,
   generateEnemies,
   generateLoot,
   getTotalSpeed,
@@ -20,7 +18,10 @@ import {
   getTotalAttack,
   getTotalDefense,
   getAllWuxingLevels,
-  StatusType,
+  getAllAttributeSkills,
+  checkWuxingMastery,
+  getEquipmentSkillsDisplay,
+  formatSkillsText,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { uiConfig, LAYOUT } from '../config/uiConfig.js';
@@ -314,16 +315,8 @@ export class BattleScene extends Phaser.Scene {
       treasures: gameState.getTreasures(),
     };
 
-    const skills: Skill[] = [];
-    const allEquipment: Equipment[] = [...equipment.treasures];
-    if (equipment.weapon) allEquipment.push(equipment.weapon);
-    if (equipment.armor) allEquipment.push(equipment.armor);
-
-    for (const equip of allEquipment) {
-      if (equip.skill) {
-        skills.push(equip.skill);
-      }
-    }
+    // Collect treasure wuxings for mastery check
+    const treasureWuxings = equipment.treasures.map(t => t.wuxing);
 
     return {
       id: 'player',
@@ -335,12 +328,11 @@ export class BattleScene extends Phaser.Scene {
       speed: getTotalSpeed(equipment),
       attackWuxing: getAttackWuxing(equipment),
       defenseWuxing: getDefenseWuxing(equipment),
-      skills,
       isPlayer: true,
       frozen: false,
-      attackDebuff: 0,
-      hasWuxingMastery: gameState.hasStatus(StatusType.WUXING_MASTERY),
+      hasWuxingMastery: checkWuxingMastery(treasureWuxings),
       allWuxingLevels: getAllWuxingLevels(equipment),
+      attributeSkills: getAllAttributeSkills(equipment),
     };
   }
 
@@ -567,7 +559,9 @@ export class BattleScene extends Phaser.Scene {
       speed: newPlayerData.speed,
       attackWuxing: newPlayerData.attackWuxing,
       defenseWuxing: newPlayerData.defenseWuxing,
-      skills: newPlayerData.skills,
+      attributeSkills: newPlayerData.attributeSkills,
+      allWuxingLevels: newPlayerData.allWuxingLevels,
+      hasWuxingMastery: newPlayerData.hasWuxingMastery,
     });
   }
 
@@ -595,16 +589,6 @@ export class BattleScene extends Phaser.Scene {
       case 'battle_start':
       case 'round_start':
       case 'turn_start':
-        break;
-
-      case 'skill_trigger':
-        if (event.actorId && event.skillName) {
-          const actor = this.displayCombatants.get(event.actorId);
-          if (actor) {
-            this.showSkillTrigger(actor, event.skillName);
-            await this.delay(damageDelay);
-          }
-        }
         break;
 
       case 'damage':
@@ -743,30 +727,6 @@ export class BattleScene extends Phaser.Scene {
         }
         break;
 
-      case 'armor_penetrate':
-        if (event.targetId && event.value !== undefined) {
-          const target = this.displayCombatants.get(event.targetId);
-          if (target) {
-            // 显示破金额外伤害（伤害已包含在主伤害中，这里只是展示效果）
-            const skillName = event.message || '破金';
-            this.showFloatingText(target, `${skillName} +${event.value}`, '#c0c0c0', 18, -60);
-            await this.delay(damageDelay / 4);
-          }
-        }
-        break;
-
-      case 'damage_reduced':
-        if (event.targetId && event.value !== undefined) {
-          const target = this.displayCombatants.get(event.targetId);
-          if (target) {
-            // 显示坚韧减伤效果（不减少HP，只是显示减少了多少伤害）
-            const skillName = event.message || '坚韧';
-            this.showFloatingText(target, `${skillName} -${event.value}`, '#8b5a2b', 18, -80);
-            await this.delay(damageDelay / 4);
-          }
-        }
-        break;
-
       case 'reflect_damage':
         if (event.targetId && event.value !== undefined) {
           const target = this.displayCombatants.get(event.targetId);
@@ -790,62 +750,6 @@ export class BattleScene extends Phaser.Scene {
           if (target) {
             target.hp = 1;
             this.showFloatingText(target, '不朽!', '#22c55e', 26, -130);
-            this.updateHpBar(target);
-            if (target.isPlayer) {
-              gameState.getPlayerState().hp = target.hp;
-              this.updateTopBarHp();
-            }
-            await this.delay(damageDelay);
-          }
-        }
-        break;
-
-      case 'revive':
-        if (event.targetId && event.value !== undefined) {
-          const target = this.displayCombatants.get(event.targetId);
-          if (target) {
-            target.hp = event.value;
-            // 重建精灵显示复活
-            if (target.sprite) {
-              target.sprite.destroy();
-            }
-            target.sprite = this.createCombatantSprite(target, 0);
-            this.showFloatingText(target, '涅槃重生!', '#d4a853', 28, -130);
-            if (target.isPlayer) {
-              gameState.getPlayerState().hp = target.hp;
-              this.updateTopBarHp();
-            }
-            await this.delay(turnDelay);
-          }
-        }
-        break;
-
-      case 'burn_explode':
-        if (event.targetId && event.value !== undefined) {
-          const target = this.displayCombatants.get(event.targetId);
-          if (target) {
-            target.hp = Math.max(0, target.hp - event.value);
-            const skillName = event.message || '灼烧引爆';
-            this.showFloatingText(target, `${skillName} -${event.value}`, '#ff6b6b', 28, -100);
-            this.createExplosionParticles(target);
-            this.updateHpBar(target);
-            if (target.isPlayer) {
-              gameState.getPlayerState().hp = target.hp;
-              this.updateTopBarHp();
-            }
-            await this.delay(damageDelay);
-          }
-        }
-        break;
-
-      case 'freeze_shatter':
-        if (event.targetId && event.value !== undefined) {
-          const target = this.displayCombatants.get(event.targetId);
-          if (target) {
-            target.hp = Math.max(0, target.hp - event.value);
-            const skillName = event.message || '冻结破碎';
-            this.showFloatingText(target, `${skillName} -${event.value}`, '#58a6ff', 24, -100);
-            this.createHitParticles(target);
             this.updateHpBar(target);
             if (target.isPlayer) {
               gameState.getPlayerState().hp = target.hp;
@@ -1233,22 +1137,15 @@ export class BattleScene extends Phaser.Scene {
       yOffset += uiConfig.fontMD + 10;
     }
 
-    // 技能
-    if (item.skill) {
+    // 属性技能
+    const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
+    if (skillsDisplay.length > 0) {
       yOffset += 5;
-      const skillNameText = this.add.text(textX, yOffset, `【${item.skill.name}】`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: '#d4a853',
-        fontStyle: 'bold',
-      }).setOrigin(0, 0.5);
-      popup.add(skillNameText);
-
-      yOffset += uiConfig.fontLG + 8;
-      const skillDescText = this.add.text(textX, yOffset, item.skill.description, {
+      const skillsText = formatSkillsText(skillsDisplay, '\n');
+      const skillDescText = this.add.text(textX, yOffset, skillsText, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontSM}px`,
-        color: '#8b949e',
+        color: '#d4a853',
         wordWrap: { width: textWidth },
       }).setOrigin(0, 0);
       popup.add(skillDescText);

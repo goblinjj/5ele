@@ -14,6 +14,9 @@ import {
   getWuxingPassiveStatuses,
   WuxingPassiveStatus,
   getStatusEffectsForLevel,
+  getEquipmentSkillsDisplay,
+  formatSkillsText,
+  getSkillDef,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
@@ -544,7 +547,7 @@ export class InventoryScene extends Phaser.Scene {
         container.add(upgradeText);
       }
 
-      if (equipment.skill) {
+      if (equipment.attributeSkills && equipment.attributeSkills.length > 0) {
         const skillMark = this.add.text(-slotSize * 0.35, -slotSize * 0.35, '✦', {
           fontSize: `${fontSize}px`,
           color: '#d4a853',
@@ -690,24 +693,28 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     // 技能
-    if (equipment.skill) {
+    const skills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
+    if (skills.length > 0) {
       yOffset += 5;
-      const skillNameText = this.add.text(textX, yOffset, `【${equipment.skill.name}】`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: '#d4a853',
-        fontStyle: 'bold',
-      }).setOrigin(0, 0.5);
-      this.popup.add(skillNameText);
+      for (const skill of skills) {
+        const skillNameText = this.add.text(textX, yOffset, `【${skill.name}】`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontLG}px`,
+          color: '#d4a853',
+          fontStyle: 'bold',
+        }).setOrigin(0, 0.5);
+        this.popup.add(skillNameText);
 
-      yOffset += uiConfig.fontLG + 8;
-      const skillDescText = this.add.text(textX, yOffset, equipment.skill.description, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontSM}px`,
-        color: '#8b949e',
-        wordWrap: { width: textWidth },
-      }).setOrigin(0, 0);
-      this.popup.add(skillDescText);
+        yOffset += uiConfig.fontLG + 8;
+        const skillDescText = this.add.text(textX, yOffset, skill.description, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontSM}px`,
+          color: '#8b949e',
+          wordWrap: { width: textWidth },
+        }).setOrigin(0, 0);
+        this.popup.add(skillDescText);
+        yOffset += uiConfig.fontSM + 6;
+      }
     }
 
     // 按钮区域
@@ -1030,8 +1037,10 @@ export class InventoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.specialNotification.add(rarityText);
 
-    if (equipment.skill) {
-      const skillText = this.add.text(0, 115, `【${equipment.skill.name}】${equipment.skill.description}`, {
+    const specialSkills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
+    if (specialSkills.length > 0) {
+      const skillsText = specialSkills.map(s => `【${s.name}】${s.description}`).join('\n');
+      const skillText = this.add.text(0, 115, skillsText, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontXS}px`,
         color: '#d4a853',

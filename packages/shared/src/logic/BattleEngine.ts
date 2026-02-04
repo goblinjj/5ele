@@ -2,24 +2,23 @@ import { Combatant, BattleConfig, BattleEvent, EngineBattleResult } from './Batt
 import { calculateFinalDamage } from './DamageCalculator.js';
 import { sortBySpeed, getAliveCombatants } from './SpeedResolver.js';
 import {
-  applyPassiveSkills,
-  processBattleStartSkills,
-  processOnHitSkills,
-  processOnDefendSkills,
-  getIgnoreDefense,
-  getPassiveSelfDamage,
-} from './SkillProcessor.js';
-import {
-  initWuxingPassives,
+  initCombatantSkills,
   processStartOfTurnEffects,
-  applyAttackWuxingEffects,
-  applyDefenseWuxingEffects,
-  checkLethalProtection,
-  checkRevive,
-  processFreezeShatter,
-  getRevengeDamageBonus,
-  resetRevengeStacks,
+  applyBurning,
+  applySlow,
+  isSlowed,
+  isBurning,
 } from './WuxingPassiveProcessor.js';
+import {
+  calculateAttackSkills,
+  calculateDefendSkills,
+  processAfterAttackSkills,
+  processAfterDefendSkills,
+  checkFengchun,
+  getXushiBonus,
+  resetXushiStacks,
+  addXushiStack,
+} from './AttributeSkillProcessor.js';
 
 const MAX_ROUNDS = 50;
 
@@ -43,7 +42,6 @@ export class BattleEngine {
   private initialized: boolean = false;
 
   constructor(combatants: Combatant[], config: BattleConfig) {
-    // 深拷贝，包括状态效果
     this.combatants = combatants.map(c => ({
       ...c,
       statusEffects: { ...c.statusEffects },
@@ -52,7 +50,7 @@ export class BattleEngine {
   }
 
   /**
-   * 执行完整战斗 (一次性计算所有回合)
+   * 执行完整战斗
    */
   run(): EngineBattleResult {
     const initEvents = this.initialize();
@@ -74,33 +72,26 @@ export class BattleEngine {
   }
 
   /**
-   * 初始化战斗 (返回初始化事件)
+   * 初始化战斗
    */
   initialize(): BattleEvent[] {
     if (this.initialized) return [];
 
     const events: BattleEvent[] = [];
 
-    // 初始化五行被动和装备被动技能
+    // 初始化每个战斗者的技能效果
     for (const combatant of this.combatants) {
-      initWuxingPassives(combatant);
-      applyPassiveSkills(combatant);
+      initCombatantSkills(combatant);
     }
 
     events.push({ type: 'battle_start' });
-
-    // 战斗开始阶段技能
-    for (const combatant of this.combatants) {
-      const skillEvents = processBattleStartSkills(combatant, this.combatants);
-      events.push(...skillEvents);
-    }
 
     this.initialized = true;
     return events;
   }
 
   /**
-   * 计算单个回合 (用于逐回合模式)
+   * 计算单个回合
    */
   runSingleRound(): RoundResult {
     const events: BattleEvent[] = [];
@@ -109,7 +100,6 @@ export class BattleEngine {
       events.push(...this.initialize());
     }
 
-    // 检查战斗是否已结束
     if (this.isBattleOver()) {
       return {
         roundNumber: this.roundNumber,
@@ -131,7 +121,6 @@ export class BattleEngine {
       const turnEvents = this.processTurn(actor);
       events.push(...turnEvents);
 
-      // 检查战斗是否结束
       if (this.isBattleOver()) {
         break;
       }
@@ -148,27 +137,22 @@ export class BattleEngine {
   }
 
   /**
-   * 更新玩家战斗者数据 (换装后调用)
+   * 更新玩家战斗者数据
    */
   updatePlayerCombatant(newPlayerData: Partial<Combatant>): void {
     const playerIndex = this.combatants.findIndex(c => c.isPlayer);
     if (playerIndex >= 0) {
       const player = this.combatants[playerIndex];
-      // 保留当前HP和状态效果，更新装备相关属性
       this.combatants[playerIndex] = {
         ...player,
         ...newPlayerData,
-        hp: player.hp, // 保留当前HP
-        statusEffects: player.statusEffects, // 保留状态效果
+        hp: player.hp,
+        statusEffects: player.statusEffects,
       };
-      // 重新初始化五行被动
-      initWuxingPassives(this.combatants[playerIndex]);
+      initCombatantSkills(this.combatants[playerIndex]);
     }
   }
 
-  /**
-   * 检查战斗是否结束
-   */
   isBattleOver(): boolean {
     const alive = getAliveCombatants(this.combatants);
     const alivePlayers = alive.filter(c => c.isPlayer);
@@ -176,25 +160,16 @@ export class BattleEngine {
     return alivePlayers.length === 0 || aliveEnemies.length === 0;
   }
 
-  /**
-   * 获取胜利者ID
-   */
   getWinnerId(): string | null {
     const alive = getAliveCombatants(this.combatants);
     const alivePlayers = alive.filter(c => c.isPlayer);
     return alivePlayers.length > 0 ? alivePlayers[0].id : null;
   }
 
-  /**
-   * 获取当前回合数
-   */
   getRoundNumber(): number {
     return this.roundNumber;
   }
 
-  /**
-   * 获取所有战斗者 (用于同步显示)
-   */
   getCombatants(): Combatant[] {
     return this.combatants;
   }
@@ -209,55 +184,20 @@ export class BattleEngine {
     if (actor.frozen) {
       events.push({ type: 'frozen_skip', actorId: actor.id });
       actor.frozen = false;
-
-      // 水Lv5：冻结破碎伤害
-      const shatterEvents = processFreezeShatter(actor, null);
-      events.push(...shatterEvents);
-
       return events;
     }
 
-    // 重置临时 debuff
-    actor.attackDebuff = 0;
-
-    // 处理回合开始的状态效果 (回复、流血、灼烧)
+    // 处理回合开始的状态效果
     const turnStartEvents = processStartOfTurnEffects(actor);
     events.push(...turnStartEvents);
 
     // 检查是否因状态伤害死亡
     if (actor.hp <= 0) {
-      const reviveResult = checkRevive(actor);
-      if (reviveResult.revived) {
-        events.push(...reviveResult.events);
+      if (this.tryFengchun(actor, events)) {
+        // 逢春触发，继续
       } else {
         events.push({ type: 'death', targetId: actor.id });
         return events;
-      }
-    }
-
-    // 处理被动自损
-    const selfDamage = getPassiveSelfDamage(actor);
-    if (selfDamage) {
-      events.push({
-        type: 'skill_trigger',
-        actorId: actor.id,
-        skillName: selfDamage.skillName,
-      });
-      actor.hp = Math.max(0, actor.hp - selfDamage.damage);
-      events.push({
-        type: 'damage',
-        actorId: actor.id,
-        targetId: actor.id,
-        value: selfDamage.damage,
-      });
-      if (actor.hp <= 0) {
-        const reviveResult = checkRevive(actor);
-        if (reviveResult.revived) {
-          events.push(...reviveResult.events);
-        } else {
-          events.push({ type: 'death', targetId: actor.id });
-          return events;
-        }
       }
     }
 
@@ -272,9 +212,6 @@ export class BattleEngine {
     return events;
   }
 
-  /**
-   * 选择攻击目标
-   */
   private selectTarget(actor: Combatant): Combatant | null {
     const enemies = this.combatants.filter(
       c => c.isPlayer !== actor.isPlayer && c.hp > 0
@@ -295,180 +232,187 @@ export class BattleEngine {
       targetId: defender.id,
     });
 
-    // 处理防御技能
-    const defendResult = processOnDefendSkills(defender, attacker);
-    events.push(...defendResult.events);
+    // 获取攻击者和防御者的技能效果
+    const attackerSkills = attacker.skillEffectLevels;
+    const defenderSkills = defender.skillEffectLevels;
 
-    if (defendResult.dodged) {
-      return events; // 被闪避
-    }
+    // 计算防御技能
+    const defendSkillResult = defenderSkills
+      ? calculateDefendSkills(defender, defenderSkills)
+      : { dodgeRate: 0, blockRate: 0, damageReduction: 0, lowHpReduction: 0 };
 
-    if (defendResult.attackDebuff) {
-      attacker.attackDebuff += defendResult.attackDebuff;
-    }
+    // 计算攻击技能
+    const attackSkillResult = attackerSkills
+      ? calculateAttackSkills(attacker, defender, attackerSkills)
+      : { critRate: 0, critDamage: 0, ignoreDefense: 0, executeDamage: 0, hitRate: 0, slowedBonus: 0, burningBonus: 0, rageBonus: 0, lowHpAttackBonus: 0 };
 
-    // 检查冻结：土属性高血量时免疫控制
-    if (defendResult.frozen) {
-      const isImmune = (defender.controlImmune ?? false) && defender.hp > defender.maxHp * 0.7;
-      if (!isImmune) {
-        attacker.frozen = true;
+    // 闪避判定（灵动）
+    const finalDodgeRate = Math.max(0, defendSkillResult.dodgeRate - attackSkillResult.hitRate);
+    if (Math.random() * 100 < finalDodgeRate) {
+      events.push({ type: 'miss', actorId: attacker.id, targetId: defender.id });
+
+      // 润泽：闪避成功时回血
+      if (defenderSkills) {
+        const afterDefend = processAfterDefendSkills(attacker, defender, defenderSkills, 0, true);
+        if (afterDefend.healAmount > 0) {
+          const actualHeal = Math.min(afterDefend.healAmount, defender.maxHp - defender.hp);
+          defender.hp += actualHeal;
+          events.push(...afterDefend.events);
+        }
       }
+      return events;
     }
 
-    // 计算伤害 - 包含金属性破防
-    const skillIgnoreDefense = getIgnoreDefense(attacker);
-    const wuxingIgnoreDefense = Math.floor(defender.defense * (attacker.ignoreDefensePercent ?? 0) / 100);
-    const totalIgnoreDefense = skillIgnoreDefense + wuxingIgnoreDefense;
-    const damageResult = calculateFinalDamage(attacker, defender, totalIgnoreDefense);
-
-    // 金属性破防额外伤害（计算破防带来的伤害提升）
-    if (wuxingIgnoreDefense > 0 && damageResult.damage > 0) {
-      // 计算无破防时的伤害
-      const damageWithoutPenetrate = calculateFinalDamage(attacker, defender, skillIgnoreDefense);
-      const penetrateBonusDamage = Math.max(0, damageResult.damage - damageWithoutPenetrate.damage);
-      if (penetrateBonusDamage > 0) {
-        events.push({
-          type: 'armor_penetrate',
-          actorId: attacker.id,
-          targetId: defender.id,
-          value: penetrateBonusDamage,
-          message: '破金',
-        });
-      }
+    // 格挡判定（磐石）
+    let blocked = false;
+    if (Math.random() * 100 < defendSkillResult.blockRate) {
+      blocked = true;
+      events.push({ type: 'block', actorId: attacker.id, targetId: defender.id });
     }
 
-    // 处理攻击技能
-    const hitResult = processOnHitSkills(attacker, defender, damageResult.damage);
-    events.push(...hitResult.events);
+    // 暴击判定（锐度）
+    let isCrit = false;
+    if (Math.random() * 100 < attackSkillResult.critRate) {
+      isCrit = true;
+      events.push({ type: 'critical', actorId: attacker.id, targetId: defender.id });
+    }
 
-    // 计算最终伤害
+    // 计算基础伤害
+    const ignoreDefense = Math.floor(defender.defense * attackSkillResult.ignoreDefense / 100);
+    const damageResult = calculateFinalDamage(attacker, defender, ignoreDefense);
+
     let finalDamage = damageResult.damage;
-    if (finalDamage > 0) {
-      finalDamage = Math.floor(finalDamage * (hitResult.damageMultiplier ?? 1));
-      finalDamage += hitResult.bonusDamage ?? 0;
 
-      // 土Lv5蓄力攻击加成
-      const revengeBonus = getRevengeDamageBonus(attacker);
-      if (revengeBonus > 0) {
-        finalDamage = Math.floor(finalDamage * (1 + revengeBonus / 100));
-        events.push({
-          type: 'skill_trigger',
-          actorId: attacker.id,
-          skillName: '蓄力攻击',
-        });
-        resetRevengeStacks(attacker);
+    // 暴击伤害（锋芒）
+    if (isCrit) {
+      const critMultiplier = 1.5 + attackSkillResult.critDamage / 100;
+      finalDamage = Math.floor(finalDamage * critMultiplier);
+    }
+
+    // 攻击力加成（炎威、怒木、焚意）
+    const attackBonus = attackSkillResult.rageBonus + attackSkillResult.lowHpAttackBonus;
+    if (attackBonus > 0) {
+      finalDamage = Math.floor(finalDamage * (1 + attackBonus / 100));
+    }
+
+    // 对减速目标加伤（玄冰）
+    if (attackSkillResult.slowedBonus > 0) {
+      finalDamage = Math.floor(finalDamage * (1 + attackSkillResult.slowedBonus / 100));
+    }
+
+    // 对灼烧目标加伤（暴燃）
+    if (attackSkillResult.burningBonus > 0) {
+      finalDamage = Math.floor(finalDamage * (1 + attackSkillResult.burningBonus / 100));
+    }
+
+    // 斩杀加伤（杀意）
+    finalDamage += attackSkillResult.executeDamage;
+
+    // 蓄势加伤（土属性）
+    if (attackerSkills) {
+      const xushiBonus = getXushiBonus(attacker, attackerSkills);
+      if (xushiBonus > 0) {
+        finalDamage = Math.floor(finalDamage * (1 + xushiBonus / 100));
+        resetXushiStacks(attacker);
       }
     }
 
-    // 应用伤害或治疗
-    if (finalDamage >= 0) {
-      // 最低伤害为1（除非是相生治疗情况）
-      let actualDamage = Math.max(1, finalDamage);
+    // 格挡减伤（磐石）
+    if (blocked) {
+      finalDamage = Math.floor(finalDamage * 0.5);
+    }
 
-      // 土属性减伤和反弹
-      const defenseEffects = applyDefenseWuxingEffects(attacker, defender, actualDamage);
-      events.push(...defenseEffects.events);
-      actualDamage = defenseEffects.modifiedDamage;
+    // 固定减伤（厚土）
+    if (defendSkillResult.damageReduction > 0) {
+      finalDamage = Math.floor(finalDamage * (1 - defendSkillResult.damageReduction / 100));
+    }
 
-      // 如果减伤触发，显示坚韧效果
-      if (defenseEffects.damageReduced > 0) {
-        events.push({
-          type: 'damage_reduced',
-          targetId: defender.id,
-          value: defenseEffects.damageReduced,
-          message: '坚韧',
-        });
+    // 低血量减伤（韧性）
+    if (defendSkillResult.lowHpReduction > 0) {
+      finalDamage = Math.floor(finalDamage * (1 - defendSkillResult.lowHpReduction / 100));
+    }
+
+    // 最低伤害1
+    finalDamage = Math.max(1, finalDamage);
+
+    // 应用伤害
+    defender.hp = Math.max(0, defender.hp - finalDamage);
+    events.push({
+      type: 'damage',
+      actorId: attacker.id,
+      targetId: defender.id,
+      value: finalDamage,
+      wuxingEffect: damageResult.wuxingEffect,
+      isCritical: isCrit,
+    });
+
+    // 攻击后效果（寒锋、凝滞、燎原）
+    if (attackerSkills) {
+      const afterAttack = processAfterAttackSkills(attacker, defender, attackerSkills, isCrit);
+      events.push(...afterAttack.events);
+
+      if (afterAttack.applySlow) {
+        applySlow(defender, 1);
       }
+      if (afterAttack.applyBurning) {
+        applyBurning(defender, 1);
+      }
+    }
 
-      // 应用伤害
-      defender.hp = Math.max(0, defender.hp - actualDamage);
-      events.push({
-        type: 'damage',
-        actorId: attacker.id,
-        targetId: defender.id,
-        value: actualDamage,
-        wuxingEffect: damageResult.wuxingEffect,
-        isCritical: (hitResult.damageMultiplier ?? 1) > 1,
-      });
+    // 防御后效果（反震、余烬、蓄势）
+    if (defenderSkills) {
+      const afterDefend = processAfterDefendSkills(attacker, defender, defenderSkills, finalDamage, false);
+      events.push(...afterDefend.events);
 
-      // 处理反弹伤害
-      if (defenseEffects.reflectDamage > 0) {
-        attacker.hp = Math.max(0, attacker.hp - defenseEffects.reflectDamage);
+      // 反震伤害
+      if (afterDefend.reflectDamage > 0) {
+        attacker.hp = Math.max(0, attacker.hp - afterDefend.reflectDamage);
         events.push({
           type: 'reflect_damage',
           actorId: defender.id,
           targetId: attacker.id,
-          value: defenseEffects.reflectDamage,
+          value: afterDefend.reflectDamage,
         });
 
-        // 检查攻击者是否因反弹死亡
         if (attacker.hp <= 0) {
-          const reviveResult = checkRevive(attacker);
-          if (reviveResult.revived) {
-            events.push(...reviveResult.events);
-          } else {
+          if (!this.tryFengchun(attacker, events)) {
             events.push({ type: 'death', targetId: attacker.id });
           }
         }
       }
 
-      // 应用攻击五行效果 (流血、灼烧、减速、冻结)
-      const attackEffects = applyAttackWuxingEffects(attacker, defender, actualDamage);
-      events.push(...attackEffects.events);
-
-      // 五行效果的额外伤害
-      if (attackEffects.bonusDamage > 0) {
-        defender.hp = Math.max(0, defender.hp - attackEffects.bonusDamage);
-        events.push({
-          type: 'damage',
-          actorId: attacker.id,
-          targetId: defender.id,
-          value: attackEffects.bonusDamage,
-          message: '五行加成',
-        });
+      // 余烬灼烧攻击者
+      if (afterDefend.applyBurning) {
+        applyBurning(attacker, 1);
       }
-    } else {
-      // 相生：治疗敌人
-      const healAmount = Math.min(-finalDamage, defender.maxHp - defender.hp);
-      defender.hp += healAmount;
-      events.push({
-        type: 'heal',
-        actorId: attacker.id,
-        targetId: defender.id,
-        value: healAmount,
-        wuxingEffect: damageResult.wuxingEffect,
-      });
-    }
 
-    // 处理吸血
-    if (hitResult.healAmount && hitResult.healAmount > 0) {
-      const healAmount = Math.min(hitResult.healAmount, attacker.maxHp - attacker.hp);
-      attacker.hp += healAmount;
-      events.push({
-        type: 'heal',
-        actorId: attacker.id,
-        targetId: attacker.id,
-        value: healAmount,
-      });
+      // 蓄势叠层
+      if (afterDefend.addXushiStack) {
+        addXushiStack(defender);
+      }
     }
 
     // 检查防御者死亡
     if (defender.hp <= 0) {
-      // 木Lv3+：致命保护
-      const protection = checkLethalProtection(defender);
-      if (protection.protected) {
-        events.push(...protection.events);
-      } else {
-        // 检查复活
-        const reviveResult = checkRevive(defender);
-        if (reviveResult.revived) {
-          events.push(...reviveResult.events);
-        } else {
-          events.push({ type: 'death', targetId: defender.id });
-        }
+      if (!this.tryFengchun(defender, events)) {
+        events.push({ type: 'death', targetId: defender.id });
       }
     }
 
     return events;
+  }
+
+  /**
+   * 尝试触发逢春
+   */
+  private tryFengchun(combatant: Combatant, events: BattleEvent[]): boolean {
+    if (!combatant.skillEffectLevels) return false;
+
+    const result = checkFengchun(combatant, combatant.skillEffectLevels);
+    if (result.protected) {
+      events.push(...result.events);
+      return true;
+    }
+    return false;
   }
 }

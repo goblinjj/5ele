@@ -78,8 +78,7 @@ export function calculateFinalDamage(
   defender: Combatant,
   ignoreDefense: number = 0
 ): DamageResult {
-  // 计算有效攻击力（考虑 debuff）
-  const effectiveAttack = Math.max(1, attacker.attack - attacker.attackDebuff);
+  const effectiveAttack = Math.max(1, attacker.attack);
   const effectiveDefense = Math.max(0, defender.defense - ignoreDefense);
 
   // 基础伤害

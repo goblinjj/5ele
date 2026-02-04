@@ -1,6 +1,7 @@
-import { Equipment, EquipmentType, Rarity } from '../types/Equipment.js';
+import { Equipment, EquipmentType, Rarity, RARITY_WUXING_LEVEL } from '../types/Equipment.js';
 import { Wuxing, WUXING_NAMES } from '../types/Wuxing.js';
 import { BOSS_DROPS, getLegendaryEquipment } from '../data/EquipmentDatabase.js';
+import { randomSkillFromWuxing } from '../data/AttributeSkillDatabase.js';
 
 /**
  * 掉落结果
@@ -106,6 +107,10 @@ function generateRandomEquipment(isHighQuality: boolean, round: number): Equipme
 
   const baseStats = getBaseStats(rarity);
   const baseSpeed = Math.floor(Math.random() * 2); // 0-1
+  const wuxingLevel = RARITY_WUXING_LEVEL[rarity];
+
+  // 生成初始技能（+0装备有1个技能）
+  const firstSkill = randomSkillFromWuxing(wuxing);
 
   return {
     id: `equip_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -113,11 +118,12 @@ function generateRandomEquipment(isHighQuality: boolean, round: number): Equipme
     type,
     rarity,
     wuxing,
-    wuxingLevel: rarity === Rarity.EPIC ? 2 : 1,
+    wuxingLevel,
     attack: type === EquipmentType.WEAPON || type === EquipmentType.TREASURE ? baseStats : undefined,
     defense: type === EquipmentType.ARMOR || type === EquipmentType.TREASURE ? baseStats : undefined,
     speed: baseSpeed,
     upgradeLevel: 0,
+    attributeSkills: firstSkill ? [firstSkill] : [],
   };
 }
 

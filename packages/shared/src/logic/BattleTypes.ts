@@ -1,5 +1,6 @@
 import { WuxingLevel, Wuxing } from '../types/Wuxing.js';
-import { Skill } from '../types/Equipment.js';
+import { AttributeSkillId } from '../data/AttributeSkillDatabase.js';
+import { SkillEffectLevels } from './AttributeSkillProcessor.js';
 
 /**
  * 战斗配置
@@ -13,33 +14,29 @@ export interface BattleConfig {
  * 状态效果
  */
 export interface StatusEffects {
-  // 流血 (金)
+  // 流血
   bleeding?: {
     stacks: number;        // 叠加层数
     damagePercent: number; // 每层每回合伤害 (最大生命值%)
   };
 
-  // 回复 (木)
+  // 回复
   regeneration?: {
     percent: number;       // 每回合回复 (最大生命值%)
-    doubleWhenLow: boolean; // 低血量时回复翻倍
   };
-  hasSurvivedLethal?: boolean;  // 本回合是否触发过致命保护
-  hasRevived?: boolean;         // 是否已复活过
+  hasSurvivedLethal?: boolean;  // 本回合是否触发过致命保护（逢春）
 
-  // 减速 (水)
+  // 减速
   slowed?: {
-    speedReduction: number; // 速度降低百分比
     turnsLeft: number;      // 剩余回合
   };
 
-  // 灼烧 (火)
+  // 灼烧
   burning?: {
-    stacks: number;        // 叠加层数 (最多3层)
+    stacks: number;        // 叠加层数
     damagePercent: number; // 每层每回合伤害
     turnsLeft: number;     // 剩余回合
   };
-  hasEmbers?: boolean;     // 余烬状态 (火伤害+50%)
 }
 
 /**
@@ -53,34 +50,30 @@ export interface Combatant {
   attack: number;
   defense: number;
   speed: number;
+  isPlayer: boolean;
+
+  // 五行相关（保留用于克制计算）
   attackWuxing: WuxingLevel | null;
   defenseWuxing: WuxingLevel | null;
-  skills: Skill[];
-  isPlayer: boolean;
+
+  // 所有五行等级汇总（上限10）
+  allWuxingLevels?: Map<Wuxing, number>;
+
+  // 属性技能（新系统）
+  attributeSkills?: AttributeSkillId[];
+  skillEffectLevels?: SkillEffectLevels;
 
   // 临时状态
   frozen: boolean;
-  attackDebuff: number;
 
-  // 状态效果 (由 initWuxingPassives 初始化)
+  // 状态效果
   statusEffects?: StatusEffects;
 
-  // 五行被动追踪 (由 initWuxingPassives 初始化，默认为0/false)
-  ignoreDefensePercent?: number;   // 金属性：无视防御百分比
-  damageReduction?: number;        // 土属性：受伤减免百分比
-  damageReflectPercent?: number;   // 土属性：反弹伤害百分比
-  controlImmune?: boolean;         // 土Lv4：免疫控制 (HP>70%)
-  revengeStacks?: number;          // 土Lv5：蓄力攻击计数
-  revengeDamageBonus?: number;     // 土Lv5：蓄力攻击伤害加成
-  canSurviveLethal?: boolean;      // 木Lv3+：致命保护
-  canRevive?: boolean;             // 木Lv5：可以复活
-  reviveHpPercent?: number;        // 木Lv5：复活血量百分比
-
   // 特殊状态
-  hasWuxingMastery?: boolean;      // 五行圆满：集齐5种五行
+  hasWuxingMastery?: boolean;      // 五行圆满：5件法宝各为不同五行
 
-  // 所有五行等级汇总（用于计算被动效果）
-  allWuxingLevels?: Map<Wuxing, number>;  // Wuxing -> level
+  // 蓄势层数（土属性）
+  xushiStacks?: number;
 }
 
 /**
@@ -91,26 +84,22 @@ export type BattleEventType =
   | 'round_start'
   | 'turn_start'
   | 'attack'
-  | 'skill_trigger'
   | 'damage'
   | 'heal'
-  | 'miss'
+  | 'miss'             // 闪避
+  | 'block'            // 格挡
+  | 'critical'         // 暴击
   | 'death'
   | 'frozen_skip'
   | 'equip_change'
   | 'round_end'
   | 'battle_end'
-  // 五行状态效果事件
-  | 'status_applied'    // 状态效果施加
-  | 'status_damage'     // 状态伤害 (流血/灼烧)
-  | 'status_heal'       // 状态回复 (木回复)
-  | 'armor_penetrate'   // 金属性破防额外伤害
-  | 'damage_reduced'    // 土属性减伤触发
-  | 'reflect_damage'    // 反弹伤害
-  | 'survive_lethal'    // 致命保护触发
-  | 'revive'            // 复活
-  | 'burn_explode'      // 灼烧引爆
-  | 'freeze_shatter';   // 冻结破碎伤害
+  // 状态效果事件
+  | 'status_applied'   // 状态效果施加（灼烧、减速等）
+  | 'status_damage'    // 状态伤害（灼烧）
+  | 'status_heal'      // 状态回复（生机、润泽等）
+  | 'reflect_damage'   // 反震伤害
+  | 'survive_lethal';  // 逢春触发
 
 /**
  * 战斗事件

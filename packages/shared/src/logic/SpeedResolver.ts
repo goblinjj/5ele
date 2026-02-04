@@ -12,9 +12,9 @@ export function calculateCombatantSpeed(combatant: Combatant): number {
     speed += WUXING_SPEED_MODIFIER[combatant.attackWuxing.wuxing];
   }
 
-  // 水属性减速状态
+  // 减速状态：速度降低50%
   if (combatant.statusEffects?.slowed && combatant.statusEffects.slowed.turnsLeft > 0) {
-    speed = Math.floor(speed * (1 - combatant.statusEffects.slowed.speedReduction / 100));
+    speed = Math.floor(speed * 0.5);
   }
 
   return Math.max(0, speed);
