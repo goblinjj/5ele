@@ -10,6 +10,7 @@ export enum AttributeSkillId {
   POJIA = 'pojia',       // 破甲 - 无视防御
   SHAYI = 'shayi',       // 杀意 - 斩杀加成
   HANFENG = 'hanfeng',   // 寒锋 - 暴击减速
+  LIEKONGZHAN = 'liekongzhan', // 裂空斩 - 群攻
 
   // 水属性
   LINGDONG = 'lingdong', // 灵动 - 闪避率
@@ -17,6 +18,7 @@ export enum AttributeSkillId {
   NINGZHI = 'ningzhi',   // 凝滞 - 减速率
   XUANBING = 'xuanbing', // 玄冰 - 控制加伤
   RUNZE = 'runze',       // 润泽 - 闪避回血
+  HANCHAO = 'hanchao',   // 寒潮 - 群攻
 
   // 木属性
   GENJI = 'genji',       // 根基 - 最大生命
@@ -24,6 +26,7 @@ export enum AttributeSkillId {
   RENXING = 'renxing',   // 韧性 - 低血减伤
   FENGCHUN = 'fengchun', // 逢春 - 致命保护
   NUMU = 'numu',         // 怒木 - 低血加攻
+  JINGJI = 'jingji',     // 荆棘 - 群攻
 
   // 火属性
   YANWEI = 'yanwei',     // 炎威 - 攻击力%
@@ -31,6 +34,7 @@ export enum AttributeSkillId {
   BAORAN = 'baoran',     // 暴燃 - 灼烧加伤
   FENYI = 'fenyi',       // 焚意 - 残血狂暴
   YUJIN = 'yujin',       // 余烬 - 受击灼敌
+  FENTIAN = 'fentian',   // 焚天 - 群攻
 
   // 土属性
   JIANBI = 'jianbi',     // 坚壁 - 防御力%
@@ -38,6 +42,7 @@ export enum AttributeSkillId {
   HOUTU = 'houtu',       // 厚土 - 固定减伤
   FANZHEN = 'fanzhen',   // 反震 - 反伤
   XUSHI = 'xushi',       // 蓄势 - 蓄力爆发
+  DILIE = 'dilie',       // 地裂 - 群攻
 }
 
 /**
@@ -51,6 +56,7 @@ export enum SkillTrigger {
   ON_DEFEND = 'onDefend',       // 防御判定时
   AFTER_DEFEND = 'afterDefend', // 防御后（反击等）
   ON_LOW_HP = 'onLowHp',        // 低血量触发
+  AOE_ATTACK = 'aoeAttack',     // 群攻技能（概率触发）
 }
 
 /**
@@ -110,6 +116,14 @@ export const METAL_SKILLS: AttributeSkillDef[] = [
     trigger: SkillTrigger.AFTER_ATTACK,
     values: [10, 15, 20, 25, 30, 36, 42, 48, 55, 65],
   },
+  {
+    id: AttributeSkillId.LIEKONGZHAN,
+    name: '裂空斩',
+    description: '{value}%概率触发群攻，对所有敌人造成70%伤害',
+    wuxing: Wuxing.METAL,
+    trigger: SkillTrigger.AOE_ATTACK,
+    values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
+  },
 ];
 
 /**
@@ -155,6 +169,14 @@ export const WATER_SKILLS: AttributeSkillDef[] = [
     wuxing: Wuxing.WATER,
     trigger: SkillTrigger.AFTER_DEFEND,
     values: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+  },
+  {
+    id: AttributeSkillId.HANCHAO,
+    name: '寒潮',
+    description: '{value}%概率触发群攻，对所有敌人造成50%伤害并减速',
+    wuxing: Wuxing.WATER,
+    trigger: SkillTrigger.AOE_ATTACK,
+    values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
   },
 ];
 
@@ -202,6 +224,14 @@ export const WOOD_SKILLS: AttributeSkillDef[] = [
     trigger: SkillTrigger.ON_LOW_HP,
     values: [5, 8, 11, 14, 18, 22, 26, 30, 35, 42],
   },
+  {
+    id: AttributeSkillId.JINGJI,
+    name: '荆棘',
+    description: '{value}%概率触发群攻，对所有敌人造成50%伤害并吸取生命',
+    wuxing: Wuxing.WOOD,
+    trigger: SkillTrigger.AOE_ATTACK,
+    values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
+  },
 ];
 
 /**
@@ -247,6 +277,14 @@ export const FIRE_SKILLS: AttributeSkillDef[] = [
     wuxing: Wuxing.FIRE,
     trigger: SkillTrigger.AFTER_DEFEND,
     values: [8, 11, 14, 17, 20, 24, 28, 32, 37, 44],
+  },
+  {
+    id: AttributeSkillId.FENTIAN,
+    name: '焚天',
+    description: '{value}%概率触发群攻，对所有敌人施加灼烧',
+    wuxing: Wuxing.FIRE,
+    trigger: SkillTrigger.AOE_ATTACK,
+    values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
   },
 ];
 
@@ -294,6 +332,14 @@ export const EARTH_SKILLS: AttributeSkillDef[] = [
     trigger: SkillTrigger.AFTER_DEFEND,
     values: [8, 12, 16, 20, 25, 30, 36, 42, 50, 60],
   },
+  {
+    id: AttributeSkillId.DILIE,
+    name: '地裂',
+    description: '{value}%概率触发群攻，对所有敌人造成60%伤害（敌人越多伤害越高）',
+    wuxing: Wuxing.EARTH,
+    trigger: SkillTrigger.AOE_ATTACK,
+    values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
+  },
 ];
 
 /**
@@ -317,30 +363,35 @@ export const ALL_SKILLS: Record<AttributeSkillId, AttributeSkillDef> = {
   [AttributeSkillId.POJIA]: METAL_SKILLS[2],
   [AttributeSkillId.SHAYI]: METAL_SKILLS[3],
   [AttributeSkillId.HANFENG]: METAL_SKILLS[4],
+  [AttributeSkillId.LIEKONGZHAN]: METAL_SKILLS[5],
   // 水
   [AttributeSkillId.LINGDONG]: WATER_SKILLS[0],
   [AttributeSkillId.DONGCHA]: WATER_SKILLS[1],
   [AttributeSkillId.NINGZHI]: WATER_SKILLS[2],
   [AttributeSkillId.XUANBING]: WATER_SKILLS[3],
   [AttributeSkillId.RUNZE]: WATER_SKILLS[4],
+  [AttributeSkillId.HANCHAO]: WATER_SKILLS[5],
   // 木
   [AttributeSkillId.GENJI]: WOOD_SKILLS[0],
   [AttributeSkillId.SHENGJI]: WOOD_SKILLS[1],
   [AttributeSkillId.RENXING]: WOOD_SKILLS[2],
   [AttributeSkillId.FENGCHUN]: WOOD_SKILLS[3],
   [AttributeSkillId.NUMU]: WOOD_SKILLS[4],
+  [AttributeSkillId.JINGJI]: WOOD_SKILLS[5],
   // 火
   [AttributeSkillId.YANWEI]: FIRE_SKILLS[0],
   [AttributeSkillId.LIAOYUAN]: FIRE_SKILLS[1],
   [AttributeSkillId.BAORAN]: FIRE_SKILLS[2],
   [AttributeSkillId.FENYI]: FIRE_SKILLS[3],
   [AttributeSkillId.YUJIN]: FIRE_SKILLS[4],
+  [AttributeSkillId.FENTIAN]: FIRE_SKILLS[5],
   // 土
   [AttributeSkillId.JIANBI]: EARTH_SKILLS[0],
   [AttributeSkillId.PANSHI]: EARTH_SKILLS[1],
   [AttributeSkillId.HOUTU]: EARTH_SKILLS[2],
   [AttributeSkillId.FANZHEN]: EARTH_SKILLS[3],
   [AttributeSkillId.XUSHI]: EARTH_SKILLS[4],
+  [AttributeSkillId.DILIE]: EARTH_SKILLS[5],
 };
 
 /**

@@ -59,9 +59,9 @@ const SYNTHESIS_RATES: Record<SynthesisRelation, number> = {
 const FRAGMENT_BONUS = 0.05;
 
 /**
- * 吞噬成功率
+ * 归元成功率为重组的一半
  */
-const DEVOUR_BASE_RATE = 0.15;
+const DEVOUR_RATE_MULTIPLIER = 0.5;
 
 
 /**
@@ -262,11 +262,16 @@ export class SynthesisSystem {
     // 移除祭品
     gameState.removeFromInventory(sacrificeSlot);
 
-    // 判断吞噬是否成功
-    const roll = Math.random();
-    const displayRate = Math.round(DEVOUR_BASE_RATE * 100);
+    // 计算归元概率（基于五行关系，为重组概率的一半）
+    const baseRate = (target.wuxing !== undefined && sacrifice.wuxing !== undefined)
+      ? this.getBaseRate(target.wuxing, sacrifice.wuxing)
+      : 0.5;  // 无属性时默认50%
+    const devourRate = baseRate * DEVOUR_RATE_MULTIPLIER;
+    const displayRate = Math.round(devourRate * 100);
 
-    if (roll < DEVOUR_BASE_RATE) {
+    // 判断归元是否成功
+    const roll = Math.random();
+    if (roll < devourRate) {
       // 成功：目标装备升级
       const upgraded = this.upgradeEquipment(target);
       const newSlot = sacrificeSlot < targetSlot ? targetSlot - 1 : targetSlot;

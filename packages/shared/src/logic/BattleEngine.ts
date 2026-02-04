@@ -18,6 +18,7 @@ import {
   getXushiBonus,
   resetXushiStacks,
   addXushiStack,
+  checkAoeSkillTrigger,
 } from './AttributeSkillProcessor.js';
 
 const MAX_ROUNDS = 50;
@@ -40,6 +41,7 @@ export class BattleEngine {
   private config: BattleConfig;
   private roundNumber: number = 0;
   private initialized: boolean = false;
+  private playerSelectedTargetId: string | null = null;
 
   constructor(combatants: Combatant[], config: BattleConfig) {
     this.combatants = combatants.map(c => ({
@@ -47,6 +49,20 @@ export class BattleEngine {
       statusEffects: { ...c.statusEffects },
     }));
     this.config = config;
+  }
+
+  /**
+   * 设置玩家选择的目标
+   */
+  setPlayerTarget(targetId: string | null): void {
+    this.playerSelectedTargetId = targetId;
+  }
+
+  /**
+   * 获取当前玩家选择的目标
+   */
+  getPlayerTarget(): string | null {
+    return this.playerSelectedTargetId;
   }
 
   /**
@@ -205,9 +221,124 @@ export class BattleEngine {
     const target = this.selectTarget(actor);
     if (!target) return events;
 
-    // 执行攻击
+    // 检查AOE技能是否触发
+    if (actor.skillEffectLevels) {
+      const aoeResult = checkAoeSkillTrigger(actor, actor.skillEffectLevels);
+      if (aoeResult.triggered) {
+        const aoeEvents = this.executeAoeAttack(actor, aoeResult);
+        events.push(...aoeEvents);
+        return events;
+      }
+    }
+
+    // 执行普通攻击
     const attackEvents = this.executeAttack(actor, target);
     events.push(...attackEvents);
+
+    return events;
+  }
+
+  /**
+   * 执行AOE攻击
+   */
+  private executeAoeAttack(
+    attacker: Combatant,
+    aoeResult: { skillId: any; skillName: string; damagePercent: number; applySlow: boolean; applyBurning: boolean; lifestealPercent: number; scalesWithEnemyCount: boolean }
+  ): BattleEvent[] {
+    const events: BattleEvent[] = [];
+
+    // 获取所有存活的敌人
+    const enemies = this.combatants.filter(
+      c => c.isPlayer !== attacker.isPlayer && c.hp > 0
+    );
+
+    if (enemies.length === 0) return events;
+
+    // 技能触发事件（使用turn_start类型来显示技能名称）
+    events.push({
+      type: 'turn_start',
+      actorId: attacker.id,
+      message: `${aoeResult.skillName}！`,
+      skillName: aoeResult.skillName,
+    });
+
+    // 计算基础伤害
+    let baseDamage = attacker.attack;
+
+    // 地裂：敌人越多伤害越高（每个敌人+10%伤害）
+    let damageMultiplier = aoeResult.damagePercent / 100;
+    if (aoeResult.scalesWithEnemyCount) {
+      damageMultiplier += (enemies.length - 1) * 0.1; // 每多一个敌人+10%
+    }
+
+    let totalLifesteal = 0;
+
+    // 对每个敌人造成伤害
+    for (const enemy of enemies) {
+      // 焚天只施加灼烧
+      if (aoeResult.damagePercent > 0) {
+        const damage = Math.max(1, Math.floor(baseDamage * damageMultiplier));
+        enemy.hp = Math.max(0, enemy.hp - damage);
+
+        events.push({
+          type: 'damage',
+          actorId: attacker.id,
+          targetId: enemy.id,
+          value: damage,
+          message: aoeResult.skillName,
+        });
+
+        // 荆棘：吸血
+        if (aoeResult.lifestealPercent > 0) {
+          totalLifesteal += Math.floor(damage * aoeResult.lifestealPercent / 100);
+        }
+      }
+
+      // 施加减速
+      if (aoeResult.applySlow && !enemy.hasWuxingMastery) {
+        applySlow(enemy, 1);
+        events.push({
+          type: 'status_applied',
+          actorId: attacker.id,
+          targetId: enemy.id,
+          statusType: 'slowed',
+          message: aoeResult.skillName,
+        });
+      }
+
+      // 施加灼烧
+      if (aoeResult.applyBurning && !enemy.hasWuxingMastery) {
+        applyBurning(enemy, 1);
+        events.push({
+          type: 'status_applied',
+          actorId: attacker.id,
+          targetId: enemy.id,
+          statusType: 'burning',
+          message: aoeResult.skillName,
+        });
+      }
+
+      // 检查敌人是否死亡
+      if (enemy.hp <= 0) {
+        if (!this.tryFengchun(enemy, events)) {
+          events.push({ type: 'death', targetId: enemy.id });
+        }
+      }
+    }
+
+    // 荆棘：回复吸血量
+    if (totalLifesteal > 0) {
+      const actualHeal = Math.min(totalLifesteal, attacker.maxHp - attacker.hp);
+      if (actualHeal > 0) {
+        attacker.hp += actualHeal;
+        events.push({
+          type: 'status_heal',
+          targetId: attacker.id,
+          value: actualHeal,
+          message: '荆棘',
+        });
+      }
+    }
 
     return events;
   }
@@ -217,6 +348,18 @@ export class BattleEngine {
       c => c.isPlayer !== actor.isPlayer && c.hp > 0
     );
     if (enemies.length === 0) return null;
+
+    // 如果是玩家且有选定目标，优先攻击选定目标
+    if (actor.isPlayer && this.playerSelectedTargetId) {
+      const selectedTarget = enemies.find(e => e.id === this.playerSelectedTargetId);
+      if (selectedTarget) {
+        return selectedTarget;
+      }
+      // 如果选定目标已死亡，清除选择
+      this.playerSelectedTargetId = null;
+    }
+
+    // 默认：随机选择目标
     return enemies[Math.floor(Math.random() * enemies.length)];
   }
 

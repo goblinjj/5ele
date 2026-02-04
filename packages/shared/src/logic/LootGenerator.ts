@@ -4,18 +4,28 @@ import { BOSS_DROPS, getLegendaryEquipment } from '../data/EquipmentDatabase.js'
 import { randomSkillFromWuxing } from '../data/AttributeSkillDatabase.js';
 
 /**
- * 掉落结果
+ * 单个敌人的掉落
  */
-export interface LootResult {
-  items: Equipment[];
+export interface EnemyDrop {
+  choices: Equipment[];  // 3个选项供玩家选择
+  fragments: number;     // 掉落的碎片数量(1-5)
 }
 
 /**
- * 生成战斗掉落
+ * 掉落结果（新版：支持3选1）
+ */
+export interface LootResult {
+  items: Equipment[];           // 兼容旧代码
+  enemyDrops: EnemyDrop[];      // 每个敌人的掉落（3选1）
+  bossDrop?: Equipment;         // Boss特殊掉落（直接获得，不需选择）
+}
+
+/**
+ * 生成战斗掉落（新版3选1系统）
  * @param nodeType 节点类型
  * @param round 当前回合
- * @param dropRate 掉率倍数（1.0 = 100%，10.0 = 1000%）
- * @param enemyCount 击杀的怪物数量（每个怪物单独计算掉落）
+ * @param dropRate 掉率倍数（影响碎片数量）
+ * @param enemyCount 击杀的怪物数量（每个怪物有一次3选1）
  */
 export function generateLoot(
   nodeType: 'normal' | 'elite' | 'final',
@@ -23,9 +33,54 @@ export function generateLoot(
   dropRate: number = 1.0,
   enemyCount: number = 1
 ): LootResult {
+  const enemyDrops: EnemyDrop[] = [];
+  const items: Equipment[] = []; // 兼容旧代码
+
+  // Boss特殊掉落
+  const bossDrop = tryBossDrop(nodeType);
+  if (bossDrop) {
+    items.push(bossDrop);
+  }
+
+  // 根据节点类型确定品质
+  const isHighQuality = nodeType === 'elite' || nodeType === 'final';
+
+  // 每个敌人生成一次掉落（3选1 + 碎片）
+  for (let enemy = 0; enemy < enemyCount; enemy++) {
+    // 生成3个装备选项
+    const choices: Equipment[] = [];
+    for (let i = 0; i < 3; i++) {
+      choices.push(generateRandomEquipment(isHighQuality, round));
+    }
+
+    // 生成碎片数量（1-5，受掉率影响）
+    const baseFragments = randomInt(1, 5);
+    const fragments = Math.floor(baseFragments * dropRate);
+
+    enemyDrops.push({
+      choices,
+      fragments: Math.max(1, fragments),
+    });
+
+    // 兼容旧代码：将第一个选项加入items
+    items.push(choices[0]);
+  }
+
+  return { items, enemyDrops, bossDrop: bossDrop || undefined };
+}
+
+/**
+ * 生成简单掉落（不使用3选1，用于兼容）
+ */
+export function generateSimpleLoot(
+  nodeType: 'normal' | 'elite' | 'final',
+  round: number,
+  dropRate: number = 1.0,
+  enemyCount: number = 1
+): Equipment[] {
   const items: Equipment[] = [];
 
-  // 尝试 Boss 掉落
+  // Boss掉落
   const bossDrop = tryBossDrop(nodeType);
   if (bossDrop) {
     items.push(bossDrop);
@@ -33,7 +88,6 @@ export function generateLoot(
 
   // 每个怪物单独计算掉落
   for (let enemy = 0; enemy < enemyCount; enemy++) {
-    // 确定每个怪物的基础掉落数量
     let baseLootPerEnemy: number;
     switch (nodeType) {
       case 'normal':
@@ -47,17 +101,14 @@ export function generateLoot(
         break;
     }
 
-    // 应用掉率倍数
     const lootCount = Math.floor(baseLootPerEnemy * dropRate);
-
-    // 生成随机装备
     const isHighQuality = nodeType === 'elite' || nodeType === 'final';
     for (let i = 0; i < lootCount; i++) {
       items.push(generateRandomEquipment(isHighQuality, round));
     }
   }
 
-  return { items };
+  return items;
 }
 
 function tryBossDrop(nodeType: 'normal' | 'elite' | 'final'): Equipment | null {

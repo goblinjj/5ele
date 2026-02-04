@@ -12,6 +12,8 @@ import {
   BattleConfig,
   generateEnemies,
   generateLoot,
+  EnemyDrop,
+  LootResult,
   getTotalSpeed,
   getAttackWuxing,
   getDefenseWuxing,
@@ -79,6 +81,8 @@ export class BattleScene extends Phaser.Scene {
   private topBarHpText?: Phaser.GameObjects.Text;
   private battleEngine?: BattleEngine;
   private equipmentChanged: boolean = false;
+  private selectedTargetId: string | null = null;
+  private targetSelectionIndicator?: Phaser.GameObjects.Graphics;
 
   create(): void {
     this.createBackground();
@@ -242,9 +246,7 @@ export class BattleScene extends Phaser.Scene {
   private initCombatants(): void {
     const { width, height } = this.cameras.main;
     const battleFieldY = height * 0.55;
-    const playerX = width * 0.28;
-    const enemyStartX = width * 0.58;
-    const enemySpacing = width * 0.12;
+    const playerX = width * 0.25;
 
     this.displayCombatants.clear();
     this.engineCombatants = [];
@@ -281,12 +283,13 @@ export class BattleScene extends Phaser.Scene {
     }
     this.enemyCount = enemies.length;
 
-    const totalEnemyWidth = (enemies.length - 1) * enemySpacing;
-    const startX = enemyStartX + (width * 0.35 - totalEnemyWidth) / 2;
+    // 计算敌人位置 - 使用更合理的阵型
+    const positions = this.calculateEnemyPositions(enemies.length, width, height, battleFieldY);
 
     enemies.forEach((enemy, i) => {
       this.engineCombatants.push(enemy);
 
+      const pos = positions[i];
       const enemyDisplay: DisplayCombatant = {
         id: enemy.id,
         name: enemy.name,
@@ -294,8 +297,8 @@ export class BattleScene extends Phaser.Scene {
         maxHp: enemy.maxHp,
         wuxing: enemy.attackWuxing?.wuxing,
         isPlayer: false,
-        x: startX + i * enemySpacing,
-        y: battleFieldY + (i % 2 === 0 ? -height * 0.04 : height * 0.04),
+        x: pos.x,
+        y: pos.y,
       };
       this.displayCombatants.set(enemy.id, enemyDisplay);
     });
@@ -305,6 +308,104 @@ export class BattleScene extends Phaser.Scene {
       c.sprite = this.createCombatantSprite(c, delay);
       delay += 150;
     });
+
+    // 自动选择第一个敌人为目标（延迟等待精灵创建完成）
+    this.time.delayedCall(delay + 200, () => {
+      this.autoSelectNextTarget();
+    });
+  }
+
+  /**
+   * 计算敌人的阵型位置
+   * 根据敌人数量选择合适的阵型布局
+   */
+  private calculateEnemyPositions(
+    count: number,
+    screenWidth: number,
+    screenHeight: number,
+    centerY: number
+  ): { x: number; y: number }[] {
+    const centerX = screenWidth * 0.7; // 敌人区域中心
+    const spacingX = screenWidth * 0.09; // 水平间距
+    const spacingY = screenHeight * 0.11; // 垂直间距
+    const positions: { x: number; y: number }[] = [];
+
+    switch (count) {
+      case 1:
+        // 单个敌人居中
+        positions.push({ x: centerX, y: centerY });
+        break;
+
+      case 2:
+        // 2个敌人：横向排列
+        positions.push({ x: centerX - spacingX * 0.6, y: centerY - spacingY * 0.3 });
+        positions.push({ x: centerX + spacingX * 0.6, y: centerY + spacingY * 0.3 });
+        break;
+
+      case 3:
+        // 3个敌人：倒三角形
+        positions.push({ x: centerX - spacingX, y: centerY - spacingY * 0.4 });
+        positions.push({ x: centerX + spacingX, y: centerY - spacingY * 0.4 });
+        positions.push({ x: centerX, y: centerY + spacingY * 0.5 });
+        break;
+
+      case 4:
+        // 4个敌人：2x2菱形
+        positions.push({ x: centerX - spacingX, y: centerY - spacingY * 0.3 });
+        positions.push({ x: centerX + spacingX, y: centerY - spacingY * 0.3 });
+        positions.push({ x: centerX - spacingX * 0.5, y: centerY + spacingY * 0.5 });
+        positions.push({ x: centerX + spacingX * 0.5, y: centerY + spacingY * 0.5 });
+        break;
+
+      case 5:
+        // 5个敌人：前排3 + 后排2
+        positions.push({ x: centerX - spacingX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX + spacingX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX - spacingX * 0.6, y: centerY + spacingY * 0.4 });
+        positions.push({ x: centerX + spacingX * 0.6, y: centerY + spacingY * 0.4 });
+        break;
+
+      case 6:
+        // 6个敌人：前排3 + 后排3
+        positions.push({ x: centerX - spacingX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX + spacingX, y: centerY - spacingY * 0.5 });
+        positions.push({ x: centerX - spacingX, y: centerY + spacingY * 0.4 });
+        positions.push({ x: centerX, y: centerY + spacingY * 0.4 });
+        positions.push({ x: centerX + spacingX, y: centerY + spacingY * 0.4 });
+        break;
+
+      default:
+        // 7个或更多：前排3 + 中排3 + 后排剩余
+        const rows: number[][] = [];
+        let remaining = count;
+        while (remaining > 0) {
+          const rowCount = Math.min(3, remaining);
+          rows.push(Array(rowCount).fill(0));
+          remaining -= rowCount;
+        }
+
+        const totalRows = rows.length;
+        const rowHeight = spacingY * 0.7;
+        const startRowY = centerY - ((totalRows - 1) * rowHeight) / 2;
+
+        rows.forEach((row, rowIndex) => {
+          const rowCount = row.length;
+          const rowCenterX = centerX;
+          const rowStartX = rowCenterX - ((rowCount - 1) * spacingX) / 2;
+
+          for (let col = 0; col < rowCount; col++) {
+            positions.push({
+              x: rowStartX + col * spacingX,
+              y: startRowY + rowIndex * rowHeight,
+            });
+          }
+        });
+        break;
+    }
+
+    return positions;
   }
 
   private createPlayerCombatant(): EngineCombatant {
@@ -418,6 +519,38 @@ export class BattleScene extends Phaser.Scene {
         color: '#d4a853',
       }).setOrigin(0.5);
       container.add(playerMarker);
+    } else {
+      // 敌人可点击选择为目标
+      body.setInteractive({ useHandCursor: true });
+      body.on('pointerup', () => this.selectTarget(combatant.id));
+      body.on('pointerover', () => {
+        if (this.selectedTargetId !== combatant.id) {
+          body.setStrokeStyle(4, this.colors.goldAccent, 0.8);
+        }
+      });
+      body.on('pointerout', () => {
+        if (this.selectedTargetId !== combatant.id) {
+          body.setStrokeStyle(3, this.colors.paperWhite, 0.6);
+        }
+      });
+
+      // 选中指示器（隐藏初始化）
+      const selectRing = this.add.circle(0, 0, bodySize + 15, 0xffffff, 0);
+      selectRing.setStrokeStyle(3, this.colors.redAccent, 1);
+      selectRing.setName('selectRing');
+      selectRing.setVisible(false);
+      container.add(selectRing);
+      container.sendToBack(selectRing);
+
+      // 目标文字
+      const targetText = this.add.text(0, bodySize + height * 0.035, '🎯 目标', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontXS}px`,
+        color: '#f85149',
+      }).setOrigin(0.5);
+      targetText.setName('targetText');
+      targetText.setVisible(false);
+      container.add(targetText);
     }
 
     container.add([aura, body, symbolText, nameBg, nameText, hpBarBg, hpBar, hpText]);
@@ -454,6 +587,97 @@ export class BattleScene extends Phaser.Scene {
       case Wuxing.FIRE: return '火';
       case Wuxing.EARTH: return '土';
       default: return '?';
+    }
+  }
+
+  /**
+   * 选择目标敌人
+   */
+  private selectTarget(targetId: string): void {
+    // 如果点击已选中的目标，取消选择
+    if (this.selectedTargetId === targetId) {
+      this.clearTargetSelection();
+      return;
+    }
+
+    // 清除之前的选择
+    this.clearTargetSelection();
+
+    // 设置新目标
+    this.selectedTargetId = targetId;
+    if (this.battleEngine) {
+      this.battleEngine.setPlayerTarget(targetId);
+    }
+
+    // 更新目标显示
+    const targetDisplay = this.displayCombatants.get(targetId);
+    if (targetDisplay?.sprite) {
+      const selectRing = targetDisplay.sprite.getByName('selectRing') as Phaser.GameObjects.Arc;
+      const targetText = targetDisplay.sprite.getByName('targetText') as Phaser.GameObjects.Text;
+      if (selectRing) {
+        selectRing.setVisible(true);
+        // 添加脉冲动画
+        this.tweens.add({
+          targets: selectRing,
+          scaleX: 1.1,
+          scaleY: 1.1,
+          alpha: 0.5,
+          duration: 800,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
+      if (targetText) {
+        targetText.setVisible(true);
+      }
+    }
+
+    // 显示选择提示
+    this.showFloatingText(targetDisplay!, '已锁定', '#f85149', 16, -80);
+  }
+
+  /**
+   * 清除目标选择
+   */
+  private clearTargetSelection(): void {
+    if (this.selectedTargetId) {
+      const prevTarget = this.displayCombatants.get(this.selectedTargetId);
+      if (prevTarget?.sprite) {
+        const selectRing = prevTarget.sprite.getByName('selectRing') as Phaser.GameObjects.Arc;
+        const targetText = prevTarget.sprite.getByName('targetText') as Phaser.GameObjects.Text;
+        if (selectRing) {
+          this.tweens.killTweensOf(selectRing);
+          selectRing.setVisible(false);
+          selectRing.setScale(1);
+          selectRing.setAlpha(1);
+        }
+        if (targetText) {
+          targetText.setVisible(false);
+        }
+      }
+    }
+    this.selectedTargetId = null;
+    if (this.battleEngine) {
+      this.battleEngine.setPlayerTarget(null);
+    }
+  }
+
+  /**
+   * 自动选择下一个敌人目标
+   */
+  private autoSelectNextTarget(excludeId?: string): void {
+    // 找到第一个存活的敌人
+    for (const [id, display] of this.displayCombatants) {
+      if (!display.isPlayer && display.hp > 0 && id !== excludeId) {
+        // 延迟一点选择，让死亡动画先播放
+        this.time.delayedCall(100, () => {
+          if (display.hp > 0) {
+            this.selectTarget(id);
+          }
+        });
+        return;
+      }
     }
   }
 
@@ -589,6 +813,13 @@ export class BattleScene extends Phaser.Scene {
       case 'battle_start':
       case 'round_start':
       case 'turn_start':
+        // 如果有技能名称，显示技能触发动画
+        if (event.skillName && event.actorId) {
+          const actor = this.displayCombatants.get(event.actorId);
+          if (actor) {
+            await this.showCenterText(`【${event.skillName}】`, '#d4a853');
+          }
+        }
         break;
 
       case 'damage':
@@ -664,6 +895,11 @@ export class BattleScene extends Phaser.Scene {
         if (event.targetId) {
           const target = this.displayCombatants.get(event.targetId);
           if (target) {
+            // 如果死亡的是当前选中的目标，自动选择下一个敌人
+            if (this.selectedTargetId === event.targetId) {
+              this.clearTargetSelection();
+              this.autoSelectNextTarget(event.targetId);
+            }
             await this.playDeathAnimation(target);
           }
         }
@@ -848,7 +1084,7 @@ export class BattleScene extends Phaser.Scene {
     const playerState = gameState.getPlayerState();
     const loot = generateLoot(nodeTypeStr, this.round, playerState.dropRate, this.enemyCount);
 
-    await this.showLootScreen(loot.items);
+    await this.showNewLootScreen(loot);
   }
 
   private async showLootScreen(items: Equipment[]): Promise<void> {
@@ -1038,6 +1274,442 @@ export class BattleScene extends Phaser.Scene {
     this.scene.start('MapScene', {
       mode: this.mode,
       round: this.round + 1,
+    });
+  }
+
+  /**
+   * 新版掉落界面：3选1系统
+   * 每个敌人掉落1件装备（从3个选项中选1）+ 1-5个碎片
+   */
+  private async showNewLootScreen(loot: LootResult): Promise<void> {
+    const { width, height } = this.cameras.main;
+    let totalFragments = 0;
+
+    // 先添加Boss掉落（如果有的话，直接获得）
+    if (loot.bossDrop) {
+      if (!gameState.isInventoryFull()) {
+        gameState.addToInventory(loot.bossDrop);
+        await this.showBossDropAnnounce(loot.bossDrop);
+      } else {
+        totalFragments++;
+        gameState.addFragment();
+      }
+    }
+
+    // 依次展示每个敌人的掉落（3选1）
+    for (let i = 0; i < loot.enemyDrops.length; i++) {
+      const drop = loot.enemyDrops[i];
+      const selectedItem = await this.showPickOneScreen(
+        drop.choices,
+        i + 1,
+        loot.enemyDrops.length
+      );
+
+      // 将选中的装备加入背包
+      if (selectedItem) {
+        if (!gameState.isInventoryFull()) {
+          gameState.addToInventory(selectedItem);
+        } else {
+          totalFragments++;
+          gameState.addFragment();
+        }
+      }
+
+      // 添加碎片
+      for (let f = 0; f < drop.fragments; f++) {
+        gameState.addFragment();
+      }
+      totalFragments += drop.fragments;
+    }
+
+    // 显示碎片汇总
+    await this.showFragmentSummary(totalFragments);
+
+    // 继续到下一轮或结束
+    if (this.nodeType === 'final') {
+      this.showGameComplete();
+      return;
+    }
+
+    this.scene.start('MapScene', {
+      mode: this.mode,
+      round: this.round + 1,
+    });
+  }
+
+  /**
+   * 显示Boss掉落公告
+   */
+  private async showBossDropAnnounce(item: Equipment): Promise<void> {
+    const { width, height } = this.cameras.main;
+
+    return new Promise<void>(resolve => {
+      const container = this.add.container(0, 0);
+
+      const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
+      container.add(overlay);
+
+      const title = this.add.text(width / 2, height * 0.2, '🌟 Boss掉落！', {
+        fontFamily: '"Noto Serif SC", serif',
+        fontSize: `${uiConfig.font2XL}px`,
+        color: '#d4a853',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      container.add(title);
+
+      // 显示装备信息
+      const itemCard = this.createEquipmentCard(item, width / 2, height / 2, true);
+      container.add(itemCard);
+
+      const hint = this.add.text(width / 2, height * 0.85, '点击继续', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontMD}px`,
+        color: '#8b949e',
+      }).setOrigin(0.5);
+      container.add(hint);
+
+      overlay.setInteractive();
+      overlay.on('pointerup', () => {
+        container.destroy();
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * 显示3选1界面
+   */
+  private async showPickOneScreen(
+    choices: Equipment[],
+    currentPick: number,
+    totalPicks: number
+  ): Promise<Equipment | null> {
+    const { width, height } = this.cameras.main;
+
+    return new Promise<Equipment | null>(resolve => {
+      const container = this.add.container(0, 0);
+
+      const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.95);
+      container.add(overlay);
+
+      // 标题
+      const title = this.add.text(width / 2, height * 0.1, '选择器物', {
+        fontFamily: '"Noto Serif SC", serif',
+        fontSize: `${uiConfig.font2XL}px`,
+        color: '#d4a853',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      container.add(title);
+
+      // 进度提示
+      const progress = this.add.text(width / 2, height * 0.17, `第 ${currentPick} / ${totalPicks} 件`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontMD}px`,
+        color: '#8b949e',
+      }).setOrigin(0.5);
+      container.add(progress);
+
+      // 显示3个选项（横向排列）
+      const cardWidth = Math.min(280, width * 0.28);
+      const cardSpacing = cardWidth * 1.1;
+      const startX = width / 2 - cardSpacing;
+      const cardY = height * 0.52;
+
+      choices.forEach((item, index) => {
+        const cardX = startX + index * cardSpacing;
+        const card = this.createSelectableEquipmentCard(
+          item,
+          cardX,
+          cardY,
+          () => {
+            container.destroy();
+            resolve(item);
+          }
+        );
+        container.add(card);
+      });
+
+      // 跳过按钮（放弃选择）
+      const skipBtn = this.add.rectangle(width / 2, height * 0.9, width * 0.15, height * 0.06, this.colors.inkGrey);
+      skipBtn.setStrokeStyle(2, this.colors.redAccent, 0.5);
+      skipBtn.setInteractive({ useHandCursor: true });
+      container.add(skipBtn);
+
+      const skipText = this.add.text(width / 2, height * 0.9, '跳过', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontMD}px`,
+        color: '#c94a4a',
+      }).setOrigin(0.5);
+      container.add(skipText);
+
+      skipBtn.on('pointerover', () => {
+        skipBtn.setFillStyle(this.colors.redAccent);
+        skipText.setColor('#ffffff');
+      });
+      skipBtn.on('pointerout', () => {
+        skipBtn.setFillStyle(this.colors.inkGrey);
+        skipText.setColor('#c94a4a');
+      });
+      skipBtn.on('pointerup', () => {
+        container.destroy();
+        resolve(null);
+      });
+    });
+  }
+
+  /**
+   * 创建可选择的装备卡片
+   */
+  private createSelectableEquipmentCard(
+    item: Equipment,
+    x: number,
+    y: number,
+    onSelect: () => void
+  ): Phaser.GameObjects.Container {
+    const { width, height } = this.cameras.main;
+    const cardWidth = Math.min(260, width * 0.26);
+    const cardHeight = Math.min(380, height * 0.55);
+    const container = this.add.container(x, y);
+
+    const borderColor = this.getRarityBorderColor(item.rarity);
+    const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
+
+    // 卡片背景
+    const bg = this.add.graphics();
+    bg.fillStyle(this.colors.inkBlack, 0.95);
+    bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    bg.lineStyle(3, borderColor, 0.8);
+    bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    container.add(bg);
+
+    // 交互区域
+    const hitArea = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0);
+    hitArea.setInteractive({ useHandCursor: true });
+    container.add(hitArea);
+
+    // 五行图标
+    const iconRadius = cardWidth * 0.15;
+    const icon = this.add.circle(0, -cardHeight * 0.3, iconRadius, wuxingColor);
+    icon.setStrokeStyle(3, 0xffffff, 0.6);
+    container.add(icon);
+
+    const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
+    const levelText = this.add.text(0, -cardHeight * 0.3, levelStr, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontXL}px`,
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    container.add(levelText);
+
+    // 装备名称
+    const nameText = this.add.text(0, -cardHeight * 0.12, item.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontLG}px`,
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    container.add(nameText);
+
+    // 类型和稀有度
+    const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '灵器';
+    const typeText = this.add.text(0, -cardHeight * 0.02, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: this.getRarityColor(item.rarity),
+    }).setOrigin(0.5);
+    container.add(typeText);
+
+    // 属性
+    let yOffset = cardHeight * 0.08;
+    const stats: string[] = [];
+    if (item.attack) stats.push(`⚔️ ${item.attack}`);
+    if (item.defense) stats.push(`🛡️ ${item.defense}`);
+    if (item.speed) stats.push(`⚡ ${item.speed}`);
+
+    if (stats.length > 0) {
+      const statsText = this.add.text(0, yOffset, stats.join('  '), {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontMD}px`,
+        color: '#f0e6d3',
+      }).setOrigin(0.5);
+      container.add(statsText);
+      yOffset += uiConfig.fontMD + 10;
+    }
+
+    // 技能
+    const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
+    if (skillsDisplay.length > 0) {
+      yOffset += 5;
+      skillsDisplay.forEach(skill => {
+        const skillText = this.add.text(0, yOffset, `${skill.name}: ${skill.description}`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontSM}px`,
+          color: '#d4a853',
+          wordWrap: { width: cardWidth - 20 },
+          align: 'center',
+        }).setOrigin(0.5, 0);
+        container.add(skillText);
+        yOffset += skillText.height + 5;
+      });
+    }
+
+    // 选择提示
+    const selectHint = this.add.text(0, cardHeight / 2 - 25, '点击选择', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#6e7681',
+    }).setOrigin(0.5);
+    container.add(selectHint);
+
+    // 交互效果
+    hitArea.on('pointerover', () => {
+      bg.clear();
+      bg.fillStyle(this.colors.inkBlack, 0.98);
+      bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      bg.lineStyle(4, this.colors.goldAccent, 1);
+      bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      container.setScale(1.05);
+      selectHint.setColor('#d4a853');
+    });
+
+    hitArea.on('pointerout', () => {
+      bg.clear();
+      bg.fillStyle(this.colors.inkBlack, 0.95);
+      bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      bg.lineStyle(3, borderColor, 0.8);
+      bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      container.setScale(1);
+      selectHint.setColor('#6e7681');
+    });
+
+    hitArea.on('pointerup', onSelect);
+
+    return container;
+  }
+
+  /**
+   * 创建装备卡片（用于Boss掉落展示）
+   */
+  private createEquipmentCard(
+    item: Equipment,
+    x: number,
+    y: number,
+    large: boolean = false
+  ): Phaser.GameObjects.Container {
+    const { width, height } = this.cameras.main;
+    const cardWidth = large ? Math.min(300, width * 0.35) : Math.min(200, width * 0.2);
+    const cardHeight = large ? Math.min(350, height * 0.45) : Math.min(220, height * 0.3);
+    const container = this.add.container(x, y);
+
+    const borderColor = this.getRarityBorderColor(item.rarity);
+    const wuxingColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0x8b949e;
+
+    // 卡片背景
+    const bg = this.add.graphics();
+    bg.fillStyle(this.colors.inkBlack, 0.95);
+    bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    bg.lineStyle(3, borderColor, 0.8);
+    bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    container.add(bg);
+
+    // 五行图标
+    const iconRadius = cardWidth * 0.12;
+    const icon = this.add.circle(0, -cardHeight * 0.25, iconRadius, wuxingColor);
+    icon.setStrokeStyle(3, 0xffffff, 0.6);
+    container.add(icon);
+
+    const levelStr = item.wuxing !== undefined ? `${item.wuxingLevel ?? 1}` : '-';
+    const levelText = this.add.text(0, -cardHeight * 0.25, levelStr, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${large ? uiConfig.fontXL : uiConfig.fontLG}px`,
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    container.add(levelText);
+
+    // 装备名称
+    const nameText = this.add.text(0, -cardHeight * 0.05, item.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${large ? uiConfig.fontXL : uiConfig.fontLG}px`,
+      color: '#f0e6d3',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    container.add(nameText);
+
+    // 类型和稀有度
+    const typeName = item.type === 'weapon' ? '武器' : item.type === 'armor' ? '铠甲' : '灵器';
+    const typeText = this.add.text(0, cardHeight * 0.08, `${typeName} · ${this.getRarityNameCN(item.rarity)}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: this.getRarityColor(item.rarity),
+    }).setOrigin(0.5);
+    container.add(typeText);
+
+    // 技能
+    const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
+    if (skillsDisplay.length > 0) {
+      let yOffset = cardHeight * 0.2;
+      skillsDisplay.forEach(skill => {
+        const skillText = this.add.text(0, yOffset, `${skill.name}`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontSM}px`,
+          color: '#d4a853',
+        }).setOrigin(0.5);
+        container.add(skillText);
+        yOffset += uiConfig.fontSM + 5;
+      });
+    }
+
+    return container;
+  }
+
+  /**
+   * 显示碎片汇总
+   */
+  private async showFragmentSummary(fragments: number): Promise<void> {
+    if (fragments <= 0) return;
+
+    const { width, height } = this.cameras.main;
+
+    return new Promise<void>(resolve => {
+      const container = this.add.container(0, 0);
+
+      const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
+      container.add(overlay);
+
+      const panelWidth = Math.min(350, width * 0.4);
+      const panelHeight = Math.min(200, height * 0.25);
+      const panelBg = this.add.graphics();
+      panelBg.fillStyle(this.colors.inkBlack, 0.95);
+      panelBg.fillRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+      panelBg.lineStyle(2, 0xa855f7, 0.6);
+      panelBg.strokeRoundedRect(width / 2 - panelWidth / 2, height / 2 - panelHeight / 2, panelWidth, panelHeight, 12);
+      container.add(panelBg);
+
+      const icon = this.add.text(width / 2, height / 2 - panelHeight * 0.2, '💎', {
+        fontSize: `${uiConfig.font2XL}px`,
+      }).setOrigin(0.5);
+      container.add(icon);
+
+      const text = this.add.text(width / 2, height / 2 + panelHeight * 0.1, `获得 ${fragments} 个碎片`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontLG}px`,
+        color: '#a855f7',
+      }).setOrigin(0.5);
+      container.add(text);
+
+      const totalText = this.add.text(width / 2, height / 2 + panelHeight * 0.3, `当前共 ${gameState.getFragmentCount()} 个`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontSM}px`,
+        color: '#8b949e',
+      }).setOrigin(0.5);
+      container.add(totalText);
+
+      this.time.delayedCall(1500, () => {
+        container.destroy();
+        resolve();
+      });
     });
   }
 

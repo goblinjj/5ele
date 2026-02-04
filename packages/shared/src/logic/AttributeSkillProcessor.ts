@@ -497,3 +497,93 @@ export function resetXushiStacks(combatant: Combatant): void {
 export function addXushiStack(combatant: Combatant): void {
   combatant.xushiStacks = Math.min(3, (combatant.xushiStacks ?? 0) + 1);
 }
+
+/**
+ * AOE技能触发结果
+ */
+export interface AoeSkillResult {
+  triggered: boolean;
+  skillId: AttributeSkillId | null;
+  skillName: string;
+  damagePercent: number;     // 伤害百分比（基于原伤害）
+  applySlow: boolean;        // 是否施加减速
+  applyBurning: boolean;     // 是否施加灼烧
+  lifestealPercent: number;  // 吸血百分比
+  scalesWithEnemyCount: boolean; // 伤害是否随敌人数量提升
+}
+
+/**
+ * 检查AOE技能是否触发
+ */
+export function checkAoeSkillTrigger(
+  attacker: Combatant,
+  skillLevels: SkillEffectLevels
+): AoeSkillResult {
+  const result: AoeSkillResult = {
+    triggered: false,
+    skillId: null,
+    skillName: '',
+    damagePercent: 0,
+    applySlow: false,
+    applyBurning: false,
+    lifestealPercent: 0,
+    scalesWithEnemyCount: false,
+  };
+
+  // 检查所有AOE技能
+  const aoeSkills: AttributeSkillId[] = [
+    AttributeSkillId.LIEKONGZHAN,  // 裂空斩
+    AttributeSkillId.HANCHAO,      // 寒潮
+    AttributeSkillId.JINGJI,       // 荆棘
+    AttributeSkillId.FENTIAN,      // 焚天
+    AttributeSkillId.DILIE,        // 地裂
+  ];
+
+  for (const skillId of aoeSkills) {
+    const level = skillLevels.levels.get(skillId);
+    if (!level) continue;
+
+    const def = getSkillDef(skillId);
+    if (def.trigger !== SkillTrigger.AOE_ATTACK) continue;
+
+    const triggerChance = getSkillValue(skillId, level);
+    if (Math.random() * 100 >= triggerChance) continue;
+
+    // 技能触发！
+    result.triggered = true;
+    result.skillId = skillId;
+    result.skillName = def.name;
+
+    switch (skillId) {
+      case AttributeSkillId.LIEKONGZHAN:
+        // 裂空斩：70%伤害群攻
+        result.damagePercent = 70;
+        break;
+      case AttributeSkillId.HANCHAO:
+        // 寒潮：50%伤害 + 减速
+        result.damagePercent = 50;
+        result.applySlow = true;
+        break;
+      case AttributeSkillId.JINGJI:
+        // 荆棘：50%伤害 + 吸血
+        result.damagePercent = 50;
+        result.lifestealPercent = 30; // 30%吸血
+        break;
+      case AttributeSkillId.FENTIAN:
+        // 焚天：只施加灼烧，不造成直接伤害
+        result.damagePercent = 0;
+        result.applyBurning = true;
+        break;
+      case AttributeSkillId.DILIE:
+        // 地裂：60%伤害，敌人越多伤害越高
+        result.damagePercent = 60;
+        result.scalesWithEnemyCount = true;
+        break;
+    }
+
+    // 只触发一个AOE技能
+    break;
+  }
+
+  return result;
+}
