@@ -1558,50 +1558,49 @@ export class BattleScene extends Phaser.Scene {
       yOffset += uiConfig.fontMD + 10;
     }
 
-    // 技能区域（限制高度并处理溢出）
+    // 技能区域（限制高度，超出部分截断）
     const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
     if (skillsDisplay.length > 0) {
       yOffset += 5;
-      const skillStartY = yOffset;
-      const maxSkillHeight = cardHeight * 0.35; // 限制技能区域高度
+      // 计算可用空间：从当前位置到"点击选择"按钮之间
+      const maxY = cardHeight / 2 - 45; // 留出空间给"点击选择"
+      let hasOverflow = false;
 
-      // 创建技能容器用于遮罩
-      const skillsContainer = this.add.container(0, 0);
-      container.add(skillsContainer);
+      for (const skill of skillsDisplay) {
+        // 检查是否还有空间
+        if (yOffset > maxY) {
+          hasOverflow = true;
+          break;
+        }
 
-      let skillYOffset = yOffset;
-      skillsDisplay.forEach(skill => {
-        const skillText = this.add.text(0, skillYOffset, `${skill.name}: ${skill.description}`, {
+        const skillText = this.add.text(0, yOffset, `${skill.name}: ${skill.description}`, {
           fontFamily: '"Noto Sans SC", sans-serif',
           fontSize: `${uiConfig.fontSM}px`,
           color: '#d4a853',
           wordWrap: { width: cardWidth - 24 },
           align: 'center',
         }).setOrigin(0.5, 0);
-        skillsContainer.add(skillText);
-        skillYOffset += skillText.height + 4;
-      });
 
-      // 检查是否溢出，如果溢出则添加遮罩和渐变提示
-      const totalSkillHeight = skillYOffset - skillStartY;
-      if (totalSkillHeight > maxSkillHeight) {
-        // 创建矩形遮罩
-        const maskShape = this.add.graphics();
-        maskShape.fillStyle(0xffffff);
-        maskShape.fillRect(x - cardWidth / 2, y + skillStartY, cardWidth, maxSkillHeight);
-        const mask = maskShape.createGeometryMask();
-        skillsContainer.setMask(mask);
+        // 检查添加后是否会超出
+        if (yOffset + skillText.height > maxY) {
+          skillText.destroy();
+          hasOverflow = true;
+          break;
+        }
 
-        // 添加溢出提示（渐变指示器）
-        const fadeHint = this.add.text(0, skillStartY + maxSkillHeight - 12, '...', {
+        container.add(skillText);
+        yOffset += skillText.height + 4;
+      }
+
+      // 如果有溢出，显示省略提示
+      if (hasOverflow) {
+        const moreText = this.add.text(0, yOffset, '...', {
           fontFamily: '"Noto Sans SC", sans-serif',
           fontSize: `${uiConfig.fontSM}px`,
           color: '#6e7681',
-        }).setOrigin(0.5);
-        container.add(fadeHint);
+        }).setOrigin(0.5, 0);
+        container.add(moreText);
       }
-
-      yOffset = skillStartY + Math.min(totalSkillHeight, maxSkillHeight);
     }
 
     // 选择提示
