@@ -17,6 +17,8 @@ import {
   getEquipmentSkillsDisplay,
   formatSkillsText,
   getSkillDef,
+  getAllEquipmentSkills,
+  SkillDisplayInfo,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
@@ -215,7 +217,7 @@ export class InventoryScene extends Phaser.Scene {
     const headerHeight = height * 0.08;
     const topSectionHeight = height * 0.36;
     const sectionY = headerHeight + topSectionHeight + height * 0.02;
-    const sectionHeight = height * 0.06;
+    const sectionHeight = height * 0.10; // 增加高度以容纳两行
 
     // 状态栏背景
     const sectionBg = this.add.graphics();
@@ -224,64 +226,109 @@ export class InventoryScene extends Phaser.Scene {
     sectionBg.lineStyle(1, this.colors.goldAccent, 0.3);
     sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 6);
 
-    // 状态标题
-    this.add.text(width * 0.05, sectionY + sectionHeight / 2, '状态:', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
-
-    // 获取玩家状态
-    const playerStatuses = gameState.getStatuses();
-
-    // 获取五行被动状态（统计所有装备的五行）
+    // 获取装备和技能
     const equipment = {
       weapon: gameState.getWeapon(),
       armor: gameState.getArmor(),
       treasures: gameState.getTreasures(),
     };
+
+    // 获取所有装备技能
+    const allSkills = getAllEquipmentSkills(equipment);
+
+    // 获取五行被动状态
     const wuxingPassives = getWuxingPassiveStatuses(equipment);
 
-    // 合并所有状态
-    const allStatuses: { type: StatusType; level?: number }[] = [
-      ...playerStatuses.map(s => ({ type: s.type })),
-      ...wuxingPassives.map(s => ({ type: s.type, level: s.level })),
-    ];
+    const rowHeight = sectionHeight / 2;
+    const row1Y = sectionY + rowHeight / 2;
+    const row2Y = sectionY + rowHeight + rowHeight / 2;
+    const labelPadding = 6;
+    const labelHeight = rowHeight * 0.75;
 
-    const startX = width * 0.12;
-    const labelHeight = sectionHeight * 0.7;
+    // === 第一行：五行技能 ===
+    this.add.text(width * 0.04, row1Y, '技能:', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontXS}px`,
+      color: '#8b949e',
+    }).setOrigin(0, 0.5);
 
-    if (allStatuses.length === 0) {
-      // 无状态时显示提示
-      this.add.text(startX, sectionY + sectionHeight / 2, '暂无特殊状态', {
+    if (allSkills.length === 0) {
+      this.add.text(width * 0.11, row1Y, '暂无技能', {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontSM}px`,
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#484f58',
         fontStyle: 'italic',
       }).setOrigin(0, 0.5);
     } else {
-      // 计算标签布局
-      const labelPadding = 8;
-      let currentX = startX;
+      let currentX = width * 0.11;
+      const maxX = width * 0.96;
 
-      // 显示状态标签
-      allStatuses.forEach((status) => {
+      for (const skill of allSkills) {
+        const displayText = `${skill.name} Lv.${skill.level}`;
+        const labelWidth = Math.max(60, displayText.length * 8 + 16);
+
+        if (currentX + labelWidth > maxX) break;
+
+        const skillColor = this.colors.goldAccent;
+
+        const labelBg = this.add.rectangle(
+          currentX + labelWidth / 2,
+          row1Y,
+          labelWidth,
+          labelHeight,
+          skillColor,
+          0.15
+        );
+        labelBg.setStrokeStyle(1, skillColor, 0.5);
+        labelBg.setInteractive({ useHandCursor: true });
+
+        this.add.text(currentX + labelWidth / 2, row1Y, displayText, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontXS}px`,
+          color: '#d4a853',
+        }).setOrigin(0.5);
+
+        // 点击显示技能详情
+        labelBg.on('pointerup', () => this.showSkillDetail(skill.name, skill.description));
+        labelBg.on('pointerover', () => labelBg.setFillStyle(skillColor, 0.35));
+        labelBg.on('pointerout', () => labelBg.setFillStyle(skillColor, 0.15));
+
+        currentX += labelWidth + labelPadding;
+      }
+    }
+
+    // === 第二行：五行状态 ===
+    this.add.text(width * 0.04, row2Y, '状态:', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontXS}px`,
+      color: '#8b949e',
+    }).setOrigin(0, 0.5);
+
+    if (wuxingPassives.length === 0) {
+      this.add.text(width * 0.11, row2Y, '暂无状态', {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontXS}px`,
+        color: '#484f58',
+        fontStyle: 'italic',
+      }).setOrigin(0, 0.5);
+    } else {
+      let currentX = width * 0.11;
+      const maxX = width * 0.88;
+
+      for (const status of wuxingPassives) {
         const definition = STATUS_DEFINITIONS[status.type];
-        if (!definition) return;
+        if (!definition) continue;
 
-        // 计算标签宽度
-        const displayText = status.level ? `${definition.icon}${definition.name}` : `${definition.icon} ${definition.name}`;
-        const labelWidth = Math.max(50, displayText.length * 11 + 16);
+        const displayText = `${definition.icon}${definition.name} Lv.${status.level}`;
+        const labelWidth = Math.max(70, displayText.length * 8 + 12);
 
-        // 检查是否超出屏幕
-        if (currentX + labelWidth > width * 0.86) return;
+        if (currentX + labelWidth > maxX) break;
 
         const statusColor = Phaser.Display.Color.HexStringToColor(definition.color).color;
 
-        // 状态标签背景
         const labelBg = this.add.rectangle(
           currentX + labelWidth / 2,
-          sectionY + sectionHeight / 2,
+          row2Y,
           labelWidth,
           labelHeight,
           statusColor,
@@ -290,33 +337,23 @@ export class InventoryScene extends Phaser.Scene {
         labelBg.setStrokeStyle(1, statusColor, 0.6);
         labelBg.setInteractive({ useHandCursor: true });
 
-        // 状态图标和名称
-        const labelText = this.add.text(
-          currentX + labelWidth / 2,
-          sectionY + sectionHeight / 2,
-          displayText,
-          {
-            fontFamily: '"Noto Sans SC", sans-serif',
-            fontSize: `${uiConfig.fontXS}px`,
-            color: definition.color,
-            fontStyle: 'bold',
-          }
-        ).setOrigin(0.5);
+        this.add.text(currentX + labelWidth / 2, row2Y, displayText, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontXS}px`,
+          color: definition.color,
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
 
-        // 点击事件（传递等级）
+        // 点击显示状态详情
         labelBg.on('pointerup', () => this.showStatusPopup(status.type, status.level));
-        labelBg.on('pointerover', () => {
-          labelBg.setFillStyle(statusColor, 0.4);
-        });
-        labelBg.on('pointerout', () => {
-          labelBg.setFillStyle(statusColor, 0.2);
-        });
+        labelBg.on('pointerover', () => labelBg.setFillStyle(statusColor, 0.4));
+        labelBg.on('pointerout', () => labelBg.setFillStyle(statusColor, 0.2));
 
         currentX += labelWidth + labelPadding;
-      });
+      }
     }
 
-    // 显示五行收集进度提示（如果没有五行圆满）
+    // 五行收集进度（右下角）
     if (!gameState.hasStatus(StatusType.WUXING_MASTERY)) {
       const treasures = gameState.getTreasures();
       const uniqueWuxings = new Set(
@@ -325,7 +362,7 @@ export class InventoryScene extends Phaser.Scene {
       const collected = uniqueWuxings.size;
 
       if (collected > 0 && collected < 5) {
-        this.add.text(width * 0.88, sectionY + sectionHeight / 2, `五行进度: ${collected}/5`, {
+        this.add.text(width * 0.94, row2Y, `五行: ${collected}/5`, {
           fontFamily: '"Noto Sans SC", sans-serif',
           fontSize: `${uiConfig.fontXS}px`,
           color: '#8b949e',
@@ -536,9 +573,9 @@ export class InventoryScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
     const topSectionHeight = height * 0.36;
-    const statusBarHeight = height * 0.08;
-    const sectionY = headerHeight + topSectionHeight + statusBarHeight + height * 0.04;
-    const sectionHeight = height * 0.38;
+    const statusBarHeight = height * 0.12; // 两行状态栏
+    const sectionY = headerHeight + topSectionHeight + statusBarHeight + height * 0.02;
+    const sectionHeight = height * 0.36;
 
     // 背包区域背景
     const sectionBg = this.add.graphics();

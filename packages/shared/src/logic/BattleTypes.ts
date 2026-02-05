@@ -77,12 +77,30 @@ export interface Combatant {
 }
 
 /**
+ * 战斗阶段（用于技能触发时机）
+ */
+export enum BattlePhase {
+  BATTLE_INIT = 'battle_init',     // 战斗初始化（根基、炎威、坚壁）
+  ROUND_START = 'round_start',     // 回合开始
+  TURN_START = 'turn_start',       // 行动开始（生机、灼烧伤害）
+  BEFORE_ATTACK = 'before_attack', // 攻击前
+  ON_ATTACK = 'on_attack',         // 攻击计算（锐度、破甲等）
+  ON_DEFEND = 'on_defend',         // 防御计算（灵动、磐石等）
+  AFTER_ATTACK = 'after_attack',   // 攻击后（寒锋、燎原等）
+  AFTER_DEFEND = 'after_defend',   // 受击后（反震、余烬等）
+  ON_DEATH = 'on_death',           // 死亡时（逢春）
+  TURN_END = 'turn_end',           // 行动结束
+  ROUND_END = 'round_end',         // 回合结束
+}
+
+/**
  * 战斗事件类型
  */
 export type BattleEventType =
   | 'battle_start'
   | 'round_start'
   | 'turn_start'
+  | 'skill_triggered'  // 技能触发（AOE技能、被动技能）
   | 'attack'
   | 'damage'
   | 'heal'

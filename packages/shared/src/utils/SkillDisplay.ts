@@ -1,4 +1,4 @@
-import { Equipment } from '../types/Equipment.js';
+import { Equipment, PlayerEquipment } from '../types/Equipment.js';
 import { AttributeSkillId, getSkillDef, getSkillValue } from '../data/AttributeSkillDatabase.js';
 import { Wuxing } from '../types/Wuxing.js';
 
@@ -76,4 +76,37 @@ export function canGainMoreSkills(equipment: Equipment): boolean {
   const currentCount = equipment.attributeSkills?.length ?? 0;
   const maxCount = getMaxSkillCount(equipment.upgradeLevel);
   return currentCount < maxCount && currentCount < 5;
+}
+
+/**
+ * 获取所有装备的技能汇总（去重合并，相同技能等级取最高）
+ */
+export function getAllEquipmentSkills(equipment: PlayerEquipment): SkillDisplayInfo[] {
+  const skillMap = new Map<AttributeSkillId, SkillDisplayInfo>();
+
+  const processEquipment = (equip: Equipment | null) => {
+    if (!equip || !equip.attributeSkills) return;
+    const wuxingLevel = equip.wuxingLevel ?? 1;
+
+    for (const skillId of equip.attributeSkills) {
+      const existing = skillMap.get(skillId);
+      if (!existing || existing.level < wuxingLevel) {
+        const def = getSkillDef(skillId);
+        const value = getSkillValue(skillId, wuxingLevel);
+        skillMap.set(skillId, {
+          id: skillId,
+          name: def.name,
+          description: def.description.replace('{value}', String(value)),
+          level: wuxingLevel,
+          value,
+        });
+      }
+    }
+  };
+
+  processEquipment(equipment.weapon);
+  processEquipment(equipment.armor);
+  equipment.treasures.forEach(t => processEquipment(t));
+
+  return Array.from(skillMap.values());
 }

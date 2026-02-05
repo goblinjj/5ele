@@ -1,4 +1,4 @@
-import { Combatant, BattleConfig, BattleEvent, EngineBattleResult } from './BattleTypes.js';
+import { Combatant, BattleConfig, BattleEvent, EngineBattleResult, BattlePhase } from './BattleTypes.js';
 import { calculateFinalDamage } from './DamageCalculator.js';
 import { sortBySpeed, getAliveCombatants } from './SpeedResolver.js';
 import {
@@ -8,6 +8,8 @@ import {
   applySlow,
   isSlowed,
   isBurning,
+  tryApplyBurning,
+  tryApplySlow,
 } from './WuxingPassiveProcessor.js';
 import {
   calculateAttackSkills,
@@ -254,9 +256,9 @@ export class BattleEngine {
 
     if (enemies.length === 0) return events;
 
-    // 技能触发事件（使用turn_start类型来显示技能名称）
+    // 技能触发事件
     events.push({
-      type: 'turn_start',
+      type: 'skill_triggered',
       actorId: attacker.id,
       message: `${aoeResult.skillName}！`,
       skillName: aoeResult.skillName,
@@ -295,9 +297,8 @@ export class BattleEngine {
         }
       }
 
-      // 施加减速
-      if (aoeResult.applySlow && !enemy.hasWuxingMastery) {
-        applySlow(enemy, 1);
+      // 施加减速（使用集中的免疫检查）
+      if (aoeResult.applySlow && tryApplySlow(enemy, 1)) {
         events.push({
           type: 'status_applied',
           actorId: attacker.id,
@@ -307,9 +308,8 @@ export class BattleEngine {
         });
       }
 
-      // 施加灼烧
-      if (aoeResult.applyBurning && !enemy.hasWuxingMastery) {
-        applyBurning(enemy, 1);
+      // 施加灼烧（使用集中的免疫检查）
+      if (aoeResult.applyBurning && tryApplyBurning(enemy, 1)) {
         events.push({
           type: 'status_applied',
           actorId: attacker.id,

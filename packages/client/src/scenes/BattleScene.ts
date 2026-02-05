@@ -805,12 +805,18 @@ export class BattleScene extends Phaser.Scene {
       attack: newPlayerData.attack,
       defense: newPlayerData.defense,
       speed: newPlayerData.speed,
+      maxHp: newPlayerData.maxHp,  // 包含装备HP加成
       attackWuxing: newPlayerData.attackWuxing,
       defenseWuxing: newPlayerData.defenseWuxing,
       attributeSkills: newPlayerData.attributeSkills,
       allWuxingLevels: newPlayerData.allWuxingLevels,
       hasWuxingMastery: newPlayerData.hasWuxingMastery,
     });
+
+    // 同步显示数据
+    this.syncDisplayFromEngine();
+    this.displayCombatants.forEach(c => this.updateHpBar(c));
+    this.updateTopBarHp();
   }
 
   /**
@@ -845,7 +851,11 @@ export class BattleScene extends Phaser.Scene {
       case 'battle_start':
       case 'round_start':
       case 'turn_start':
-        // 如果有技能名称，显示技能触发动画（浮动文字，不用弹窗）
+        // 普通阶段事件不需要特殊显示
+        break;
+
+      case 'skill_triggered':
+        // 技能触发时显示技能名称（浮动文字）
         if (event.skillName && event.actorId) {
           const actor = this.displayCombatants.get(event.actorId);
           if (actor) {

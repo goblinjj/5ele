@@ -132,3 +132,29 @@ export function isSlowed(target: Combatant): boolean {
 export function isBurning(target: Combatant): boolean {
   return !!(target.statusEffects?.burning && target.statusEffects.burning.stacks > 0);
 }
+
+/**
+ * 尝试施加灼烧状态（检查免疫）
+ * @returns true 如果成功施加
+ */
+export function tryApplyBurning(target: Combatant, stacks: number = 1): boolean {
+  // 五行圆满免疫负面状态
+  if (target.hasWuxingMastery) {
+    return false;
+  }
+  applyBurning(target, stacks);
+  return true;
+}
+
+/**
+ * 尝试施加减速状态（检查免疫）
+ * @returns true 如果成功施加
+ */
+export function tryApplySlow(target: Combatant, turns: number = 1): boolean {
+  // 五行圆满免疫负面状态
+  if (target.hasWuxingMastery) {
+    return false;
+  }
+  applySlow(target, turns);
+  return true;
+}
