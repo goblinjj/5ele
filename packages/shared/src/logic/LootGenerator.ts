@@ -26,12 +26,14 @@ export interface LootResult {
  * @param round 当前回合
  * @param dropRate 掉率倍数（影响碎片数量）
  * @param enemyCount 击杀的怪物数量（每个怪物有一次3选1）
+ * @param enemyWuxings 每个敌人的五行属性（掉落装备将与怪物同属性）
  */
 export function generateLoot(
   nodeType: 'normal' | 'elite' | 'final',
   round: number,
   dropRate: number = 1.0,
-  enemyCount: number = 1
+  enemyCount: number = 1,
+  enemyWuxings?: Wuxing[]
 ): LootResult {
   const enemyDrops: EnemyDrop[] = [];
   const items: Equipment[] = []; // 兼容旧代码
@@ -47,10 +49,13 @@ export function generateLoot(
 
   // 每个敌人生成一次掉落（3选1 + 碎片）
   for (let enemy = 0; enemy < enemyCount; enemy++) {
-    // 生成3个装备选项
+    // 获取该敌人的五行属性（掉落装备与怪物同属性）
+    const enemyWuxing = enemyWuxings?.[enemy];
+
+    // 生成3个装备选项（同属性）
     const choices: Equipment[] = [];
     for (let i = 0; i < 3; i++) {
-      choices.push(generateRandomEquipment(isHighQuality, round));
+      choices.push(generateRandomEquipment(isHighQuality, round, enemyWuxing));
     }
 
     // 生成碎片数量（1-5，受掉率影响）
@@ -141,12 +146,13 @@ function tryBossDrop(nodeType: 'normal' | 'elite' | 'final'): Equipment | null {
   return null;
 }
 
-function generateRandomEquipment(isHighQuality: boolean, round: number): Equipment {
+function generateRandomEquipment(isHighQuality: boolean, round: number, forcedWuxing?: Wuxing): Equipment {
   const types = [EquipmentType.WEAPON, EquipmentType.ARMOR, EquipmentType.TREASURE];
   const type = types[Math.floor(Math.random() * types.length)];
 
+  // 使用指定的五行属性，或随机生成
   const wuxings = Object.values(Wuxing);
-  const wuxing = wuxings[Math.floor(Math.random() * wuxings.length)] as Wuxing;
+  const wuxing = forcedWuxing ?? (wuxings[Math.floor(Math.random() * wuxings.length)] as Wuxing);
 
   const rarityRoll = Math.random();
   let rarity: Rarity;
@@ -158,6 +164,7 @@ function generateRandomEquipment(isHighQuality: boolean, round: number): Equipme
 
   const baseStats = getBaseStats(rarity);
   const baseSpeed = Math.floor(Math.random() * 2); // 0-1
+  const baseHp = getBaseHp(rarity, type);
   const wuxingLevel = RARITY_WUXING_LEVEL[rarity];
 
   // 生成初始技能（+0装备有1个技能）
@@ -173,6 +180,7 @@ function generateRandomEquipment(isHighQuality: boolean, round: number): Equipme
     attack: type === EquipmentType.WEAPON || type === EquipmentType.TREASURE ? baseStats : undefined,
     defense: type === EquipmentType.ARMOR || type === EquipmentType.TREASURE ? baseStats : undefined,
     speed: baseSpeed,
+    hp: baseHp,
     upgradeLevel: 0,
     attributeSkills: firstSkill ? [firstSkill] : [],
   };
@@ -187,6 +195,30 @@ function getBaseStats(rarity: Rarity): number {
     case Rarity.LEGENDARY: return 5;
     default: return 1;
   }
+}
+
+/**
+ * 计算装备的基础生命值
+ * 铠甲提供更多HP，武器和法宝提供较少HP
+ */
+function getBaseHp(rarity: Rarity, type: EquipmentType): number {
+  // 基础HP基于品质
+  let baseHp: number;
+  switch (rarity) {
+    case Rarity.COMMON: baseHp = 2; break;
+    case Rarity.UNCOMMON: baseHp = 3; break;
+    case Rarity.RARE: baseHp = 4; break;
+    case Rarity.EPIC: baseHp = 5; break;
+    case Rarity.LEGENDARY: baseHp = 6; break;
+    default: baseHp = 2;
+  }
+
+  // 铠甲提供更多HP（+50%）
+  if (type === EquipmentType.ARMOR) {
+    baseHp = Math.floor(baseHp * 1.5);
+  }
+
+  return baseHp;
 }
 
 function generateName(type: EquipmentType, wuxing: Wuxing, rarity: Rarity): string {

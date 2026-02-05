@@ -52,6 +52,7 @@ export class BattleScene extends Phaser.Scene {
   private displayCombatants: Map<string, DisplayCombatant> = new Map();
   private engineCombatants: EngineCombatant[] = [];
   private enemyCount: number = 0;
+  private enemyWuxings: Wuxing[] = [];
 
   private readonly colors = {
     bgDark: 0x0d1117,
@@ -152,7 +153,7 @@ export class BattleScene extends Phaser.Scene {
       color: '#f85149',
     }).setOrigin(1, 0.5);
 
-    this.add.text(x, y + 12, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}`, {
+    this.add.text(x, y + 12, `⚔ ${gameState.getTotalAttack()}  🛡 ${gameState.getTotalDefense()}  ⚡ ${gameState.getTotalSpeed()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontXS}px`,
       color: '#8b949e',
@@ -282,6 +283,8 @@ export class BattleScene extends Phaser.Scene {
       );
     }
     this.enemyCount = enemies.length;
+    // 收集敌人的五行属性（用于掉落装备同属性）
+    this.enemyWuxings = enemies.map(e => e.attackWuxing?.wuxing).filter((w): w is Wuxing => w !== undefined);
 
     // 计算敌人位置 - 使用更合理的阵型
     const positions = this.calculateEnemyPositions(enemies.length, width, height, battleFieldY);
@@ -734,8 +737,21 @@ export class BattleScene extends Phaser.Scene {
       const roundResult = this.battleEngine.runSingleRound();
 
       // 播放回合事件
-      for (const event of roundResult.events) {
+      let lastWasAoe = false;
+      for (let i = 0; i < roundResult.events.length; i++) {
+        const event = roundResult.events[i];
         await this.playEvent(event);
+
+        // AOE伤害后，检查下一个事件是否也是AOE伤害，如果不是则添加延迟
+        if (event.type === 'damage' && event.isAoe) {
+          const nextEvent = roundResult.events[i + 1];
+          if (!nextEvent || nextEvent.type !== 'damage' || !nextEvent.isAoe) {
+            await this.delay(400); // AOE伤害结束后统一延迟
+          }
+          lastWasAoe = true;
+        } else {
+          lastWasAoe = false;
+        }
       }
 
       // 同步显示状态
@@ -828,7 +844,8 @@ export class BattleScene extends Phaser.Scene {
           const actor = event.actorId ? this.displayCombatants.get(event.actorId) : null;
 
           if (target) {
-            if (actor && actor.id !== target.id) {
+            // AOE伤害不播放攻击动画，同时显示所有伤害
+            if (actor && actor.id !== target.id && !event.isAoe) {
               await this.playAttackAnimation(actor, target);
             }
 
@@ -845,7 +862,10 @@ export class BattleScene extends Phaser.Scene {
               gameState.getPlayerState().hp = target.hp;
               this.updateTopBarHp();
             }
-            await this.delay(damageDelay);
+            // AOE伤害不额外等待，所有伤害同时显示
+            if (!event.isAoe) {
+              await this.delay(damageDelay);
+            }
           }
         }
         break;
@@ -1082,7 +1102,7 @@ export class BattleScene extends Phaser.Scene {
   private async handleVictory(): Promise<void> {
     const nodeTypeStr = this.getNodeTypeString();
     const playerState = gameState.getPlayerState();
-    const loot = generateLoot(nodeTypeStr, this.round, playerState.dropRate, this.enemyCount);
+    const loot = generateLoot(nodeTypeStr, this.round, playerState.dropRate, this.enemyCount, this.enemyWuxings);
 
     await this.showNewLootScreen(loot);
   }
@@ -1393,7 +1413,7 @@ export class BattleScene extends Phaser.Scene {
       container.add(overlay);
 
       // 标题
-      const title = this.add.text(width / 2, height * 0.1, '选择器物', {
+      const title = this.add.text(width / 2, height * 0.1, '塑型器物', {
         fontFamily: '"Noto Serif SC", serif',
         fontSize: `${uiConfig.font2XL}px`,
         color: '#d4a853',
@@ -1525,6 +1545,7 @@ export class BattleScene extends Phaser.Scene {
     const stats: string[] = [];
     if (item.attack) stats.push(`⚔️ ${item.attack}`);
     if (item.defense) stats.push(`🛡️ ${item.defense}`);
+    if (item.hp) stats.push(`❤️ ${item.hp}`);
     if (item.speed) stats.push(`⚡ ${item.speed}`);
 
     if (stats.length > 0) {
@@ -1537,21 +1558,50 @@ export class BattleScene extends Phaser.Scene {
       yOffset += uiConfig.fontMD + 10;
     }
 
-    // 技能
+    // 技能区域（限制高度并处理溢出）
     const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
     if (skillsDisplay.length > 0) {
       yOffset += 5;
+      const skillStartY = yOffset;
+      const maxSkillHeight = cardHeight * 0.35; // 限制技能区域高度
+
+      // 创建技能容器用于遮罩
+      const skillsContainer = this.add.container(0, 0);
+      container.add(skillsContainer);
+
+      let skillYOffset = yOffset;
       skillsDisplay.forEach(skill => {
-        const skillText = this.add.text(0, yOffset, `${skill.name}: ${skill.description}`, {
+        const skillText = this.add.text(0, skillYOffset, `${skill.name}: ${skill.description}`, {
           fontFamily: '"Noto Sans SC", sans-serif',
           fontSize: `${uiConfig.fontSM}px`,
           color: '#d4a853',
-          wordWrap: { width: cardWidth - 20 },
+          wordWrap: { width: cardWidth - 24 },
           align: 'center',
         }).setOrigin(0.5, 0);
-        container.add(skillText);
-        yOffset += skillText.height + 5;
+        skillsContainer.add(skillText);
+        skillYOffset += skillText.height + 4;
       });
+
+      // 检查是否溢出，如果溢出则添加遮罩和渐变提示
+      const totalSkillHeight = skillYOffset - skillStartY;
+      if (totalSkillHeight > maxSkillHeight) {
+        // 创建矩形遮罩
+        const maskShape = this.add.graphics();
+        maskShape.fillStyle(0xffffff);
+        maskShape.fillRect(x - cardWidth / 2, y + skillStartY, cardWidth, maxSkillHeight);
+        const mask = maskShape.createGeometryMask();
+        skillsContainer.setMask(mask);
+
+        // 添加溢出提示（渐变指示器）
+        const fadeHint = this.add.text(0, skillStartY + maxSkillHeight - 12, '...', {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: `${uiConfig.fontSM}px`,
+          color: '#6e7681',
+        }).setOrigin(0.5);
+        container.add(fadeHint);
+      }
+
+      yOffset = skillStartY + Math.min(totalSkillHeight, maxSkillHeight);
     }
 
     // 选择提示
@@ -2069,7 +2119,7 @@ export class BattleScene extends Phaser.Scene {
     btnBg.setStrokeStyle(2, this.colors.paperCream, 0.5);
     btnBg.setInteractive({ useHandCursor: true });
 
-    const btnText = this.add.text(width / 2, btnY, '返回主菜单', {
+    const btnText = this.add.text(width / 2, btnY, '继承新的残魂', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#f0e6d3',

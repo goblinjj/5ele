@@ -286,6 +286,7 @@ export class BattleEngine {
           targetId: enemy.id,
           value: damage,
           message: aoeResult.skillName,
+          isAoe: true,
         });
 
         // 荆棘：吸血

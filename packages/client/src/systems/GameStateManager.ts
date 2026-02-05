@@ -8,6 +8,7 @@ import {
   PlayerStatus,
   StatusType,
   checkWuxingMastery,
+  calculatePlayerMaxHp,
 } from '@xiyou/shared';
 
 /**
@@ -141,6 +142,25 @@ export class GameStateManager {
   }
 
   /**
+   * 重新计算最大HP（装备变化时调用）
+   */
+  private recalculateMaxHp(): void {
+    const oldMaxHp = this.playerState.maxHp;
+    const newMaxHp = calculatePlayerMaxHp(this.playerState.equipment);
+
+    // 更新maxHp
+    this.playerState.maxHp = newMaxHp;
+
+    // 按比例调整当前HP
+    if (oldMaxHp > 0) {
+      const hpRatio = this.playerState.hp / oldMaxHp;
+      this.playerState.hp = Math.max(1, Math.round(newMaxHp * hpRatio));
+    } else {
+      this.playerState.hp = newMaxHp;
+    }
+  }
+
+  /**
    * 装备武器（从背包）
    */
   equipWeapon(inventoryIndex: number): boolean {
@@ -156,6 +176,7 @@ export class GameStateManager {
     }
 
     this.playerState.equipment.weapon = item;
+    this.recalculateMaxHp();
     return true;
   }
 
@@ -174,6 +195,7 @@ export class GameStateManager {
     }
 
     this.playerState.equipment.armor = item;
+    this.recalculateMaxHp();
     return true;
   }
 
@@ -193,6 +215,7 @@ export class GameStateManager {
 
     // 检查五行圆满状态
     this.checkAndUpdateWuxingMastery();
+    this.recalculateMaxHp();
     return true;
   }
 
@@ -211,6 +234,7 @@ export class GameStateManager {
 
     // 检查五行圆满状态（可能会失去）
     this.checkAndUpdateWuxingMastery();
+    this.recalculateMaxHp();
     return result;
   }
 
@@ -262,6 +286,18 @@ export class GameStateManager {
       defense += treasure.defense ?? 0;
     }
     return defense;
+  }
+
+  /**
+   * 获取总速度
+   */
+  getTotalSpeed(): number {
+    let speed = this.playerState.equipment.weapon?.speed ?? 0;
+    speed += this.playerState.equipment.armor?.speed ?? 0;
+    for (const treasure of this.playerState.equipment.treasures) {
+      speed += treasure.speed ?? 0;
+    }
+    return speed;
   }
 
   /**

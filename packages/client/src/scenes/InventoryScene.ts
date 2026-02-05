@@ -114,7 +114,7 @@ export class InventoryScene extends Phaser.Scene {
 
     // 玩家状态（左侧）
     const player = gameState.getPlayerState();
-    this.add.text(width * 0.03, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}`, {
+    this.add.text(width * 0.03, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}  ⚡ ${gameState.getTotalSpeed()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',

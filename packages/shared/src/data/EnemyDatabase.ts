@@ -1,5 +1,6 @@
 import { Wuxing } from '../types/Wuxing.js';
 import { Combatant } from '../logic/BattleTypes.js';
+import { randomSkillFromWuxing, AttributeSkillId } from './AttributeSkillDatabase.js';
 
 /**
  * 敌人模板
@@ -179,7 +180,7 @@ export function generateEnemies(
     const count = getNormalMonsterCount(round) + monsterCountBonus;
     for (let i = 0; i < count; i++) {
       const template = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
-      enemies.push(createCombatantFromTemplate(template, i, scaling));
+      enemies.push(createCombatantFromTemplate(template, i, scaling, false, round));
     }
   } else if (nodeType === 'elite') {
     // 精英战斗：第N轮 = N个普通怪 + 1个精英
@@ -187,21 +188,21 @@ export function generateEnemies(
     const minionCount = getEliteMinionCount(round);
     for (let i = 0; i < minionCount; i++) {
       const minionTemplate = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
-      enemies.push(createCombatantFromTemplate(minionTemplate, i, scaling * 0.8));
+      enemies.push(createCombatantFromTemplate(minionTemplate, i, scaling * 0.8, false, round));
     }
-    // 再添加精英（放在最后，通常是主目标）
+    // 再添加精英（放在最后，通常是主目标）- 有装备和技能
     const eliteTemplate = ELITE_ENEMIES[Math.floor(Math.random() * ELITE_ENEMIES.length)];
-    enemies.push(createCombatantFromTemplate(eliteTemplate, minionCount, scaling));
+    enemies.push(createCombatantFromTemplate(eliteTemplate, minionCount, scaling, true, round));
   } else {
     // Boss战斗：1个Boss + 2个精英
-    // 先添加2个精英
+    // 先添加2个精英 - 有装备和技能
     for (let i = 0; i < 2; i++) {
       const eliteTemplate = ELITE_ENEMIES[Math.floor(Math.random() * ELITE_ENEMIES.length)];
-      enemies.push(createCombatantFromTemplate(eliteTemplate, i, scaling * 0.9));
+      enemies.push(createCombatantFromTemplate(eliteTemplate, i, scaling * 0.9, true, round));
     }
-    // 再添加Boss（放在最后，主目标）
+    // 再添加Boss（放在最后，主目标）- 有更多技能
     const bossTemplate = BOSS_ENEMIES[0];
-    enemies.push(createCombatantFromTemplate(bossTemplate, 2, scaling * 1.2));
+    enemies.push(createCombatantFromTemplate(bossTemplate, 2, scaling * 1.2, true, round, true));
   }
 
   return enemies;
@@ -230,9 +231,29 @@ export function getEnemyCount(
 function createCombatantFromTemplate(
   template: EnemyTemplate,
   index: number,
-  scaling: number
+  scaling: number,
+  isElite: boolean = false,
+  round: number = 1,
+  isBoss: boolean = false
 ): Combatant {
   const scaledHp = Math.floor(template.hp * scaling);
+
+  // 精英怪和Boss穿戴本属性装备（体现为拥有同属性技能）
+  // 技能数量随回合增加：回合1-2=1技能，回合3-4=2技能，回合5+=3技能
+  // Boss额外+1技能
+  let attributeSkills: AttributeSkillId[] = [];
+  if (isElite) {
+    const baseSkillCount = Math.min(Math.ceil(round / 2), 3);
+    const skillCount = isBoss ? baseSkillCount + 1 : baseSkillCount;
+
+    for (let i = 0; i < skillCount; i++) {
+      const skill = randomSkillFromWuxing(template.wuxing);
+      if (skill && !attributeSkills.includes(skill)) {
+        attributeSkills.push(skill);
+      }
+    }
+  }
+
   return {
     id: `enemy_${template.id}_${index}_${Date.now()}`,
     name: template.name,
@@ -245,5 +266,6 @@ function createCombatantFromTemplate(
     defenseWuxing: { wuxing: template.wuxing, level: template.wuxingLevel },
     isPlayer: false,
     frozen: false,
+    attributeSkills: attributeSkills.length > 0 ? attributeSkills : undefined,
   };
 }

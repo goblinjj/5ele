@@ -1,6 +1,11 @@
-import { Equipment, PlayerEquipment, EquipmentType, Rarity } from './Equipment.js';
+import { Equipment, PlayerEquipment, EquipmentType, Rarity, getTotalEquipmentHp } from './Equipment.js';
 import { WuxingLevel } from './Wuxing.js';
 import { PlayerStatus } from './Status.js';
+
+/**
+ * 玩家基础生命值（无装备时）
+ */
+export const BASE_PLAYER_HP = 10;
 
 /**
  * 背包容量
@@ -105,6 +110,22 @@ const STARTER_WEAPON: Equipment = {
   // 无五行属性
   attack: 1,
   speed: 0,
+  hp: 2,  // 少量HP加成
+  upgradeLevel: 0,
+};
+
+/**
+ * 初始铠甲 - 布衣（无属性）
+ */
+const STARTER_ARMOR: Equipment = {
+  id: 'starter_armor',
+  name: '布衣',
+  type: EquipmentType.ARMOR,
+  rarity: Rarity.COMMON,
+  // 无五行属性（所以无技能和被动）
+  defense: 1,
+  speed: 0,
+  hp: 3,  // 铠甲提供更多HP
   upgradeLevel: 0,
 };
 
@@ -112,16 +133,22 @@ const STARTER_WEAPON: Equipment = {
  * 创建初始玩家状态
  */
 export function createInitialPlayerState(id: string, name: string): PlayerState {
+  const equipment: PlayerEquipment = {
+    weapon: { ...STARTER_WEAPON },
+    armor: { ...STARTER_ARMOR },  // 初始铠甲
+    treasures: [],
+  };
+
+  // 计算初始最大HP：基础HP + 装备提供的HP
+  const equipmentHp = getTotalEquipmentHp(equipment);
+  const totalMaxHp = BASE_PLAYER_HP + equipmentHp;
+
   return {
     id,
     name,
-    hp: 25,
-    maxHp: 25,
-    equipment: {
-      weapon: { ...STARTER_WEAPON },
-      armor: null,  // 无初始铠甲
-      treasures: [],
-    },
+    hp: totalMaxHp,
+    maxHp: totalMaxHp,
+    equipment,
     inventory: {
       slots: new Array(INVENTORY_SIZE).fill(null),
       fragmentCount: 0,
@@ -133,6 +160,13 @@ export function createInitialPlayerState(id: string, name: string): PlayerState 
     monsterCountBonus: 0,  // 默认无额外怪物
     statuses: [],  // 初始无状态
   };
+}
+
+/**
+ * 计算玩家最大生命值（基础HP + 装备HP）
+ */
+export function calculatePlayerMaxHp(equipment: PlayerEquipment): number {
+  return BASE_PLAYER_HP + getTotalEquipmentHp(equipment);
 }
 
 /**

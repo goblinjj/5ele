@@ -116,6 +116,8 @@ export interface BattleEvent {
   // 状态效果相关
   statusType?: 'bleeding' | 'burning' | 'slowed' | 'frozen' | 'regeneration' | 'embers';
   stacks?: number;  // 状态叠加层数
+  // AOE相关
+  isAoe?: boolean;  // 是否是群攻伤害（同时显示所有伤害）
 }
 
 /**

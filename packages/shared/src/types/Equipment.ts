@@ -49,6 +49,7 @@ export interface Equipment {
   attack?: number;   // 攻击力 1-10
   defense?: number;  // 防御力 1-10
   speed?: number;    // 速度 0-3
+  hp?: number;       // 生命值加成 1-10
 
   // 属性技能列表（新系统，可选）
   attributeSkills?: AttributeSkillId[];
@@ -153,6 +154,20 @@ export function getTotalSpeed(equipment: PlayerEquipment): number {
   }
 
   return speed;
+}
+
+/**
+ * 计算装备提供的总生命值
+ */
+export function getTotalEquipmentHp(equipment: PlayerEquipment): number {
+  let hp = equipment.weapon?.hp ?? 0;
+  hp += equipment.armor?.hp ?? 0;
+
+  for (const treasure of equipment.treasures) {
+    hp += treasure.hp ?? 0;
+  }
+
+  return hp;
 }
 
 /**

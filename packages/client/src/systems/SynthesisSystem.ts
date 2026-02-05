@@ -6,6 +6,7 @@ import {
   checkRecipe,
   getLegendaryEquipment,
   SPECIAL_RECIPES,
+  addRandomSkillToEquipment,
 } from '@xiyou/shared';
 import { gameState } from './GameStateManager.js';
 
@@ -369,14 +370,24 @@ export class SynthesisSystem {
       ? equipment.wuxingLevel + (equipment.upgradeLevel % 2 === 0 ? 1 : 0)
       : undefined;
 
-    return {
+    // 复制技能数组
+    const newSkills = equipment.attributeSkills ? [...equipment.attributeSkills] : [];
+
+    const upgraded: Equipment = {
       ...equipment,
       upgradeLevel: equipment.upgradeLevel + 1,
       attack: equipment.attack ? equipment.attack + 1 : undefined,
       defense: equipment.defense ? equipment.defense + 1 : undefined,
+      hp: equipment.hp ? equipment.hp + 1 : undefined,  // HP也随升级增加
       wuxingLevel: newWuxingLevel,
+      attributeSkills: newSkills,
       name: this.getUpgradedName(equipment),
     };
+
+    // 尝试添加新技能（强化等级决定技能数量上限）
+    addRandomSkillToEquipment(upgraded);
+
+    return upgraded;
   }
 
   /**
