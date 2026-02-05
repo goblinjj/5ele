@@ -42,6 +42,15 @@ interface DisplayCombatant {
 }
 
 /**
+ * 玩家图集
+ */
+const PLAYER_ATLAS_KEY = 'player_spirit';
+const PLAYER_ATLAS_PATH = {
+  json: 'assets/player/灵体残骸/atlas.json',
+  image: 'assets/player/灵体残骸/atlas.png',
+};
+
+/**
  * 怪物名称到图集键的映射
  */
 const MONSTER_ATLAS_MAP: Record<string, string> = {
@@ -110,10 +119,16 @@ export class BattleScene extends Phaser.Scene {
   private atlasesLoaded: boolean = false;
 
   preload(): void {
-    // 只加载本次战斗需要的怪物图集
-    const monsterNames = this.getRequiredMonsterNames();
     const atlasesToLoad: string[] = [];
 
+    // 加载玩家图集
+    if (!this.textures.exists(PLAYER_ATLAS_KEY)) {
+      this.load.atlas(PLAYER_ATLAS_KEY, PLAYER_ATLAS_PATH.image, PLAYER_ATLAS_PATH.json);
+      atlasesToLoad.push(PLAYER_ATLAS_KEY);
+    }
+
+    // 只加载本次战斗需要的怪物图集
+    const monsterNames = this.getRequiredMonsterNames();
     for (const name of monsterNames) {
       const atlasKey = MONSTER_ATLAS_MAP[name];
       if (atlasKey && MONSTER_ATLAS_PATHS[atlasKey]) {
@@ -128,7 +143,7 @@ export class BattleScene extends Phaser.Scene {
     if (atlasesToLoad.length > 0) {
       this.load.once('complete', () => {
         this.atlasesLoaded = true;
-        this.createMonsterAnimations(atlasesToLoad);
+        this.createAnimations(atlasesToLoad);
       });
     } else {
       this.atlasesLoaded = true;
@@ -159,10 +174,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /**
-   * 创建怪物动画
+   * 创建角色动画（玩家和怪物）
    * @param atlasKeys 需要创建动画的图集键列表
    */
-  private createMonsterAnimations(atlasKeys: string[]): void {
+  private createAnimations(atlasKeys: string[]): void {
     const animTypes = ['idle', 'run', 'atk', 'hurt', 'magic', 'die'];
     const frameCount = 6;
 
@@ -197,13 +212,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /**
-   * 播放怪物动画
+   * 播放角色动画（玩家或怪物）
    * @param combatant 战斗者
    * @param animType 动画类型 (idle, run, atk, hurt, magic, die)
    * @param waitForComplete 是否等待动画完成
    * @returns Promise，如果waitForComplete为true则等待动画完成
    */
-  private playMonsterAnimation(
+  private playCharacterAnimation(
     combatant: DisplayCombatant,
     animType: 'idle' | 'run' | 'atk' | 'hurt' | 'magic' | 'die',
     waitForComplete: boolean = false
@@ -214,7 +229,8 @@ export class BattleScene extends Phaser.Scene {
         return;
       }
 
-      const atlasKey = MONSTER_ATLAS_MAP[combatant.name];
+      // 获取图集键（玩家或怪物）
+      const atlasKey = combatant.isPlayer ? PLAYER_ATLAS_KEY : MONSTER_ATLAS_MAP[combatant.name];
       if (!atlasKey) {
         resolve();
         return;
@@ -637,20 +653,23 @@ export class BattleScene extends Phaser.Scene {
     const bodySize = combatant.isPlayer ? playerSize : enemySize;
     const bodyColor = combatant.wuxing !== undefined ? WUXING_COLORS[combatant.wuxing] : 0x8b949e;
 
-    // 检查是否有怪物图集
-    const atlasKey = MONSTER_ATLAS_MAP[combatant.name];
+    // 检查是否有图集（玩家或怪物）
+    const atlasKey = combatant.isPlayer ? PLAYER_ATLAS_KEY : MONSTER_ATLAS_MAP[combatant.name];
     const hasAtlas = atlasKey && this.textures.exists(atlasKey);
 
     let body: Phaser.GameObjects.Arc | Phaser.GameObjects.Rectangle;
     let animSprite: Phaser.GameObjects.Sprite | undefined;
 
-    if (!combatant.isPlayer && hasAtlas) {
-      // 使用怪物精灵
+    if (hasAtlas) {
+      // 使用精灵图集
       animSprite = this.add.sprite(0, height * 0.01, atlasKey, 'character_idle_0');
       const spriteScale = (bodySize * 2.5) / animSprite.width;
       animSprite.setScale(spriteScale);
       animSprite.setOrigin(0.5, 0.5);
-      animSprite.setFlipX(true);  // 翻转使怪物面朝左（面向玩家）
+      // 怪物面朝左（面向玩家），玩家面朝右（面向怪物）
+      if (!combatant.isPlayer) {
+        animSprite.setFlipX(true);
+      }
       animSprite.setName('animSprite');
       container.add(animSprite);
 
@@ -666,7 +685,7 @@ export class BattleScene extends Phaser.Scene {
       // 创建一个不可见的点击区域
       body = this.add.rectangle(0, 0, bodySize * 2, bodySize * 2, 0x000000, 0);
     } else {
-      // 使用圆形（玩家或没有图集的怪物）
+      // 使用圆形（没有图集的角色）
       const aura = this.add.circle(0, 0, bodySize + 10, bodyColor, 0.2);
       container.add(aura);
 
@@ -1059,7 +1078,7 @@ export class BattleScene extends Phaser.Scene {
 
             // 播放受击动画（如果是有动画的怪物）
             if (target.animSprite) {
-              this.playMonsterAnimation(target, 'hurt', false);
+              this.playCharacterAnimation(target, 'hurt', false);
             }
 
             target.hp = Math.max(0, target.hp - event.value);
@@ -1161,7 +1180,7 @@ export class BattleScene extends Phaser.Scene {
             const color = event.statusType === 'bleeding' ? '#c94a4a' : '#ff9500';
             // 播放受击动画（如果是有动画的怪物）
             if (target.animSprite) {
-              this.playMonsterAnimation(target, 'hurt', false);
+              this.playCharacterAnimation(target, 'hurt', false);
             }
             target.hp = Math.max(0, target.hp - event.value);
             // 显示技能名称和伤害值
@@ -1202,7 +1221,7 @@ export class BattleScene extends Phaser.Scene {
           if (target) {
             // 播放受击动画（如果是有动画的怪物）
             if (target.animSprite) {
-              this.playMonsterAnimation(target, 'hurt', false);
+              this.playCharacterAnimation(target, 'hurt', false);
             }
             target.hp = Math.max(0, target.hp - event.value);
             this.showFloatingText(target, `反震 -${event.value}`, '#eab308', 22, -100);
@@ -2495,76 +2514,98 @@ export class BattleScene extends Phaser.Scene {
   private async playAttackAnimation(attacker: DisplayCombatant, defender: DisplayCombatant): Promise<void> {
     if (!attacker.sprite) return;
 
-    const originalX = attacker.x;
-    const originalY = attacker.y;
     const { width } = this.cameras.main;
-    const moveDuration = 400;  // 移动速度减慢
     const attackDuration = 250;
 
     this.createAttackParticles(attacker);
 
-    // 移动过程中播放run动画
-    if (attacker.animSprite) {
-      this.playMonsterAnimation(attacker, 'run', false);
-    }
+    // 玩家使用魔法攻击（原地释放），怪物使用物理攻击（移动到目标）
+    if (attacker.isPlayer) {
+      // 玩家：播放magic动画
+      if (attacker.animSprite) {
+        await this.playCharacterAnimation(attacker, 'magic', true);
+      }
 
-    // 移动到目标位置
-    await new Promise<void>(resolve => {
-      this.tweens.add({
-        targets: attacker.sprite,
-        x: defender.x - (attacker.isPlayer ? width * 0.06 : -width * 0.06),
-        y: defender.y,
-        duration: moveDuration,
-        ease: 'Power2.easeInOut',
-        onComplete: () => resolve(),
+      // 攻击命中效果
+      if (defender.sprite) {
+        const flash = this.add.circle(defender.x, defender.y, 70, 0xffffff, 0.7);
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          scale: 1.5,
+          duration: attackDuration,
+          onComplete: () => flash.destroy(),
+        });
+      }
+    } else {
+      // 怪物：移动攻击
+      const originalX = attacker.x;
+      const originalY = attacker.y;
+      const moveDuration = 400;
+
+      // 移动过程中播放run动画
+      if (attacker.animSprite) {
+        this.playCharacterAnimation(attacker, 'run', false);
+      }
+
+      // 移动到目标位置
+      await new Promise<void>(resolve => {
+        this.tweens.add({
+          targets: attacker.sprite,
+          x: defender.x + width * 0.06,
+          y: defender.y,
+          duration: moveDuration,
+          ease: 'Power2.easeInOut',
+          onComplete: () => resolve(),
+        });
       });
-    });
 
-    // 到达目标后播放攻击动画
-    if (attacker.animSprite) {
-      await this.playMonsterAnimation(attacker, 'atk', true);
-    }
+      // 到达目标后播放攻击动画
+      if (attacker.animSprite) {
+        await this.playCharacterAnimation(attacker, 'atk', true);
+      }
 
-    // 攻击命中效果
-    if (defender.sprite) {
-      const flash = this.add.circle(defender.x, defender.y, 70, 0xffffff, 0.7);
-      this.tweens.add({
-        targets: flash,
-        alpha: 0,
-        scale: 1.5,
-        duration: attackDuration,
-        onComplete: () => flash.destroy(),
-      });
-    }
+      // 攻击命中效果
+      if (defender.sprite) {
+        const flash = this.add.circle(defender.x, defender.y, 70, 0xffffff, 0.7);
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          scale: 1.5,
+          duration: attackDuration,
+          onComplete: () => flash.destroy(),
+        });
+      }
 
-    // 返回过程中播放run动画
-    if (attacker.animSprite) {
-      this.playMonsterAnimation(attacker, 'run', false);
-    }
+      // 返回过程中播放run动画
+      if (attacker.animSprite) {
+        this.playCharacterAnimation(attacker, 'run', false);
+      }
 
-    // 返回原位置
-    await new Promise<void>(resolve => {
-      this.tweens.add({
-        targets: attacker.sprite,
-        x: originalX,
-        y: originalY,
-        duration: moveDuration,
-        ease: 'Power2.easeInOut',
-        onComplete: () => {
-          // 返回后切换回idle动画
-          if (attacker.animSprite) {
-            const atlasKey = MONSTER_ATLAS_MAP[attacker.name];
-            if (atlasKey) {
-              const idleAnim = `${atlasKey}_idle`;
-              if (this.anims.exists(idleAnim)) {
-                attacker.animSprite.play(idleAnim);
+      // 返回原位置
+      await new Promise<void>(resolve => {
+        this.tweens.add({
+          targets: attacker.sprite,
+          x: originalX,
+          y: originalY,
+          duration: moveDuration,
+          ease: 'Power2.easeInOut',
+          onComplete: () => {
+            // 返回后切换回idle动画
+            if (attacker.animSprite) {
+              const atlasKey = MONSTER_ATLAS_MAP[attacker.name];
+              if (atlasKey) {
+                const idleAnim = `${atlasKey}_idle`;
+                if (this.anims.exists(idleAnim)) {
+                  attacker.animSprite.play(idleAnim);
+                }
               }
             }
-          }
-          resolve();
-        },
+            resolve();
+          },
+        });
       });
-    });
+    }
   }
 
   private createAttackParticles(attacker: DisplayCombatant): void {
@@ -2599,7 +2640,7 @@ export class BattleScene extends Phaser.Scene {
 
     // 播放死亡动画（如果是有动画的怪物）
     if (combatant.animSprite) {
-      await this.playMonsterAnimation(combatant, 'die', true);
+      await this.playCharacterAnimation(combatant, 'die', true);
     }
 
     for (let i = 0; i < 12; i++) {
