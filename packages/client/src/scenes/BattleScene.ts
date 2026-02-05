@@ -110,27 +110,63 @@ export class BattleScene extends Phaser.Scene {
   private atlasesLoaded: boolean = false;
 
   preload(): void {
-    // 加载所有怪物图集
-    for (const [key, paths] of Object.entries(MONSTER_ATLAS_PATHS)) {
-      if (!this.textures.exists(key)) {
-        this.load.atlas(key, paths.image, paths.json);
+    // 只加载本次战斗需要的怪物图集
+    const monsterNames = this.getRequiredMonsterNames();
+    const atlasesToLoad: string[] = [];
+
+    for (const name of monsterNames) {
+      const atlasKey = MONSTER_ATLAS_MAP[name];
+      if (atlasKey && MONSTER_ATLAS_PATHS[atlasKey]) {
+        if (!this.textures.exists(atlasKey)) {
+          const paths = MONSTER_ATLAS_PATHS[atlasKey];
+          this.load.atlas(atlasKey, paths.image, paths.json);
+          atlasesToLoad.push(atlasKey);
+        }
       }
     }
 
-    this.load.once('complete', () => {
+    if (atlasesToLoad.length > 0) {
+      this.load.once('complete', () => {
+        this.atlasesLoaded = true;
+        this.createMonsterAnimations(atlasesToLoad);
+      });
+    } else {
       this.atlasesLoaded = true;
-      this.createMonsterAnimations();
-    });
+    }
+  }
+
+  /**
+   * 获取本次战斗需要的怪物名称列表
+   */
+  private getRequiredMonsterNames(): string[] {
+    // 如果有预生成的敌人，使用它们
+    if (this.preGeneratedEnemies && this.preGeneratedEnemies.length > 0) {
+      return [...new Set(this.preGeneratedEnemies.map(e => e.name))];
+    }
+
+    // 否则提前生成敌人以确定需要加载的图集
+    const playerState = gameState.getPlayerState();
+    const nodeTypeStr = this.getNodeTypeString();
+    const enemies = generateEnemies(
+      nodeTypeStr,
+      this.round,
+      playerState.monsterScaling,
+      playerState.monsterCountBonus
+    );
+    // 保存生成的敌人供后续使用，避免重复生成
+    this.preGeneratedEnemies = enemies;
+    return [...new Set(enemies.map(e => e.name))];
   }
 
   /**
    * 创建怪物动画
+   * @param atlasKeys 需要创建动画的图集键列表
    */
-  private createMonsterAnimations(): void {
+  private createMonsterAnimations(atlasKeys: string[]): void {
     const animTypes = ['idle', 'run', 'atk', 'hurt', 'magic', 'die'];
     const frameCount = 6;
 
-    for (const atlasKey of Object.keys(MONSTER_ATLAS_PATHS)) {
+    for (const atlasKey of atlasKeys) {
       if (!this.textures.exists(atlasKey)) continue;
 
       for (const animType of animTypes) {
