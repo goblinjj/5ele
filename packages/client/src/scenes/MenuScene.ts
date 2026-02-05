@@ -148,6 +148,35 @@ export class MenuScene extends Phaser.Scene {
 
     // 多人模式按钮
     this.createButton(width / 2 + btnSpacing, btnY, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
+
+    // 游戏介绍链接
+    this.createLinkButton(width / 2, height * 0.78, '游戏介绍', () => this.openLanding());
+  }
+
+  private createLinkButton(x: number, y: number, text: string, onClick: () => void): void {
+    const linkText = this.add.text(x, y, `📜 ${text}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: '#8b949e',
+    }).setOrigin(0.5);
+
+    linkText.setInteractive({ useHandCursor: true });
+
+    linkText.on('pointerover', () => {
+      linkText.setColor('#d4a853');
+      linkText.setScale(1.05);
+    });
+
+    linkText.on('pointerout', () => {
+      linkText.setColor('#8b949e');
+      linkText.setScale(1);
+    });
+
+    linkText.on('pointerup', onClick);
+  }
+
+  private openLanding(): void {
+    window.open('/landing/', '_blank');
   }
 
   private createButton(
