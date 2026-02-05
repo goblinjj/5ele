@@ -614,6 +614,7 @@ export class BattleScene extends Phaser.Scene {
       const spriteScale = (bodySize * 2.5) / animSprite.width;
       animSprite.setScale(spriteScale);
       animSprite.setOrigin(0.5, 0.5);
+      animSprite.setFlipX(true);  // 翻转使怪物面朝左（面向玩家）
       animSprite.setName('animSprite');
       container.add(animSprite);
 
