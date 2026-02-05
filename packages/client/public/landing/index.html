@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>无极 - 五行之力，归于平衡</title>
+  <meta name="description" content="无极，一款基于五行世界观的Roguelike游戏。作为本源的意志残魂，夺回五行之力，让世界归于平衡。">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      /* Void colors */
+      --void-black: #050508;
+      --void-deep: #0a0a12;
+      --void-surface: #12121f;
+      --mist-grey: #3a3a4f;
+      --spirit-white: #e8e6f0;
+      --spirit-dim: #9896a8;
+
+      /* Five element colors */
+      --metal-gold: #d4a853;
+      --metal-glow: #f5d99a;
+      --wood-green: #3fb950;
+      --wood-glow: #7ce38f;
+      --water-blue: #58a6ff;
+      --water-glow: #a5d4ff;
+      --fire-red: #f85149;
+      --fire-glow: #ff8a84;
+      --earth-yellow: #d29922;
+      --earth-glow: #f0c75e;
+
+      /* Typography */
+      --font-display: 'Ma Shan Zheng', cursive;
+      --font-heading: 'ZCOOL XiaoWei', serif;
+      --font-body: 'Noto Serif SC', serif;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--void-black);
+      color: var(--spirit-white);
+      overflow-x: hidden;
+      line-height: 1.8;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--void-deep);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--mist-grey);
+      border-radius: 3px;
+    }
+
+    /* ==================== HERO SECTION ==================== */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Cosmic void background */
+    .void-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 40%, rgba(88, 166, 255, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse 60% 80% at 30% 60%, rgba(248, 81, 73, 0.02) 0%, transparent 40%),
+        radial-gradient(ellipse 70% 50% at 70% 70%, rgba(63, 185, 80, 0.02) 0%, transparent 40%),
+        var(--void-black);
+    }
+
+    /* Particle canvas */
+    #particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* Hero content */
+    .hero-content {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      padding: 2rem;
+      max-width: 900px;
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(5rem, 15vw, 12rem);
+      letter-spacing: 0.2em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(
+        180deg,
+        var(--spirit-white) 0%,
+        var(--spirit-dim) 50%,
+        var(--metal-gold) 100%
+      );
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: 0 0 80px rgba(212, 168, 83, 0.3);
+      animation: titleReveal 2s ease-out;
+    }
+
+    @keyframes titleReveal {
+      from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+        filter: blur(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+    }
+
+    .hero-subtitle {
+      font-family: var(--font-heading);
+      font-size: clamp(1rem, 2.5vw, 1.4rem);
+      color: var(--spirit-dim);
+      letter-spacing: 0.3em;
+      margin-bottom: 3rem;
+      animation: fadeIn 1.5s ease-out 0.5s both;
+    }
+
+    .hero-quote {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      line-height: 2.2;
+      color: var(--spirit-dim);
+      max-width: 600px;
+      margin: 0 auto 3rem;
+      animation: fadeIn 1.5s ease-out 0.8s both;
+    }
+
+    .hero-quote .highlight {
+      color: var(--spirit-white);
+      font-weight: 600;
+    }
+
+    .hero-mission {
+      font-family: var(--font-heading);
+      font-size: clamp(1.2rem, 3vw, 1.6rem);
+      color: var(--metal-gold);
+      letter-spacing: 0.1em;
+      padding: 1rem 2rem;
+      border: 1px solid rgba(212, 168, 83, 0.3);
+      background: rgba(212, 168, 83, 0.05);
+      animation: missionPulse 3s ease-in-out infinite, fadeIn 1.5s ease-out 1.2s both;
+    }
+
+    @keyframes missionPulse {
+      0%, 100% { box-shadow: 0 0 30px rgba(212, 168, 83, 0.1); }
+      50% { box-shadow: 0 0 50px rgba(212, 168, 83, 0.2); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scroll indicator */
+    .scroll-indicator {
+      position: absolute;
+      bottom: 3rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--spirit-dim);
+      font-size: 0.85rem;
+      letter-spacing: 0.2em;
+      animation: bounce 2s ease-in-out infinite;
+    }
+
+    .scroll-indicator::after {
+      content: '';
+      width: 1px;
+      height: 40px;
+      background: linear-gradient(to bottom, var(--spirit-dim), transparent);
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(10px); }
+    }
+
+    /* ==================== WUXING SECTION ==================== */
+    .wuxing-section {
+      position: relative;
+      padding: 8rem 2rem;
+      background: var(--void-deep);
+      overflow: hidden;
+    }
+
+    .wuxing-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 200px;
+      background: linear-gradient(to bottom, var(--void-black), transparent);
+      pointer-events: none;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      text-align: center;
+      margin-bottom: 1rem;
+      letter-spacing: 0.15em;
+    }
+
+    .section-subtitle {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      text-align: center;
+      color: var(--spirit-dim);
+      margin-bottom: 4rem;
+      letter-spacing: 0.2em;
+    }
+
+    /* Wuxing cycle diagram */
+    .wuxing-container {
+      position: relative;
+      max-width: 800px;
+      margin: 0 auto;
+      aspect-ratio: 1;
+    }
+
+    .wuxing-circle {
+      position: absolute;
+      inset: 10%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+    }
+
+    .wuxing-circle::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        var(--metal-gold) 0deg 72deg,
+        var(--water-blue) 72deg 144deg,
+        var(--wood-green) 144deg 216deg,
+        var(--fire-red) 216deg 288deg,
+        var(--earth-yellow) 288deg 360deg
+      );
+      opacity: 0.15;
+      animation: slowRotate 60s linear infinite;
+    }
+
+    @keyframes slowRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    /* Element nodes */
+    .element-node {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .element-node:hover {
+      transform: translate(-50%, -50%) scale(1.15);
+    }
+
+    .element-node::before {
+      content: '';
+      position: absolute;
+      inset: -20px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--element-color) 0%, transparent 70%);
+      opacity: 0.2;
+      transition: opacity 0.3s;
+    }
+
+    .element-node:hover::before {
+      opacity: 0.4;
+    }
+
+    .element-icon {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 2.5rem;
+      color: var(--element-color);
+      border: 2px solid var(--element-color);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.6);
+      box-shadow:
+        0 0 30px color-mix(in srgb, var(--element-color) 30%, transparent),
+        inset 0 0 20px color-mix(in srgb, var(--element-color) 10%, transparent);
+    }
+
+    /* Position elements in pentagon */
+    .element-node.metal { top: 10%; left: 50%; --element-color: var(--metal-gold); }
+    .element-node.water { top: 40%; left: 95%; --element-color: var(--water-blue); }
+    .element-node.wood { top: 85%; left: 75%; --element-color: var(--wood-green); }
+    .element-node.fire { top: 85%; left: 25%; --element-color: var(--fire-red); }
+    .element-node.earth { top: 40%; left: 5%; --element-color: var(--earth-yellow); }
+
+    /* Element info panel */
+    .element-info {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 280px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .element-info.active {
+      opacity: 1;
+    }
+
+    .element-info h3 {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      color: var(--active-color, var(--spirit-white));
+    }
+
+    .element-info .element-desc {
+      font-size: 0.95rem;
+      color: var(--spirit-dim);
+      margin-bottom: 1rem;
+    }
+
+    .element-info .element-skills {
+      font-size: 0.85rem;
+      color: var(--spirit-dim);
+      line-height: 1.8;
+    }
+
+    .element-info .element-skills span {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      margin: 0.2rem;
+      border: 1px solid var(--active-color, var(--mist-grey));
+      border-radius: 3px;
+      color: var(--active-color, var(--spirit-white));
+    }
+
+    /* Cycle lines */
+    .cycle-lines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .cycle-lines svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .generate-line {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.1);
+      stroke-width: 1;
+      stroke-dasharray: 5, 5;
+    }
+
+    /* ==================== STORY SECTION ==================== */
+    .story-section {
+      position: relative;
+      padding: 8rem 2rem;
+      background: var(--void-black);
+    }
+
+    .story-container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .story-chapter {
+      margin-bottom: 5rem;
+      opacity: 0;
+      transform: translateY(40px);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .story-chapter.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .chapter-number {
+      font-family: var(--font-display);
+      font-size: 4rem;
+      color: var(--mist-grey);
+      opacity: 0.3;
+      line-height: 1;
+      margin-bottom: -1rem;
+    }
+
+    .chapter-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      color: var(--spirit-white);
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.1em;
+    }
+
+    .chapter-content {
+      font-size: 1.05rem;
+      color: var(--spirit-dim);
+      text-align: justify;
+    }
+
+    .chapter-content strong {
+      color: var(--metal-gold);
+      font-weight: 600;
+    }
+
+    /* Decorative divider */
+    .story-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin: 4rem 0;
+    }
+
+    .story-divider span {
+      width: 8px;
+      height: 8px;
+      background: var(--mist-grey);
+      border-radius: 50%;
+      opacity: 0.5;
+    }
+
+    .story-divider span:nth-child(2) {
+      width: 12px;
+      height: 12px;
+      background: var(--metal-gold);
+      opacity: 0.8;
+    }
+
+    /* ==================== FEATURES SECTION ==================== */
+    .features-section {
+      position: relative;
+      padding: 8rem 2rem;
+      background:
+        radial-gradient(ellipse 100% 50% at 50% 100%, rgba(212, 168, 83, 0.05) 0%, transparent 50%),
+        var(--void-deep);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .feature-card {
+      position: relative;
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.4s;
+    }
+
+    .feature-card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(212, 168, 83, 0.3);
+      transform: translateY(-5px);
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3px;
+      height: 0;
+      background: var(--metal-gold);
+      transition: height 0.4s;
+    }
+
+    .feature-card:hover::before {
+      height: 100%;
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-family: var(--font-heading);
+      font-size: 1.3rem;
+      color: var(--spirit-white);
+      margin-bottom: 0.8rem;
+      letter-spacing: 0.05em;
+    }
+
+    .feature-desc {
+      font-size: 0.95rem;
+      color: var(--spirit-dim);
+      line-height: 1.7;
+    }
+
+    /* ==================== CTA SECTION ==================== */
+    .cta-section {
+      position: relative;
+      padding: 10rem 2rem;
+      text-align: center;
+      background: var(--void-black);
+      overflow: hidden;
+    }
+
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(212, 168, 83, 0.08) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .cta-title {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      margin-bottom: 1rem;
+      letter-spacing: 0.1em;
+    }
+
+    .cta-subtitle {
+      font-size: 1.1rem;
+      color: var(--spirit-dim);
+      margin-bottom: 3rem;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .cta-button {
+      display: inline-block;
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      padding: 1rem 3rem;
+      color: var(--void-black);
+      background: linear-gradient(135deg, var(--metal-gold), var(--earth-yellow));
+      border: none;
+      letter-spacing: 0.15em;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+    }
+
+    .cta-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 40px rgba(212, 168, 83, 0.3);
+    }
+
+    /* ==================== FOOTER ==================== */
+    .footer {
+      padding: 4rem 2rem;
+      background: var(--void-surface);
+      text-align: center;
+    }
+
+    .footer-logo {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      color: var(--spirit-dim);
+      letter-spacing: 0.2em;
+      margin-bottom: 1.5rem;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .footer-links a {
+      color: var(--spirit-dim);
+      text-decoration: none;
+      font-size: 0.9rem;
+      letter-spacing: 0.1em;
+      transition: color 0.3s;
+    }
+
+    .footer-links a:hover {
+      color: var(--metal-gold);
+    }
+
+    .footer-copyright {
+      font-size: 0.8rem;
+      color: var(--mist-grey);
+    }
+
+    /* ==================== RESPONSIVE ==================== */
+    @media (max-width: 768px) {
+      .wuxing-container {
+        max-width: 350px;
+      }
+
+      .element-node {
+        width: 70px;
+        height: 70px;
+      }
+
+      .element-icon {
+        font-size: 1.8rem;
+      }
+
+      .element-info {
+        width: 200px;
+      }
+
+      .element-info h3 {
+        font-size: 1.5rem;
+      }
+
+      .footer-links {
+        flex-direction: column;
+        gap: 1rem;
+      }
+    }
+
+    /* ==================== NOISE OVERLAY ==================== */
+    .noise-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+  </style>
+</head>
+<body>
+  <div class="noise-overlay"></div>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="void-bg"></div>
+    <canvas id="particles"></canvas>
+
+    <div class="hero-content">
+      <h1 class="hero-title">无极</h1>
+      <p class="hero-subtitle">WUJI - THE LIMITLESS VOID</p>
+
+      <div class="hero-quote">
+        <span class="highlight">无极生太极，太极生两仪，</span><br>
+        两仪生四象，四象生五行，五行化万物。<br><br>
+        然而五行失衡，万物病变。<br>
+        世界正在崩坏。
+      </div>
+
+      <div class="hero-mission">
+        夺回五行之力，让世界归于平衡
+      </div>
+    </div>
+
+    <div class="scroll-indicator">
+      探索
+    </div>
+  </section>
+
+  <!-- Wuxing Section -->
+  <section class="wuxing-section" id="wuxing">
+    <h2 class="section-title">五行之力</h2>
+    <p class="section-subtitle">金木水火土 · 相生相克</p>
+
+    <div class="wuxing-container">
+      <div class="wuxing-circle"></div>
+
+      <!-- Cycle lines SVG -->
+      <div class="cycle-lines">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+          <!-- Generation cycle (pentagon) -->
+          <path class="generate-line" d="M50,10 L95,40 L75,85 L25,85 L5,40 Z" />
+        </svg>
+      </div>
+
+      <!-- Element nodes -->
+      <div class="element-node metal" data-element="metal">
+        <div class="element-icon">金</div>
+      </div>
+      <div class="element-node water" data-element="water">
+        <div class="element-icon">水</div>
+      </div>
+      <div class="element-node wood" data-element="wood">
+        <div class="element-icon">木</div>
+      </div>
+      <div class="element-node fire" data-element="fire">
+        <div class="element-icon">火</div>
+      </div>
+      <div class="element-node earth" data-element="earth">
+        <div class="element-icon">土</div>
+      </div>
+
+      <!-- Element info (center) -->
+      <div class="element-info" id="element-info">
+        <h3>五行</h3>
+        <p class="element-desc">点击元素查看详情</p>
+        <div class="element-skills"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Story Section -->
+  <section class="story-section" id="story">
+    <div class="story-container">
+      <h2 class="section-title">世界观</h2>
+      <p class="section-subtitle">本源之子的使命</p>
+
+      <div class="story-chapter">
+        <div class="chapter-number">壹</div>
+        <h3 class="chapter-title">五行天地</h3>
+        <p class="chapter-content">
+          太初之时，世界由五行之力交织而成——<strong>金、木、水、火、土</strong>相生相克，维系着万物的平衡与运转。然而不知何时，五行之力开始<strong>失衡</strong>。失衡的能量逐渐变异，产生了自我意志，化为形形色色的<strong>妖异</strong>。这些妖异并非外来入侵者，而是世界自身的病变。
+        </p>
+      </div>
+
+      <div class="story-divider">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="story-chapter">
+        <div class="chapter-number">贰</div>
+        <h3 class="chapter-title">本源之子</h3>
+        <p class="chapter-content">
+          世界濒临崩坏之际，本源意志开始自救——它将自身分裂成无数缕<strong>意志残魂</strong>，散落于天地之间。每一缕残魂都是世界的一部分，天生拥有操控五行之力的能力。它们的使命只有一个：<strong>夺回被妖异侵占的五行之力，归还于世界</strong>。
+        </p>
+      </div>
+
+      <div class="story-divider">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="story-chapter">
+        <div class="chapter-number">叁</div>
+        <h3 class="chapter-title">双向猎杀</h3>
+        <p class="chapter-content">
+          妖异想要夺取残魂，将本源意志据为己有；残魂则要击溃妖异，磨除其变异的意志。这是一场<strong>双向的猎杀</strong>，没有旁观者。当妖异被击败，残留的五行之力便恢复纯粹。残魂可以将这些能量塑形为<strong>器物</strong>——武器、铠甲、法宝——以战养战。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features-section" id="features">
+    <h2 class="section-title">游戏特色</h2>
+    <p class="section-subtitle">Roguelike · 五行构筑 · 策略对决</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">⚔️</div>
+        <h3 class="feature-title">五行克制</h3>
+        <p class="feature-desc">金克木、木克土、土克水、水克火、火克金。利用五行相克关系，对敌人造成额外伤害，掌握战斗的主动权。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🔮</div>
+        <h3 class="feature-title">属性构筑</h3>
+        <p class="feature-desc">25种属性技能，涵盖暴击、闪避、回复、灼烧、格挡等多元流派。通过装备搭配，打造独一无二的战斗风格。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">⚗️</div>
+        <h3 class="feature-title">重组归元</h3>
+        <p class="feature-desc">将器物中的五行之力重组凝练，或归元吸收。五行能量本就不稳定，重组时常有失败之险，但也蕴含着更强大的可能。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🌀</div>
+        <h3 class="feature-title">命脉交汇</h3>
+        <p class="feature-desc">多人竞技模式中，残魂们各自选择气穴去向。当多人选择同一路径，世界将进行裁决，以契合度决定谁能通行。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">👹</div>
+        <h3 class="feature-title">病变核心</h3>
+        <p class="feature-desc">每片区域深处都盘踞着最为庞大的病变核心。净化它，是每一缕残魂的最终目标，也是殊途同归的终点。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">♾️</div>
+        <h3 class="feature-title">永恒轮回</h3>
+        <p class="feature-desc">残魂完成使命后回归本源，不留痕迹。但世界广袤，新的病变仍在滋生。新的残魂将诞生，继续这场永无止境的净化之旅。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="cta-section">
+    <h2 class="cta-title">成为意志残魂</h2>
+    <p class="cta-subtitle">背负使命，夺回五行之力，让世界归于平衡。你准备好了吗？</p>
+    <a href="/game" class="cta-button">开始游戏</a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-logo">无极</div>
+    <div class="footer-links">
+      <a href="#wuxing">五行之力</a>
+      <a href="#story">世界观</a>
+      <a href="#features">游戏特色</a>
+    </div>
+    <p class="footer-copyright">© 2026 无极 WUJI. All rights reserved.</p>
+  </footer>
+
+  <script>
+    // ==================== PARTICLES ====================
+    const canvas = document.getElementById('particles');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const particles = [];
+    const elementColors = [
+      '#d4a853', // Metal
+      '#58a6ff', // Water
+      '#3fb950', // Wood
+      '#f85149', // Fire
+      '#d29922'  // Earth
+    ];
+
+    class Particle {
+      constructor() {
+        this.reset();
+      }
+
+      reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2 + 0.5;
+        this.speedX = (Math.random() - 0.5) * 0.3;
+        this.speedY = (Math.random() - 0.5) * 0.3;
+        this.color = elementColors[Math.floor(Math.random() * elementColors.length)];
+        this.alpha = Math.random() * 0.5 + 0.1;
+        this.life = Math.random() * 200 + 100;
+      }
+
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.life--;
+
+        if (this.life <= 0 || this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+          this.reset();
+        }
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.alpha * (this.life / 200);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Create particles
+    for (let i = 0; i < 80; i++) {
+      particles.push(new Particle());
+    }
+
+    function animateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    // ==================== ELEMENT INTERACTION ====================
+    const elementData = {
+      metal: {
+        name: '金',
+        title: '锐利肃杀',
+        desc: '金主肃杀，代表锐利、破坏、致命一击',
+        skills: ['锐度', '锋芒', '破甲', '杀意', '寒锋'],
+        color: '#d4a853'
+      },
+      water: {
+        name: '水',
+        title: '灵动玄妙',
+        desc: '水主灵动，代表闪避、精准、控制',
+        skills: ['灵动', '洞察', '凝滞', '玄冰', '润泽'],
+        color: '#58a6ff'
+      },
+      wood: {
+        name: '木',
+        title: '生生不息',
+        desc: '木主生长，代表生命、回复、顽强',
+        skills: ['根基', '生机', '韧性', '逢春', '怒木'],
+        color: '#3fb950'
+      },
+      fire: {
+        name: '火',
+        title: '炽烈爆发',
+        desc: '火主炽烈，代表攻击、燃烧、狂暴',
+        skills: ['炎威', '燎原', '暴燃', '焚意', '余烬'],
+        color: '#f85149'
+      },
+      earth: {
+        name: '土',
+        title: '厚重不动',
+        desc: '土主厚重，代表防御、格挡、反击',
+        skills: ['坚壁', '磐石', '厚土', '反震', '蓄势'],
+        color: '#d29922'
+      }
+    };
+
+    const elementNodes = document.querySelectorAll('.element-node');
+    const elementInfo = document.getElementById('element-info');
+
+    elementNodes.forEach(node => {
+      node.addEventListener('click', () => {
+        const element = node.dataset.element;
+        const data = elementData[element];
+
+        elementInfo.innerHTML = `
+          <h3 style="color: ${data.color}">${data.name} · ${data.title}</h3>
+          <p class="element-desc">${data.desc}</p>
+          <div class="element-skills">
+            ${data.skills.map(s => `<span style="border-color: ${data.color}; color: ${data.color}">${s}</span>`).join('')}
+          </div>
+        `;
+        elementInfo.classList.add('active');
+        elementInfo.style.setProperty('--active-color', data.color);
+      });
+    });
+
+    // ==================== SCROLL ANIMATIONS ====================
+    const storyChapters = document.querySelectorAll('.story-chapter');
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.2 });
+
+    storyChapters.forEach(chapter => observer.observe(chapter));
+  </script>
+</body>
+</html>
