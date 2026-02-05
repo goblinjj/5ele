@@ -2492,45 +2492,71 @@ export class BattleScene extends Phaser.Scene {
     const originalX = attacker.x;
     const originalY = attacker.y;
     const { width } = this.cameras.main;
-    const attackDuration = 200;
+    const moveDuration = 400;  // 移动速度减慢
+    const attackDuration = 250;
 
     this.createAttackParticles(attacker);
 
-    // 播放攻击动画（如果是有动画的怪物）
+    // 移动过程中播放run动画
     if (attacker.animSprite) {
-      this.playMonsterAnimation(attacker, 'atk', false);
+      this.playMonsterAnimation(attacker, 'run', false);
     }
 
+    // 移动到目标位置
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
         x: defender.x - (attacker.isPlayer ? width * 0.06 : -width * 0.06),
         y: defender.y,
-        duration: attackDuration,
-        ease: 'Power3.easeIn',
+        duration: moveDuration,
+        ease: 'Power2.easeInOut',
         onComplete: () => resolve(),
       });
     });
 
+    // 到达目标后播放攻击动画
+    if (attacker.animSprite) {
+      await this.playMonsterAnimation(attacker, 'atk', true);
+    }
+
+    // 攻击命中效果
     if (defender.sprite) {
       const flash = this.add.circle(defender.x, defender.y, 70, 0xffffff, 0.7);
       this.tweens.add({
         targets: flash,
         alpha: 0,
         scale: 1.5,
-        duration: 250,
+        duration: attackDuration,
         onComplete: () => flash.destroy(),
       });
     }
 
+    // 返回过程中播放run动画
+    if (attacker.animSprite) {
+      this.playMonsterAnimation(attacker, 'run', false);
+    }
+
+    // 返回原位置
     await new Promise<void>(resolve => {
       this.tweens.add({
         targets: attacker.sprite,
         x: originalX,
         y: originalY,
-        duration: attackDuration,
-        ease: 'Power2.easeOut',
-        onComplete: () => resolve(),
+        duration: moveDuration,
+        ease: 'Power2.easeInOut',
+        onComplete: () => {
+          // 返回后切换回idle动画
+          if (attacker.animSprite) {
+            const atlasKey = MONSTER_ATLAS_MAP[attacker.name];
+            if (atlasKey) {
+              const idleAnim = `${atlasKey}_idle`;
+              if (this.anims.exists(idleAnim)) {
+                attacker.animSprite.play(idleAnim);
+              }
+            }
+          }
+          resolve();
+        },
       });
     });
   }
