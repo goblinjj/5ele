@@ -116,24 +116,12 @@ export class MapScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 攻防速
-    const atkDefX = width * 0.18;
-    this.add.text(atkDefX, y - 10, `⚔️ ${gameState.getTotalAttack()}`, {
+    // 攻防速（横向排列）
+    const statsX = width * 0.18;
+    this.add.text(statsX, y, `⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}  ⚡ ${gameState.getTotalSpeed()}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontSM}px`,
-      color: '#f85149',
-    }).setOrigin(0, 0.5);
-
-    this.add.text(atkDefX, y + 2, `🛡️ ${gameState.getTotalDefense()}`, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#58a6ff',
-    }).setOrigin(0, 0.5);
-
-    this.add.text(atkDefX, y + 14, `⚡ ${gameState.getTotalSpeed()}`, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
+      color: '#8b949e',
     }).setOrigin(0, 0.5);
 
     // 五行显示

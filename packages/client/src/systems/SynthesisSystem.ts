@@ -378,7 +378,7 @@ export class SynthesisSystem {
       upgradeLevel: equipment.upgradeLevel + 1,
       attack: equipment.attack ? equipment.attack + 1 : undefined,
       defense: equipment.defense ? equipment.defense + 1 : undefined,
-      hp: equipment.hp ? equipment.hp + 1 : undefined,  // HP也随升级增加
+      hp: equipment.hp ? equipment.hp + 2 : undefined,  // HP也随升级增加（+2每级）
       wuxingLevel: newWuxingLevel,
       attributeSkills: newSkills,
       name: this.getUpgradedName(equipment),

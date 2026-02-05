@@ -110,7 +110,7 @@ const STARTER_WEAPON: Equipment = {
   // 无五行属性
   attack: 1,
   speed: 0,
-  hp: 2,  // 少量HP加成
+  hp: 4,  // HP加成（翻倍）
   upgradeLevel: 0,
 };
 
@@ -125,7 +125,7 @@ const STARTER_ARMOR: Equipment = {
   // 无五行属性（所以无技能和被动）
   defense: 1,
   speed: 0,
-  hp: 3,  // 铠甲提供更多HP
+  hp: 6,  // 铠甲提供更多HP（翻倍）
   upgradeLevel: 0,
 };
 

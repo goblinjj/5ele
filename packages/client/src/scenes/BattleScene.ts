@@ -597,14 +597,12 @@ export class BattleScene extends Phaser.Scene {
    * 选择目标敌人
    */
   private selectTarget(targetId: string): void {
-    // 如果点击已选中的目标，取消选择
-    if (this.selectedTargetId === targetId) {
+    // 点击任何敌人都直接锁定（不toggle）
+    // 如果已经选中了这个目标，也重新显示锁定效果
+    if (this.selectedTargetId !== targetId) {
+      // 清除之前的选择
       this.clearTargetSelection();
-      return;
     }
-
-    // 清除之前的选择
-    this.clearTargetSelection();
 
     // 设置新目标
     this.selectedTargetId = targetId;
@@ -725,6 +723,11 @@ export class BattleScene extends Phaser.Scene {
       await this.playEvent(event);
     }
 
+    // 同步技能初始化效果（如GENJI增加maxHp）
+    this.syncDisplayFromEngine();
+    this.displayCombatants.forEach(c => this.updateHpBar(c));
+    this.updateTopBarHp();
+
     // 逐回合计算和播放
     while (!this.battleEngine.isBattleOver()) {
       // 如果装备更换了，更新玩家数据
@@ -816,6 +819,7 @@ export class BattleScene extends Phaser.Scene {
       const display = this.displayCombatants.get(combatant.id);
       if (display) {
         display.hp = combatant.hp;
+        display.maxHp = combatant.maxHp;  // 同步maxHp（GENJI等技能会修改）
         display.wuxing = combatant.attackWuxing?.wuxing;
       }
     }

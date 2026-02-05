@@ -202,15 +202,15 @@ function getBaseStats(rarity: Rarity): number {
  * 铠甲提供更多HP，武器和法宝提供较少HP
  */
 function getBaseHp(rarity: Rarity, type: EquipmentType): number {
-  // 基础HP基于品质
+  // 基础HP基于品质（翻倍）
   let baseHp: number;
   switch (rarity) {
-    case Rarity.COMMON: baseHp = 2; break;
-    case Rarity.UNCOMMON: baseHp = 3; break;
-    case Rarity.RARE: baseHp = 4; break;
-    case Rarity.EPIC: baseHp = 5; break;
-    case Rarity.LEGENDARY: baseHp = 6; break;
-    default: baseHp = 2;
+    case Rarity.COMMON: baseHp = 4; break;
+    case Rarity.UNCOMMON: baseHp = 6; break;
+    case Rarity.RARE: baseHp = 8; break;
+    case Rarity.EPIC: baseHp = 10; break;
+    case Rarity.LEGENDARY: baseHp = 12; break;
+    default: baseHp = 4;
   }
 
   // 铠甲提供更多HP（+50%）
