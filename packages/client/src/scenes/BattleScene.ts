@@ -1577,8 +1577,9 @@ export class BattleScene extends Phaser.Scene {
           fontFamily: '"Noto Sans SC", sans-serif',
           fontSize: `${uiConfig.fontSM}px`,
           color: '#d4a853',
-          wordWrap: { width: cardWidth - 24 },
+          wordWrap: { width: cardWidth - 30, useAdvancedWrap: true },
           align: 'center',
+          fixedWidth: cardWidth - 30,
         }).setOrigin(0.5, 0);
 
         // 检查添加后是否会超出
