@@ -753,15 +753,18 @@ export class InventoryScene extends Phaser.Scene {
 
     yOffset += uiConfig.fontLG + 10;
 
-    // 攻防
+    // 攻防速血
     const stats: string[] = [];
     if (equipment.attack) stats.push(`攻击 +${equipment.attack}`);
     if (equipment.defense) stats.push(`防御 +${equipment.defense}`);
+    if (equipment.speed) stats.push(`速度 +${equipment.speed}`);
+    if (equipment.hp) stats.push(`血量 +${equipment.hp}`);
     if (stats.length > 0) {
       const statsText = this.add.text(textX, yOffset, stats.join('   '), {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontMD}px`,
         color: '#f0e6d3',
+        wordWrap: { width: textWidth },
       }).setOrigin(0, 0.5);
       this.popup.add(statsText);
       yOffset += uiConfig.fontMD + 10;
@@ -902,19 +905,9 @@ export class InventoryScene extends Phaser.Scene {
 
     let success = false;
     if (slotInfo.type === 'weapon') {
-      const weapon = gameState.getWeapon();
-      if (weapon) {
-        gameState.addToInventory(weapon);
-        gameState.getPlayerState().equipment.weapon = null;
-        success = true;
-      }
+      success = gameState.unequipWeapon();
     } else if (slotInfo.type === 'armor') {
-      const armor = gameState.getArmor();
-      if (armor) {
-        gameState.addToInventory(armor);
-        gameState.getPlayerState().equipment.armor = null;
-        success = true;
-      }
+      success = gameState.unequipArmor();
     } else if (slotInfo.type === 'treasure') {
       success = gameState.unequipTreasure(slotInfo.index);
     }

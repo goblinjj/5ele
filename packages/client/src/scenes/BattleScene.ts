@@ -717,6 +717,11 @@ export class BattleScene extends Phaser.Scene {
     this.battleEngine = new BattleEngine(this.engineCombatants, config);
     this.equipmentChanged = false;
 
+    // 如果之前已选择了目标，传递给引擎
+    if (this.selectedTargetId) {
+      this.battleEngine.setPlayerTarget(this.selectedTargetId);
+    }
+
     // 播放初始化事件
     const initEvents = this.battleEngine.initialize();
     for (const event of initEvents) {

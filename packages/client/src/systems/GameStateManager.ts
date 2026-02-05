@@ -220,6 +220,36 @@ export class GameStateManager {
   }
 
   /**
+   * 卸下武器（放回背包）
+   */
+  unequipWeapon(): boolean {
+    const weapon = this.playerState.equipment.weapon;
+    if (!weapon) return false;
+
+    if (this.isInventoryFull()) return false;
+
+    this.playerState.equipment.weapon = null;
+    const result = this.addToInventory(weapon);
+    this.recalculateMaxHp();
+    return result;
+  }
+
+  /**
+   * 卸下铠甲（放回背包）
+   */
+  unequipArmor(): boolean {
+    const armor = this.playerState.equipment.armor;
+    if (!armor) return false;
+
+    if (this.isInventoryFull()) return false;
+
+    this.playerState.equipment.armor = null;
+    const result = this.addToInventory(armor);
+    this.recalculateMaxHp();
+    return result;
+  }
+
+  /**
    * 卸下法宝（放回背包）
    */
   unequipTreasure(treasureIndex: number): boolean {

@@ -183,9 +183,11 @@ export function generateEnemies(
       enemies.push(createCombatantFromTemplate(template, i, scaling, false, round));
     }
   } else if (nodeType === 'elite') {
-    // 精英战斗：第N轮 = N个普通怪 + 1个精英
+    // 精英战斗：和普通战斗怪物数量一致，但其中一个是精英
+    const totalCount = getNormalMonsterCount(round) + monsterCountBonus;
+    const minionCount = Math.max(0, totalCount - 1); // 留一个位置给精英
+
     // 先添加普通怪
-    const minionCount = getEliteMinionCount(round);
     for (let i = 0; i < minionCount; i++) {
       const minionTemplate = NORMAL_ENEMIES[Math.floor(Math.random() * NORMAL_ENEMIES.length)];
       enemies.push(createCombatantFromTemplate(minionTemplate, i, scaling * 0.8, false, round));
@@ -222,7 +224,8 @@ export function getEnemyCount(
   if (nodeType === 'normal') {
     return getNormalMonsterCount(round) + monsterCountBonus;
   } else if (nodeType === 'elite') {
-    return getEliteMinionCount(round) + 1; // N个小怪 + 1个精英
+    // 精英战斗和普通战斗怪物数量一致
+    return getNormalMonsterCount(round) + monsterCountBonus;
   } else {
     return 3; // 1 Boss + 2 精英
   }

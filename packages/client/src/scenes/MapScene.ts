@@ -239,8 +239,18 @@ export class MapScene extends Phaser.Scene {
       });
     }
 
+    // 生成额外的节点选项，但休整最多只能有1个
+    let restCount = 0;
     for (let i = 0; i < 2; i++) {
-      this.nodeOptions.push(this.randomNode());
+      let node = this.randomNode();
+      // 如果已经有休整节点了，重新生成直到不是休整
+      while (node.type === NodeType.REST && restCount >= 1) {
+        node = this.randomNode();
+      }
+      if (node.type === NodeType.REST) {
+        restCount++;
+      }
+      this.nodeOptions.push(node);
     }
 
     this.shuffleArray(this.nodeOptions);
