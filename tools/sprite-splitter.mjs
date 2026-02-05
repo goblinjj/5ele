@@ -10,11 +10,13 @@
  *   --rows <数字>      行数 (默认: 自动检测)
  *   --output <目录>    输出目录 (默认: 输入文件同目录/frames)
  *   --format <格式>    输出格式: frames (单独帧) 或 atlas (图集+JSON)
- *   --magenta          移除品红色背景 (#FF00FF)
+ *   --padding <数字>   从每帧四周剪裁的像素值 (默认: 0)
+ *   --magenta [颜色]   移除指定颜色背景 (默认: #FF00FF)
+ *                      颜色格式: "FF00FF;b0389c;f90cf0"
  *   --preview          仅预览，不实际分割
  *
  * 示例:
- *   node tools/sprite-splitter.mjs monsters/赤狐精.png --cols 8 --rows 8 --magenta
+ *   node tools/sprite-splitter.mjs monsters/赤狐精.png --cols 8 --rows 8 --magenta "FF00FF;b0389c;f90cf0"
  *   node tools/sprite-splitter.mjs monsters/*.png --magenta --format atlas
  */
 
@@ -25,6 +27,58 @@ import { glob } from 'fs/promises';
 
 // 品红色检测参数
 // 品红色特征: R高, G低, B高 (接近 #FF00FF 但有变化)
+
+/**
+ * 解析颜色字符串为 RGB 数组
+ * @param {string} colorStr - 颜色字符串，如 "FF00FF" 或 "#FF00FF"
+ * @returns {object} RGB 对象 {r, g, b}
+ */
+function parseColor(colorStr) {
+  // 移除 # 号
+  const hex = colorStr.replace('#', '');
+  
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.substring(0, 2), 16),
+      g: parseInt(hex.substring(2, 4), 16),
+      b: parseInt(hex.substring(4, 6), 16),
+    };
+  }
+  
+  throw new Error(`无效的颜色格式: ${colorStr}`);
+}
+
+/**
+ * 解析多个颜色字符串
+ * @param {string} colorsStr - 颜色字符串，如 "FF00FF;b0389c;f90cf0" 或 null
+ * @returns {Array} RGB 对象数组，如果为 null 则返回默认品红色
+ */
+function parseColors(colorsStr) {
+  if (!colorsStr) {
+    // 默认品红色
+    return [{ r: 255, g: 0, b: 255 }];
+  }
+  
+  const colors = colorsStr.split(';').map(c => c.trim()).filter(c => c);
+  return colors.map(parseColor);
+}
+
+/**
+ * 检测像素是否匹配任意一个指定的颜色（带容差）
+ * @param {number} r - 红色通道值
+ * @param {number} g - 绿色通道值
+ * @param {number} b - 蓝色通道值
+ * @param {Array} targetColors - 目标颜色数组
+ * @param {number} tolerance - 容差值（默认30）
+ * @returns {boolean}
+ */
+function isColorMatch(r, g, b, targetColors, tolerance = 30) {
+  return targetColors.some(target => {
+    return Math.abs(r - target.r) <= tolerance &&
+           Math.abs(g - target.g) <= tolerance &&
+           Math.abs(b - target.b) <= tolerance;
+  });
+}
 
 /**
  * 检测图片中的网格
@@ -38,13 +92,16 @@ async function detectGrid(imagePath) {
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
   const channels = info.channels;
 
+  // 使用默认品红色检测网格线
+  const defaultMagenta = [{ r: 255, g: 0, b: 255 }];
+  
   // 分析列分隔线 (垂直线)
   const colCandidates = [];
   for (let x = 0; x < width; x++) {
     let magentaCount = 0;
     for (let y = 0; y < height; y++) {
       const idx = (y * width + x) * channels;
-      if (isMagenta(data[idx], data[idx + 1], data[idx + 2])) {
+      if (isColorMatch(data[idx], data[idx + 1], data[idx + 2], defaultMagenta)) {
         magentaCount++;
       }
     }
@@ -60,7 +117,7 @@ async function detectGrid(imagePath) {
     let magentaCount = 0;
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * channels;
-      if (isMagenta(data[idx], data[idx + 1], data[idx + 2])) {
+      if (isColorMatch(data[idx], data[idx + 1], data[idx + 2], defaultMagenta)) {
         magentaCount++;
       }
     }
@@ -128,15 +185,12 @@ function detectGridLines(candidates, totalSize) {
   return 8; // 默认
 }
 
-function isMagenta(r, g, b) {
-  // 品红色特征: R高(>180), G低(<50), B高(>180)
-  return r > 180 && g < 50 && b > 180;
-}
-
 /**
- * 将品红色替换为透明
+ * 将指定颜色替换为透明
+ * @param {Buffer} inputBuffer - 输入图片缓冲区
+ * @param {Array} targetColors - 要移除的颜色数组
  */
-async function removeMagentaBackground(inputBuffer) {
+async function removeColorBackground(inputBuffer, targetColors) {
   const image = sharp(inputBuffer);
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
 
@@ -156,13 +210,13 @@ async function removeMagentaBackground(inputBuffer) {
       outputData[dstIdx] = r;
       outputData[dstIdx + 1] = g;
       outputData[dstIdx + 2] = b;
-      outputData[dstIdx + 3] = isMagenta(r, g, b) ? 0 : 255;
+      outputData[dstIdx + 3] = isColorMatch(r, g, b, targetColors) ? 0 : 255;
     }
   } else {
     outputData = Buffer.from(data);
     for (let i = 0; i < width * height; i++) {
       const idx = i * 4;
-      if (isMagenta(outputData[idx], outputData[idx + 1], outputData[idx + 2])) {
+      if (isColorMatch(outputData[idx], outputData[idx + 1], outputData[idx + 2], targetColors)) {
         outputData[idx + 3] = 0; // 设置 alpha 为 0
       }
     }
@@ -177,7 +231,7 @@ async function removeMagentaBackground(inputBuffer) {
  * 分割精灵图
  */
 async function splitSpriteSheet(imagePath, options = {}) {
-  const { cols, rows, outputDir, removeMagenta, preview, format } = options;
+  const { cols, rows, outputDir, removeMagenta, preview, format, padding = 0 } = options;
 
   console.log(`\n处理: ${path.basename(imagePath)}`);
 
@@ -192,10 +246,13 @@ async function splitSpriteSheet(imagePath, options = {}) {
   console.log(`  图片尺寸: ${detected.width}x${detected.height}`);
   console.log(`  网格: ${actualCols}列 x ${actualRows}行`);
   console.log(`  帧尺寸: ${frameWidth}x${frameHeight}`);
+  if (padding > 0) {
+    console.log(`  剪裁边距: ${padding}px (输出: ${frameWidth - padding * 2}x${frameHeight - padding * 2})`);
+  }
   console.log(`  总帧数: ${actualCols * actualRows}`);
 
   if (preview) {
-    return { cols: actualCols, rows: actualRows, frameWidth, frameHeight };
+    return { cols: actualCols, rows: actualRows, frameWidth, frameHeight, padding };
   }
 
   // 准备输出目录
@@ -215,15 +272,22 @@ async function splitSpriteSheet(imagePath, options = {}) {
       const x = col * frameWidth;
       const y = row * frameHeight;
 
-      // 提取帧
+      // 提取帧 (应用 padding 剪裁)
+      const extractOptions = {
+        left: x + padding,
+        top: y + padding,
+        width: frameWidth - padding * 2,
+        height: frameHeight - padding * 2,
+      };
+      
       let frameBuffer = await sharp(imagePath)
-        .extract({ left: x, top: y, width: frameWidth, height: frameHeight })
+        .extract(extractOptions)
         .png()
         .toBuffer();
 
-      // 移除品红色背景
+      // 移除指定颜色背景
       if (removeMagenta) {
-        frameBuffer = await removeMagentaBackground(frameBuffer);
+        frameBuffer = await removeColorBackground(frameBuffer, removeMagenta);
       }
 
       const frameName = `${baseName}_${String(frameIndex).padStart(3, '0')}.png`;
@@ -308,11 +372,11 @@ async function generateAtlas(imagePath, options = {}) {
   const baseName = path.basename(imagePath, path.extname(imagePath));
   const actualOutputDir = outputDir || path.dirname(imagePath);
 
-  // 处理图片 (移除品红色)
+  // 处理图片 (移除指定颜色)
   let processedImageBuffer;
   if (removeMagenta) {
     const originalBuffer = fs.readFileSync(imagePath);
-    processedImageBuffer = await removeMagentaBackground(originalBuffer);
+    processedImageBuffer = await removeColorBackground(originalBuffer, removeMagenta);
   } else {
     processedImageBuffer = fs.readFileSync(imagePath);
   }
@@ -439,6 +503,7 @@ function parseArgs(args) {
     removeMagenta: false,
     preview: false,
     format: 'frames',
+    padding: 0,
     files: [],
   };
 
@@ -451,8 +516,16 @@ function parseArgs(args) {
       options.rows = parseInt(args[++i]);
     } else if (arg === '--output' && args[i + 1]) {
       options.outputDir = args[++i];
+    } else if (arg === '--padding' && args[i + 1]) {
+      options.padding = parseInt(args[++i]);
     } else if (arg === '--magenta') {
-      options.removeMagenta = true;
+      // 检查下一个参数是否是颜色值
+      if (args[i + 1] && !args[i + 1].startsWith('-')) {
+        options.removeMagenta = parseColors(args[++i]);
+      } else {
+        // 使用默认品红色
+        options.removeMagenta = parseColors(null);
+      }
     } else if (arg === '--preview') {
       options.preview = true;
     } else if (arg === '--format' && args[i + 1]) {
@@ -480,7 +553,12 @@ function printHelp() {
   --rows <数字>      行数 (默认: 自动检测)
   --output <目录>    输出目录
   --format <格式>    输出格式: frames (单独帧) 或 atlas (Phaser图集)
-  --magenta          移除品红色背景 (#FF00FF) 使其透明
+  --padding <数字>   从每帧四周剪裁的像素值 (默认: 0)
+                     例如: --padding 2 会从每帧的上下左右各剪裁2px
+  --magenta [颜色]   移除指定颜色背景使其透明
+                     颜色格式: 十六进制，多个颜色用分号分隔
+                     例如: "FF00FF" 或 "FF00FF;b0389c;f90cf0"
+                     不指定颜色时默认为品红色 (#FF00FF)
   --preview          仅预览网格信息，不实际分割
   --help, -h         显示帮助
 
@@ -488,14 +566,20 @@ function printHelp() {
   # 预览图片网格信息
   node tools/sprite-splitter.mjs monsters/赤狐精.png --preview
 
-  # 分割单个图片，移除品红背景
+  # 分割单个图片，移除默认品红背景
   node tools/sprite-splitter.mjs monsters/赤狐精.png --magenta
+
+  # 移除自定义颜色背景
+  node tools/sprite-splitter.mjs monsters/赤狐精.png --magenta "FF00FF;b0389c;f90cf0"
+
+  # 分割帧并从四周剪裁2px
+  node tools/sprite-splitter.mjs monsters/赤狐精.png --format frames --padding 2
 
   # 批量处理目录下所有图片，生成 Phaser 图集
   node tools/sprite-splitter.mjs monsters/ --magenta --format atlas
 
-  # 指定网格大小
-  node tools/sprite-splitter.mjs monsters/獠牙怪.png --cols 8 --rows 8 --magenta
+  # 指定网格大小、自定义颜色和边距剪裁
+  node tools/sprite-splitter.mjs monsters/獠牙怪.png --cols 8 --rows 8 --magenta "b0389c;f90cf0" --padding 2
 `);
 }
 
