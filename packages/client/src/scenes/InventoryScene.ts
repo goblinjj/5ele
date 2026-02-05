@@ -457,6 +457,81 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
+  private showSkillDetail(skillName: string, skillDescription: string): void {
+    this.closeStatusPopup();
+
+    const { width, height } = this.cameras.main;
+
+    this.statusPopup = this.add.container(width / 2, height / 2);
+
+    // 背景遮罩
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
+    overlay.setInteractive();
+    overlay.on('pointerup', () => this.closeStatusPopup());
+    this.statusPopup.add(overlay);
+
+    // 弹窗尺寸
+    const panelWidth = Math.max(320, Math.min(400, width * 0.35));
+    const panelHeight = Math.max(180, Math.min(220, height * 0.32));
+
+    // 弹窗背景
+    const panel = this.add.graphics();
+    panel.fillStyle(this.colors.inkBlack, 0.98);
+    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    panel.lineStyle(3, this.colors.goldAccent, 0.9);
+    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    this.statusPopup.add(panel);
+
+    // 技能名称
+    const titleText = this.add.text(0, -panelHeight * 0.28, `【${skillName}】`, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontLG}px`,
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.statusPopup.add(titleText);
+
+    // 技能描述
+    const descText = this.add.text(0, panelHeight * 0.02, skillDescription, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
+      color: '#f0e6d3',
+      wordWrap: { width: panelWidth * 0.85 },
+      align: 'center',
+    }).setOrigin(0.5);
+    this.statusPopup.add(descText);
+
+    // 关闭按钮
+    const closeBtnY = panelHeight / 2 - 30;
+    const closeBtn = this.add.rectangle(0, closeBtnY, 80, 32, this.colors.inkGrey);
+    closeBtn.setStrokeStyle(2, this.colors.goldAccent, 0.5);
+    closeBtn.setInteractive({ useHandCursor: true });
+
+    const closeBtnText = this.add.text(0, closeBtnY, '关闭', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#f0e6d3',
+    }).setOrigin(0.5);
+
+    this.statusPopup.add([closeBtn, closeBtnText]);
+
+    closeBtn.on('pointerover', () => closeBtn.setFillStyle(this.colors.goldAccent, 0.8));
+    closeBtn.on('pointerout', () => closeBtn.setFillStyle(this.colors.inkGrey));
+    closeBtn.on('pointerup', () => this.closeStatusPopup());
+
+    // 入场动画
+    this.statusPopup.setAlpha(0);
+    this.statusPopup.setScale(0.9);
+    this.tweens.add({
+      targets: this.statusPopup,
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
+  }
+
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
@@ -692,29 +767,39 @@ export class InventoryScene extends Phaser.Scene {
       yOffset += uiConfig.fontMD + 10;
     }
 
-    // 技能
+    // 技能（显示为图标，点击查看详情）
     const skills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
     if (skills.length > 0) {
-      yOffset += 5;
-      for (const skill of skills) {
-        const skillNameText = this.add.text(textX, yOffset, `【${skill.name}】`, {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontLG}px`,
-          color: '#d4a853',
-          fontStyle: 'bold',
-        }).setOrigin(0, 0.5);
-        this.popup.add(skillNameText);
+      yOffset += 10;
+      const iconSize = 28;
+      const iconSpacing = 10;
+      let iconX = textX;
 
-        yOffset += uiConfig.fontLG + 8;
-        const skillDescText = this.add.text(textX, yOffset, skill.description, {
+      for (const skill of skills) {
+        // 技能图标
+        const skillColor = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0xd4a853;
+        const iconBg = this.add.circle(iconX + iconSize / 2, yOffset, iconSize / 2, skillColor, 0.9);
+        iconBg.setStrokeStyle(2, 0xffffff, 0.5);
+        this.popup.add(iconBg);
+
+        // 技能首字
+        const skillChar = this.add.text(iconX + iconSize / 2, yOffset, skill.name.charAt(0), {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontSM}px`,
-          color: '#8b949e',
-          wordWrap: { width: textWidth },
-        }).setOrigin(0, 0);
-        this.popup.add(skillDescText);
-        yOffset += uiConfig.fontSM + 6;
+          fontSize: '14px',
+          color: '#ffffff',
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
+        this.popup.add(skillChar);
+
+        // 点击显示详情
+        iconBg.setInteractive({ useHandCursor: true });
+        iconBg.on('pointerup', () => {
+          this.showSkillDetail(skill.name, skill.description);
+        });
+
+        iconX += iconSize + iconSpacing;
       }
+      yOffset += iconSize + 10;
     }
 
     // 按钮区域

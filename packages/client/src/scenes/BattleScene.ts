@@ -821,6 +821,13 @@ export class BattleScene extends Phaser.Scene {
         display.hp = combatant.hp;
         display.maxHp = combatant.maxHp;  // 同步maxHp（GENJI等技能会修改）
         display.wuxing = combatant.attackWuxing?.wuxing;
+
+        // 同步玩家状态到gameState（确保maxHp也同步）
+        if (combatant.isPlayer) {
+          const playerState = gameState.getPlayerState();
+          playerState.hp = Math.min(combatant.hp, combatant.maxHp);
+          playerState.maxHp = combatant.maxHp;
+        }
       }
     }
   }
@@ -833,11 +840,12 @@ export class BattleScene extends Phaser.Scene {
       case 'battle_start':
       case 'round_start':
       case 'turn_start':
-        // 如果有技能名称，显示技能触发动画
+        // 如果有技能名称，显示技能触发动画（浮动文字，不用弹窗）
         if (event.skillName && event.actorId) {
           const actor = this.displayCombatants.get(event.actorId);
           if (actor) {
-            await this.showCenterText(`【${event.skillName}】`, '#d4a853');
+            this.showFloatingText(actor, `【${event.skillName}】`, '#d4a853', 22, -120);
+            await this.delay(300);
           }
         }
         break;
@@ -1104,6 +1112,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async handleVictory(): Promise<void> {
+    // 第7轮病变核心胜利后不显示塑型器物界面
+    if (this.nodeType === 'final') {
+      this.showGameComplete();
+      return;
+    }
+
     const nodeTypeStr = this.getNodeTypeString();
     const playerState = gameState.getPlayerState();
     const loot = generateLoot(nodeTypeStr, this.round, playerState.dropRate, this.enemyCount, this.enemyWuxings);
@@ -1562,50 +1576,41 @@ export class BattleScene extends Phaser.Scene {
       yOffset += uiConfig.fontMD + 10;
     }
 
-    // 技能区域（限制高度，超出部分截断）
+    // 技能区域（显示为图标，点击查看详情）
     const skillsDisplay = getEquipmentSkillsDisplay(item, item.wuxingLevel ?? 1);
     if (skillsDisplay.length > 0) {
-      yOffset += 5;
-      // 计算可用空间：从当前位置到"点击选择"按钮之间
-      const maxY = cardHeight / 2 - 45; // 留出空间给"点击选择"
-      let hasOverflow = false;
+      yOffset += 8;
+      const iconSize = 22;
+      const iconSpacing = 8;
+      const totalWidth = skillsDisplay.length * iconSize + (skillsDisplay.length - 1) * iconSpacing;
+      let iconX = -totalWidth / 2 + iconSize / 2;
 
       for (const skill of skillsDisplay) {
-        // 检查是否还有空间
-        if (yOffset > maxY) {
-          hasOverflow = true;
-          break;
-        }
+        // 技能图标（五行颜色圆形）
+        const skillColor = item.wuxing !== undefined ? WUXING_COLORS[item.wuxing] : 0xd4a853;
+        const iconBg = this.add.circle(iconX, yOffset, iconSize / 2, skillColor, 0.9);
+        iconBg.setStrokeStyle(2, 0xffffff, 0.5);
+        container.add(iconBg);
 
-        const skillText = this.add.text(0, yOffset, `${skill.name}: ${skill.description}`, {
+        // 技能首字
+        const skillChar = this.add.text(iconX, yOffset, skill.name.charAt(0), {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontSM}px`,
-          color: '#d4a853',
-          wordWrap: { width: cardWidth - 30, useAdvancedWrap: true },
-          align: 'center',
-          fixedWidth: cardWidth - 30,
-        }).setOrigin(0.5, 0);
+          fontSize: '12px',
+          color: '#ffffff',
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
+        container.add(skillChar);
 
-        // 检查添加后是否会超出
-        if (yOffset + skillText.height > maxY) {
-          skillText.destroy();
-          hasOverflow = true;
-          break;
-        }
+        // 点击显示技能详情
+        iconBg.setInteractive({ useHandCursor: true });
+        iconBg.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+          pointer.event.stopPropagation();
+          this.showSkillTooltip(skill.name, skill.description, pointer.x, pointer.y);
+        });
 
-        container.add(skillText);
-        yOffset += skillText.height + 4;
+        iconX += iconSize + iconSpacing;
       }
-
-      // 如果有溢出，显示省略提示
-      if (hasOverflow) {
-        const moreText = this.add.text(0, yOffset, '...', {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontSM}px`,
-          color: '#6e7681',
-        }).setOrigin(0.5, 0);
-        container.add(moreText);
-      }
+      yOffset += iconSize + 5;
     }
 
     // 选择提示
@@ -1998,6 +2003,71 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  private skillTooltip?: Phaser.GameObjects.Container;
+
+  private showSkillTooltip(name: string, description: string, screenX: number, screenY: number): void {
+    // 移除之前的tooltip
+    if (this.skillTooltip) {
+      this.skillTooltip.destroy();
+    }
+
+    const { width, height } = this.cameras.main;
+    const padding = 12;
+    const maxWidth = 220;
+
+    // 创建容器
+    this.skillTooltip = this.add.container(screenX, screenY);
+    this.skillTooltip.setDepth(1000);
+
+    // 技能名称
+    const nameText = this.add.text(0, 0, `【${name}】`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px',
+      color: '#d4a853',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+
+    // 技能描述
+    const descText = this.add.text(0, nameText.height + 5, description, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '12px',
+      color: '#e0e0e0',
+      wordWrap: { width: maxWidth - padding * 2 },
+      align: 'center',
+    }).setOrigin(0.5, 0);
+
+    const boxWidth = Math.max(nameText.width, descText.width) + padding * 2;
+    const boxHeight = nameText.height + descText.height + padding * 2 + 5;
+
+    // 背景
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1c2128, 0.95);
+    bg.fillRoundedRect(-boxWidth / 2, -padding, boxWidth, boxHeight, 8);
+    bg.lineStyle(2, 0xd4a853, 0.8);
+    bg.strokeRoundedRect(-boxWidth / 2, -padding, boxWidth, boxHeight, 8);
+
+    this.skillTooltip.add([bg, nameText, descText]);
+
+    // 确保不超出屏幕
+    if (screenX + boxWidth / 2 > width) {
+      this.skillTooltip.x = width - boxWidth / 2 - 10;
+    }
+    if (screenX - boxWidth / 2 < 0) {
+      this.skillTooltip.x = boxWidth / 2 + 10;
+    }
+    if (screenY + boxHeight > height) {
+      this.skillTooltip.y = screenY - boxHeight - 10;
+    }
+
+    // 点击任意位置关闭
+    this.input.once('pointerdown', () => {
+      if (this.skillTooltip) {
+        this.skillTooltip.destroy();
+        this.skillTooltip = undefined;
+      }
+    });
+  }
+
   private showDamage(combatant: DisplayCombatant, damage: number, isCrit: boolean = false): void {
     const color = isCrit ? '#ff6b6b' : '#f85149';
     const size = isCrit ? 32 : 26;
@@ -2201,7 +2271,7 @@ export class BattleScene extends Phaser.Scene {
     btnBg.setStrokeStyle(2, 0xffffff, 0.5);
     btnBg.setInteractive({ useHandCursor: true });
 
-    const btnText = this.add.text(width / 2, btnY, '再来一局', {
+    const btnText = this.add.text(width / 2, btnY, '继承新的残魂', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontMD}px`,
       color: '#0d1117',
