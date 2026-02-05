@@ -754,15 +754,6 @@ export class BattleScene extends Phaser.Scene {
         });
       }
 
-      // 选中指示器（隐藏初始化）
-      const ringSize = hasAtlas ? bodySize * 1.5 : bodySize + 15;
-      const selectRing = this.add.circle(0, 0, ringSize, 0xffffff, 0);
-      selectRing.setStrokeStyle(3, this.colors.redAccent, 1);
-      selectRing.setName('selectRing');
-      selectRing.setVisible(false);
-      container.add(selectRing);
-      container.sendToBack(selectRing);
-
       // 目标文字
       const markerY = hasAtlas ? bodySize * 1.3 : bodySize + height * 0.035;
       const targetText = this.add.text(0, markerY, '🎯 目标', {
@@ -821,22 +812,7 @@ export class BattleScene extends Phaser.Scene {
     // 更新目标显示
     const targetDisplay = this.displayCombatants.get(targetId);
     if (targetDisplay?.sprite) {
-      const selectRing = targetDisplay.sprite.getByName('selectRing') as Phaser.GameObjects.Arc;
       const targetText = targetDisplay.sprite.getByName('targetText') as Phaser.GameObjects.Text;
-      if (selectRing) {
-        selectRing.setVisible(true);
-        // 添加脉冲动画
-        this.tweens.add({
-          targets: selectRing,
-          scaleX: 1.1,
-          scaleY: 1.1,
-          alpha: 0.5,
-          duration: 800,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut',
-        });
-      }
       if (targetText) {
         targetText.setVisible(true);
       }
@@ -853,14 +829,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.selectedTargetId) {
       const prevTarget = this.displayCombatants.get(this.selectedTargetId);
       if (prevTarget?.sprite) {
-        const selectRing = prevTarget.sprite.getByName('selectRing') as Phaser.GameObjects.Arc;
         const targetText = prevTarget.sprite.getByName('targetText') as Phaser.GameObjects.Text;
-        if (selectRing) {
-          this.tweens.killTweensOf(selectRing);
-          selectRing.setVisible(false);
-          selectRing.setScale(1);
-          selectRing.setAlpha(1);
-        }
         if (targetText) {
           targetText.setVisible(false);
         }
