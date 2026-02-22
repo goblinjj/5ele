@@ -135,7 +135,8 @@ export class CombatSystem {
   }
 
   private getAttackInterval(speed: number): number {
-    return Math.max(300, BASE_ATTACK_INTERVAL / (speed / BASE_SPEED));
+    // 防止 speed=0（未装备时）导致除零得到 Infinity
+    return Math.max(300, BASE_ATTACK_INTERVAL / (Math.max(1, speed) / BASE_SPEED));
   }
 
   private getNearestEnemy(

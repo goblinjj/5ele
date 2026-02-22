@@ -152,12 +152,12 @@ export class WorldScene extends Phaser.Scene {
   private createWorldBackground(): void {
     const g = this.add.graphics();
 
-    // 底色
-    g.fillStyle(0x0d1a0d, 1);
+    // 底色：明显深绿，与地图外的纯黑形成对比
+    g.fillStyle(0x1a3a1a, 1);
     g.fillRect(0, 0, WORLD_W, WORLD_H);
 
     // 网格纹理（气脉感）
-    g.lineStyle(1, 0x1a2e1a, 0.6);
+    g.lineStyle(1, 0x2d5c2d, 0.8);
     for (let x = 0; x <= WORLD_W; x += 120) {
       g.lineBetween(x, 0, x, WORLD_H);
     }
@@ -166,13 +166,20 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // 散布气穴光点
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       const x = Phaser.Math.Between(0, WORLD_W);
       const y = Phaser.Math.Between(0, WORLD_H);
-      const r = Phaser.Math.Between(30, 100);
-      g.fillStyle(0x1a3a1a, 0.5);
+      const r = Phaser.Math.Between(40, 150);
+      g.fillStyle(0x274d27, 0.6);
       g.fillCircle(x, y, r);
     }
+
+    // 地图边界：金色粗线，清晰标注边缘
+    g.lineStyle(8, 0xd4a853, 0.9);
+    g.strokeRect(0, 0, WORLD_W, WORLD_H);
+    // 内侧加一圈细线增强视觉
+    g.lineStyle(3, 0xf0e6d3, 0.4);
+    g.strokeRect(10, 10, WORLD_W - 20, WORLD_H - 20);
   }
 
   private createPlayer(): void {
