@@ -22,8 +22,8 @@ export class UIConfig {
   private _baseFontSize: number = 16;
 
   // 屏幕尺寸
-  private _width: number = 1280;
-  private _height: number = 720;
+  private _width: number = 720;
+  private _height: number = 1560;
 
   private constructor() {}
 
