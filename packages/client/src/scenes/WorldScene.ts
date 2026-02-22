@@ -13,6 +13,8 @@ import {
   getAllWuxingLevels,
   getAllAttributeSkills,
 } from '@xiyou/shared';
+import { EntityManager } from '../systems/world/EntityManager.js';
+import { SpawnSystem } from '../systems/world/SpawnSystem.js';
 
 /** 世界尺寸（视口的3倍） */
 const WORLD_W = 2160;
@@ -29,6 +31,8 @@ export class WorldScene extends Phaser.Scene {
   private playerCombatant!: Combatant;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private _cdBroadcastTick: number = 0;
+  private entityManager!: EntityManager;
+  private spawnSystem!: SpawnSystem;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -42,6 +46,11 @@ export class WorldScene extends Phaser.Scene {
         'assets/player/灵体残骸/atlas.json'
       );
     }
+
+    // 初始化实体管理器（在preload中创建以便preloadAtlases可以加载图集）
+    this.entityManager = new EntityManager();
+    this.spawnSystem = new SpawnSystem(this, this.entityManager);
+    this.spawnSystem.preloadAtlases();
   }
 
   create(): void {
@@ -67,6 +76,10 @@ export class WorldScene extends Phaser.Scene {
     // ---- 创建玩家动画 ----
     this.createPlayerAnims();
 
+    // ---- 怪物动画 + 生成 ----
+    this.spawnSystem.createAnims();
+    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, 1);
+
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
 
@@ -80,6 +93,7 @@ export class WorldScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
+    this.updateEnemies(delta);
   }
 
   // -----------------------------------------------
@@ -210,7 +224,74 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private updateEnemies(delta: number): void {
+    const playerX = this.player.x;
+    const playerY = this.player.y;
+    const DETECT_RANGE = 300;
+    const ATTACK_RANGE = 90;
+    const PATROL_SPEED = 60;
+    const CHASE_SPEED = 110;
+
+    this.entityManager.getAlive().forEach(entity => {
+      const { sprite } = entity;
+      const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, playerX, playerY);
+
+      // 状态切换
+      if (dist < ATTACK_RANGE) {
+        entity.state = 'attack';
+      } else if (dist < DETECT_RANGE) {
+        entity.state = 'chase';
+      } else {
+        entity.state = 'patrol';
+      }
+
+      const body = sprite.body as Phaser.Physics.Arcade.Body;
+
+      if (entity.state === 'chase' || entity.state === 'attack') {
+        // 追击
+        const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
+        const speed = entity.state === 'attack' ? CHASE_SPEED * 0.3 : CHASE_SPEED;
+        body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        sprite.setFlipX(playerX < sprite.x);
+      } else {
+        // 巡逻：定时随机方向
+        entity.patrolTimer -= delta;
+        if (entity.patrolTimer <= 0) {
+          entity.patrolTimer = Phaser.Math.Between(2000, 4000);
+          const dx = sprite.x - entity.patrolCenterX;
+          const dy = sprite.y - entity.patrolCenterY;
+          const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+          if (distFromCenter > 200) {
+            const backAngle = Math.atan2(entity.patrolCenterY - sprite.y, entity.patrolCenterX - sprite.x);
+            body.setVelocity(Math.cos(backAngle) * PATROL_SPEED, Math.sin(backAngle) * PATROL_SPEED);
+          } else {
+            const angle = Math.random() * Math.PI * 2;
+            body.setVelocity(Math.cos(angle) * PATROL_SPEED, Math.sin(angle) * PATROL_SPEED);
+          }
+        }
+      }
+
+      // 动画切换
+      if (entity.atlasKey) {
+        const isMoving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
+        const runKey = `${entity.atlasKey}_run`;
+        const idleKey = `${entity.atlasKey}_idle`;
+        const cur = sprite.anims.currentAnim?.key;
+        if (isMoving && cur !== runKey && this.anims.exists(runKey)) sprite.play(runKey, true);
+        else if (!isMoving && cur !== idleKey && this.anims.exists(idleKey)) sprite.play(idleKey, true);
+      }
+
+      // 更新 HP 条位置（跟随精灵）
+      if (entity.hpBar && entity.hpBarBg) {
+        entity.hpBar.setPosition(sprite.x, sprite.y);
+        entity.hpBarBg.setPosition(sprite.x, sprite.y);
+      }
+    });
+  }
+
   /** 供 CombatSystem 调用 */
   getPlayer(): Phaser.Physics.Arcade.Sprite { return this.player; }
   getPlayerCombatant(): Combatant { return this.playerCombatant; }
+  getEntityManager(): EntityManager { return this.entityManager; }
+  getSpawnSystem(): SpawnSystem { return this.spawnSystem; }
 }
