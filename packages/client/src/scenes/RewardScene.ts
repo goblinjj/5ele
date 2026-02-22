@@ -347,7 +347,7 @@ export class RewardScene extends Phaser.Scene {
 
     const text = this.add.text(width / 2, height - 100, message, {
       fontFamily: 'Arial',
-      fontSize: '18px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#ef4444',
     }).setOrigin(0.5);
 
@@ -366,7 +366,7 @@ export class RewardScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7);
     const text = this.add.text(width / 2, height / 2, `获得了 ${equip.name}！`, {
       fontFamily: 'Arial',
-      fontSize: '32px',
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#22c55e',
     }).setOrigin(0.5);
 
@@ -397,20 +397,20 @@ export class RewardScene extends Phaser.Scene {
 
     this.add.text(width / 2, height / 2 - 50, '胜利！', {
       fontFamily: 'Arial',
-      fontSize: '64px',
+      fontSize: `${uiConfig.font3XL}px`,
       color: '#fbbf24',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
     this.add.text(width / 2, height / 2 + 20, '你成功净化了这片区域', {
       fontFamily: 'Arial',
-      fontSize: '24px',
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#ffffff',
     }).setOrigin(0.5);
 
     const returnBtn = this.add.text(width / 2, height / 2 + 100, '返回主菜单', {
       fontFamily: 'Arial',
-      fontSize: '20px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#aaaaaa',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
