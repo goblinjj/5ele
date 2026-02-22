@@ -305,8 +305,8 @@ export class BattleScene extends Phaser.Scene {
     }
 
     bgGraphics.lineStyle(2, this.colors.goldAccent, 0.3);
-    bgGraphics.lineBetween(width * 0.04, height * 0.17, width * 0.96, height * 0.17);
-    bgGraphics.lineBetween(width * 0.04, height * 0.92, width * 0.96, height * 0.92);
+    bgGraphics.lineBetween(width * 0.04, height * 0.12, width * 0.96, height * 0.12);
+    bgGraphics.lineBetween(width * 0.04, height * 0.58, width * 0.96, height * 0.58);
   }
 
   private createTopBar(): void {
@@ -362,31 +362,31 @@ export class BattleScene extends Phaser.Scene {
 
   private createBattleField(): void {
     const { width, height } = this.cameras.main;
-    const battleFieldY = height * 0.6;
+    const battleFieldY = height * 0.35;
 
     const fieldGraphics = this.add.graphics();
 
     fieldGraphics.fillStyle(0x000000, 0.3);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.12, width * 0.55, height * 0.18);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.07, width * 0.85, height * 0.12);
 
     fieldGraphics.fillStyle(this.colors.inkGrey, 0.4);
-    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.1, width * 0.53, height * 0.15);
+    fieldGraphics.fillEllipse(width / 2, battleFieldY + height * 0.06, width * 0.82, height * 0.10);
 
     fieldGraphics.lineStyle(2, this.colors.goldAccent, 0.2);
-    fieldGraphics.strokeEllipse(width / 2, battleFieldY + height * 0.1, width * 0.53, height * 0.15);
+    fieldGraphics.strokeEllipse(width / 2, battleFieldY + height * 0.06, width * 0.82, height * 0.10);
 
     fieldGraphics.lineStyle(1, this.colors.paperCream, 0.15);
-    fieldGraphics.lineBetween(width / 2, battleFieldY - height * 0.15, width / 2, battleFieldY + height * 0.18);
+    fieldGraphics.lineBetween(width / 2, battleFieldY - height * 0.10, width / 2, battleFieldY + height * 0.12);
   }
 
   private createInventoryButton(): void {
     const { width, height } = this.cameras.main;
 
     // 背包按钮 - 放在右下角
-    const btnWidth = width * 0.08;
-    const btnHeight = height * 0.06;
-    const btnX = width * 0.94;
-    const btnY = height * 0.88;
+    const btnWidth = width * 0.14;
+    const btnHeight = height * 0.04;
+    const btnX = width * 0.82;
+    const btnY = height * 0.64;
 
     this.inventoryButton = this.add.container(btnX, btnY);
 
@@ -439,7 +439,7 @@ export class BattleScene extends Phaser.Scene {
 
   private initCombatants(): void {
     const { width, height } = this.cameras.main;
-    const battleFieldY = height * 0.55;
+    const battleFieldY = height * 0.32;
     const playerX = width * 0.25;
 
     this.displayCombatants.clear();
