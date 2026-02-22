@@ -57,7 +57,7 @@ const WX_OVERCOMES: Partial<Record<Wuxing, Wuxing>> = {
 
 /**
  * 从能量的角度计算五行关系及成功率
- * 生(50%) 助(40%) 泄(35%) 克(30%) 耗(25%)
+ * 生(50%) 助(40%) 泄(25%) 克(30%) 耗(35%)
  */
 function calcWuxingResult(
   defWuxing: Wuxing | undefined,
@@ -68,11 +68,11 @@ function calcWuxingResult(
   // 生：防御生能量（对能量有利）
   if (WX_GENERATES[defWuxing] === energyWuxing) return { rel: '生', rate: 0.50 };
   // 泄：能量生防御（能量被泄耗）
-  if (WX_GENERATES[energyWuxing] === defWuxing) return { rel: '泄', rate: 0.35 };
+  if (WX_GENERATES[energyWuxing] === defWuxing) return { rel: '泄', rate: 0.25 };
   // 克：防御克能量
   if (WX_OVERCOMES[defWuxing] === energyWuxing) return { rel: '克', rate: 0.30 };
   // 耗：能量克防御（能量被耗）
-  if (WX_OVERCOMES[energyWuxing] === defWuxing) return { rel: '耗', rate: 0.25 };
+  if (WX_OVERCOMES[energyWuxing] === defWuxing) return { rel: '耗', rate: 0.35 };
   return { rel: '无属', rate: 0.25 };
 }
 
@@ -122,6 +122,11 @@ export class WorldScene extends Phaser.Scene {
   private channelingTimer: number = 0;
   private channelingTarget?: LootDrop;
   private channelingIndicator!: Phaser.GameObjects.Graphics;
+  private channelingRelTxt?: Phaser.GameObjects.Text;
+  /** 塑型失败累计补偿概率：每次失败 +5%，成功后清零 */
+  private channelingBonus: number = 0;
+  /** 五行所属粒子发射器（跟随玩家） */
+  private wuxingEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -142,6 +147,9 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 清理上一局残留的事件监听，防止多局游戏重复注册导致事件触发多次
+    eventBus.clear();
+
     const { width, height } = this.cameras.main;
     const viewportH = Math.floor(height * LAYOUT.VIEWPORT_RATIO);
 
@@ -204,6 +212,16 @@ export class WorldScene extends Phaser.Scene {
       this.playerCombatant.hp,
       this.playerCombatant.maxHp
     );
+
+    // ---- 五行所属粒子 ----
+    this.generateWuxingParticleTextures();
+    // 监听五行所属变化
+    eventBus.on(GameEvent.WUXING_CHOSEN, (wuxing: unknown) => {
+      this.onWuxingChosen(wuxing as Wuxing | undefined);
+    });
+    // 如果已有选择，初始化粒子
+    const initWuxing = gameState.getChosenWuxing();
+    if (initWuxing) this.startWuxingParticles(initWuxing);
   }
 
   update(_time: number, delta: number): void {
@@ -263,6 +281,8 @@ export class WorldScene extends Phaser.Scene {
     const playerState = gameState.getPlayerState();
     const equipment = playerState.equipment;
 
+    const chosenWuxing = gameState.getChosenWuxing();
+    const wuxingOverride = chosenWuxing ? { wuxing: chosenWuxing, level: 1 } : null;
     this.playerCombatant = {
       id: 'player',
       name: '残魂',
@@ -272,8 +292,8 @@ export class WorldScene extends Phaser.Scene {
       defense: getTotalDefense(equipment),
       speed: getTotalSpeed(equipment),
       isPlayer: true,
-      attackWuxing: getAttackWuxing(equipment),
-      defenseWuxing: getDefenseWuxing(equipment),
+      attackWuxing: wuxingOverride ?? getAttackWuxing(equipment),
+      defenseWuxing: wuxingOverride ?? getDefenseWuxing(equipment),
       allWuxingLevels: getAllWuxingLevels(equipment),
       attributeSkills: getAllAttributeSkills(equipment),
       frozen: false,
@@ -323,18 +343,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private movePlayer(_delta: number): void {
-    // 塑型中：锁定位置，强制播放 magic 动画
-    if (this.isChanneling) {
-      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-      if (this.textures.exists(PLAYER_ATLAS)) {
-        const magicKey = `${PLAYER_ATLAS}_magic`;
-        if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== magicKey) {
-          this.player.play(magicKey, true);
-        }
-      }
-      return;
-    }
-
     let vx = inputManager.moveX;
     let vy = inputManager.moveY;
 
@@ -360,8 +368,14 @@ export class WorldScene extends Phaser.Scene {
       const currentAnim = this.player.anims.currentAnim?.key;
       const runKey = `${PLAYER_ATLAS}_run`;
       const idleKey = `${PLAYER_ATLAS}_idle`;
-      if (moving && currentAnim !== runKey) this.player.play(runKey, true);
-      else if (!moving && currentAnim !== idleKey) this.player.play(idleKey, true);
+      const magicKey = `${PLAYER_ATLAS}_magic`;
+      if (moving) {
+        if (currentAnim !== runKey) this.player.play(runKey, true);
+      } else if (this.isChanneling) {
+        if (currentAnim !== magicKey) this.player.play(magicKey, true);
+      } else {
+        if (currentAnim !== idleKey) this.player.play(idleKey, true);
+      }
     }
   }
 
@@ -369,7 +383,7 @@ export class WorldScene extends Phaser.Scene {
     const playerX = this.player.x;
     const playerY = this.player.y;
     const DETECT_RANGE = 300;
-    const ATTACK_RANGE = 90;
+    const ATTACK_RANGE = 160;
     const PATROL_SPEED = 60;
     const CHASE_SPEED = 110;
 
@@ -535,12 +549,23 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private updateLootDrops(): void {
-    if (this.isChanneling) return; // 塑型中不检测新的能量
+    if (this.isChanneling) return;
+
+    // 移动中不触发塑型（停止后才重新开始）
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (Math.abs(body.velocity.x) > 10 || Math.abs(body.velocity.y) > 10) return;
+
     for (let i = 0; i < this.lootDrops.length; i++) {
       const drop = this.lootDrops[i];
       if (drop.collected) continue;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y);
       if (dist < 35) {
+        // 能量附近有妖异时不触发塑型
+        const nearbyEnemy = this.entityManager.getAlive().some(e =>
+          Phaser.Math.Distance.Between(drop.x, drop.y, e.sprite.x, e.sprite.y) < 150
+        );
+        if (nearbyEnemy) continue;
+
         this.lootDrops.splice(i, 1);
         this.startChanneling(drop);
         break;
@@ -559,19 +584,26 @@ export class WorldScene extends Phaser.Scene {
     const { rel, rate } = calcWuxingResult(defWuxing, drop.wuxing);
     const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
     const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
-    const relTxt = this.add.text(drop.x, drop.y - 32, `【${rel}】${Math.round(rate * 100)}%`, {
+    this.channelingRelTxt?.destroy();
+    this.channelingRelTxt = this.add.text(drop.x, drop.y - 32, `【${rel}】${Math.round(rate * 100)}%`, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '13px',
       color: relColorHex,
       stroke: '#000000',
       strokeThickness: 3,
     }).setOrigin(0.5).setDepth(20);
-    // 2秒后随塑型结束自动消失
-    this.time.delayedCall(CHANNEL_DURATION + 400, () => relTxt.destroy());
   }
 
   private updateChanneling(delta: number): void {
     if (!this.isChanneling || !this.channelingTarget) return;
+
+    // 移动打断塑型
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (Math.abs(body.velocity.x) > 10 || Math.abs(body.velocity.y) > 10) {
+      this.cancelChanneling();
+      return;
+    }
+
     this.channelingTimer -= delta;
 
     // 绘制进度弧（金色圆弧，顺时针填充）
@@ -594,10 +626,25 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private cancelChanneling(): void {
+    if (!this.isChanneling || !this.channelingTarget) return;
+    this.isChanneling = false;
+    this.channelingIndicator.clear();
+    this.combatSystem.setPlayerChanneling(false);
+    this.channelingRelTxt?.destroy();
+    this.channelingRelTxt = undefined;
+    // 将能量放回可拾取列表，停下后可重新触发
+    const drop = this.channelingTarget;
+    this.channelingTarget = undefined;
+    this.lootDrops.push(drop);
+  }
+
   private resolveChanneling(): void {
     this.isChanneling = false;
     this.channelingIndicator.clear();
     this.combatSystem.setPlayerChanneling(false);
+    this.channelingRelTxt?.destroy();
+    this.channelingRelTxt = undefined;
 
     const target = this.channelingTarget;
     this.channelingTarget = undefined;
@@ -606,17 +653,33 @@ export class WorldScene extends Phaser.Scene {
     target.graphics.destroy();
     target.label.destroy();
 
-    // 五行关系决定成功率
+    // 五行关系决定成功率（加上累计补偿）
     const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
     const { rel, rate } = calcWuxingResult(defWuxing, target.wuxing);
+    const effectiveRate = Math.min(0.95, rate + this.channelingBonus);
 
-    if (Math.random() < rate) {
+    if (Math.random() < effectiveRate) {
+      this.channelingBonus = 0;
       const items = generateSimpleLoot('normal', 1, 1.0);
       items.forEach(eq => gameState.addToInventory(eq as Equipment));
       this.showLootText(target.x, target.y, `塑型成功【${rel}】`, 0x3fb950);
     } else {
-      this.showLootText(target.x, target.y, `塑型失败【${rel}】`, 0xf85149);
+      this.channelingBonus = Math.min(0.70, this.channelingBonus + 0.05);
+      this.showLootText(target.x, target.y, `塑型失败【${rel}】 补偿+5%`, 0xf85149);
     }
+    this.emitBuffs();
+  }
+
+  /** 向 HUDScene 广播当前 buff 列表 */
+  private emitBuffs(): void {
+    const buffs: { label: string; color: number }[] = [];
+    if (this.channelingBonus > 0) {
+      buffs.push({
+        label: `塑型补偿 +${Math.round(this.channelingBonus * 100)}%`,
+        color: 0xd4a853,
+      });
+    }
+    eventBus.emit(GameEvent.BUFF_UPDATE, buffs);
   }
 
   private clearLootDrops(): void {
@@ -627,6 +690,8 @@ export class WorldScene extends Phaser.Scene {
       this.channelingTarget?.label.destroy();
       this.channelingTarget = undefined;
       this.combatSystem?.setPlayerChanneling(false);
+      this.channelingRelTxt?.destroy();
+      this.channelingRelTxt = undefined;
     }
     this.lootDrops.forEach(drop => {
       drop.graphics.destroy();
@@ -686,7 +751,7 @@ export class WorldScene extends Phaser.Scene {
       color: '#8b949e',
     }).setOrigin(0.5).setDepth(201);
 
-    this.time.delayedCall(2500, () => {
+    this.time.delayedCall(5000, () => {
       this.currentRound++;
       this.killCount = 0;
       this.killTarget = getKillTarget(this.currentRound);
@@ -704,6 +769,86 @@ export class WorldScene extends Phaser.Scene {
 
       eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
     });
+  }
+
+  // ---- 五行所属系统 ----
+
+  /** 为每个五行预先生成粒子纹理 */
+  private generateWuxingParticleTextures(): void {
+    Object.values(Wuxing).forEach(wx => {
+      const key = `wx_particle_${wx}`;
+      if (this.textures.exists(key)) return;
+      const color = WUXING_COLORS[wx as Wuxing];
+      const g = this.add.graphics();
+      g.fillStyle(color, 1);
+      g.fillCircle(4, 4, 4);
+      g.generateTexture(key, 8, 8);
+      g.setVisible(false);
+      g.destroy();
+    });
+  }
+
+  /** 五行所属改变时触发：更新战斗属性、粒子特效 */
+  private onWuxingChosen(wuxing: Wuxing | undefined): void {
+    // 更新战斗属性
+    if (wuxing) {
+      this.playerCombatant.attackWuxing = { wuxing, level: 1 };
+      this.playerCombatant.defenseWuxing = { wuxing, level: 1 };
+      this.triggerWuxingBurst(wuxing);
+    } else {
+      this.playerCombatant.attackWuxing = null;
+      this.playerCombatant.defenseWuxing = null;
+    }
+    this.startWuxingParticles(wuxing);
+  }
+
+  /** 爆发粒子特效（五行变化瞬间） */
+  private triggerWuxingBurst(wuxing: Wuxing): void {
+    const key = `wx_particle_${wuxing}`;
+    if (!this.textures.exists(key)) return;
+    const burst = this.add.particles(this.player.x, this.player.y, key, {
+      lifespan: 900,
+      speed: { min: 60, max: 200 },
+      scale: { start: 1.2, end: 0 },
+      alpha: { start: 1, end: 0 },
+      quantity: 1,
+      emitting: false,
+    }).setDepth(20);
+    burst.explode(50, this.player.x, this.player.y);
+    this.time.delayedCall(1200, () => burst.destroy());
+  }
+
+  /** 启动（或停止）跟随玩家的持续粒子特效 */
+  private startWuxingParticles(wuxing: Wuxing | undefined): void {
+    // 停止旧的发射器
+    if (this.wuxingEmitter) {
+      this.wuxingEmitter.stop();
+      this.wuxingEmitter.destroy();
+      this.wuxingEmitter = undefined;
+    }
+    if (!wuxing) return;
+
+    const key = `wx_particle_${wuxing}`;
+    if (!this.textures.exists(key)) return;
+
+    this.wuxingEmitter = this.add.particles(0, 0, key, {
+      lifespan: 700,
+      speed: { min: 15, max: 50 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      quantity: 1,
+      frequency: 120,
+      follow: this.player,
+      followOffset: { x: 0, y: -8 },
+      angle: { min: 0, max: 360 },
+    }).setDepth(11);
+  }
+
+  /** WorldScene 停止时（死亡/返回菜单）清理子场景和事件 */
+  shutdown(): void {
+    this.scene.stop('HUDScene');
+    this.scene.stop('InventoryScene');
+    eventBus.clear();
   }
 
   /** 供 CombatSystem 调用 */

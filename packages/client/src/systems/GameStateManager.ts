@@ -9,6 +9,7 @@ import {
   StatusType,
   checkWuxingMastery,
   calculatePlayerMaxHp,
+  Wuxing,
 } from '@xiyou/shared';
 
 /**
@@ -18,6 +19,8 @@ import {
 export class GameStateManager {
   private static instance: GameStateManager;
   private playerState: PlayerState;
+  /** 玩家当前选择的五行所属 */
+  private chosenWuxing: Wuxing | undefined = undefined;
 
   private constructor() {
     this.playerState = createInitialPlayerState('player', '玩家');
@@ -35,6 +38,7 @@ export class GameStateManager {
    */
   reset(): void {
     this.playerState = createInitialPlayerState('player', '玩家');
+    this.chosenWuxing = undefined;
   }
 
   /**
@@ -364,6 +368,45 @@ export class GameStateManager {
     if (index === -1) return false;
     this.playerState.statuses.splice(index, 1);
     return true;
+  }
+
+  // ---- 五行所属 ----
+
+  /** 获取当前选择的五行所属 */
+  getChosenWuxing(): Wuxing | undefined {
+    return this.chosenWuxing;
+  }
+
+  /** 设置五行所属（undefined 表示清除） */
+  setChosenWuxing(wuxing: Wuxing | undefined): void {
+    this.chosenWuxing = wuxing;
+  }
+
+  /**
+   * 获取当前装备中所有可用的五行属性（去重）
+   * 扫描武器、铠甲、所有法宝
+   */
+  getAvailableWuxing(): Wuxing[] {
+    const set = new Set<Wuxing>();
+    const eq = this.playerState.equipment;
+    if (eq.weapon?.wuxing) set.add(eq.weapon.wuxing);
+    if (eq.armor?.wuxing) set.add(eq.armor.wuxing);
+    eq.treasures.forEach(t => { if (t.wuxing) set.add(t.wuxing); });
+    return Array.from(set);
+  }
+
+  /**
+   * 校验已选五行是否仍在装备中，若无则清除
+   * @returns true 表示五行被重置（调用方应发出事件通知）
+   */
+  validateChosenWuxing(): boolean {
+    if (this.chosenWuxing === undefined) return false;
+    const available = this.getAvailableWuxing();
+    if (!available.includes(this.chosenWuxing)) {
+      this.chosenWuxing = undefined;
+      return true;
+    }
+    return false;
   }
 
   /**

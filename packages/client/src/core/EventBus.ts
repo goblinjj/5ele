@@ -17,6 +17,12 @@ export enum GameEvent {
   // 回合事件
   KILL_COUNT_UPDATE = 'world:kill_count',
   ROUND_COMPLETE    = 'world:round_complete',
+  // buff 事件
+  BUFF_UPDATE       = 'ui:buff_update',
+  // 五行所属事件
+  WUXING_CHOSEN     = 'player:wuxing_chosen',
+  // 装备变化（刷新HUD中的属性/技能/状态）
+  STATS_CHANGED     = 'player:stats_changed',
 }
 
 type EventHandler = (...args: unknown[]) => void;

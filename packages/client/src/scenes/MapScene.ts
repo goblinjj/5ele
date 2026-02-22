@@ -42,9 +42,6 @@ export class MapScene extends Phaser.Scene {
     this.createPlayerStatus();
     this.generateNodeOptions();
     this.displayNodes();
-    this.createInventoryButton();
-
-    this.input.keyboard?.on('keydown-I', () => this.openInventory());
   }
 
   private createBackground(): void {
@@ -160,47 +157,6 @@ export class MapScene extends Phaser.Scene {
         color: '#a855f7',
       }).setOrigin(1, 0.5);
     }
-  }
-
-  private createInventoryButton(): void {
-    const { width, height } = this.cameras.main;
-
-    const btnWidth = Math.max(120, Math.min(200, width * 0.35));
-    const btnHeight = Math.max(44, Math.min(60, height * 0.04));
-    const btnX = width / 2;
-    const btnY = height * 0.64;
-
-    const bg = this.add.rectangle(btnX, btnY, btnWidth, btnHeight, this.colors.inkGrey);
-    bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
-    bg.setInteractive({ useHandCursor: true });
-
-    const text = this.add.text(btnX, btnY, '📦 灵囊', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: '#f0e6d3',
-    }).setOrigin(0.5);
-
-    bg.on('pointerover', () => {
-      bg.setFillStyle(this.colors.goldAccent);
-      text.setColor('#0d1117');
-    });
-
-    bg.on('pointerout', () => {
-      bg.setFillStyle(this.colors.inkGrey);
-      text.setColor('#f0e6d3');
-    });
-
-    bg.on('pointerup', () => this.openInventory());
-  }
-
-  private openInventory(): void {
-    this.scene.pause();
-    this.scene.launch('InventoryScene');
-    // 监听灵囊关闭事件，刷新界面
-    this.scene.get('InventoryScene').events.once('shutdown', () => {
-      // 重启当前场景以刷新所有显示
-      this.scene.restart({ mode: this.mode, round: this.currentRound });
-    });
   }
 
   private generateNodeOptions(): void {

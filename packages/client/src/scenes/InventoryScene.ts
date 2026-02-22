@@ -8,21 +8,12 @@ import {
   Rarity,
   INVENTORY_SIZE,
   MAX_TREASURES,
-  StatusType,
-  STATUS_DEFINITIONS,
-  PlayerStatus,
-  getWuxingPassiveStatuses,
-  WuxingPassiveStatus,
-  getStatusEffectsForLevel,
   getEquipmentSkillsDisplay,
-  formatSkillsText,
-  getSkillDef,
-  getAllEquipmentSkills,
-  SkillDisplayInfo,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
 import { uiConfig, LAYOUT } from '../config/uiConfig.js';
+import { eventBus, GameEvent } from '../core/EventBus.js';
 
 type PopupMode = 'view' | 'select-synthesize' | 'select-devour';
 
@@ -39,7 +30,6 @@ export class InventoryScene extends Phaser.Scene {
   private popup?: Phaser.GameObjects.Container;
   private topMessage?: Phaser.GameObjects.Container;
   private specialNotification?: Phaser.GameObjects.Container;
-  private statusPopup?: Phaser.GameObjects.Container;
   private currentSlot?: SlotInfo;
   private popupMode: PopupMode = 'view';
   private firstSelectedSlot?: SlotInfo;
@@ -63,19 +53,19 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height: fullH } = this.cameras.main;
+    // 只覆盖战斗视口（上 60%），操控面板仍可操作
+    const vpH = Math.floor(fullH * LAYOUT.VIEWPORT_RATIO);
+    this.cameras.main.setViewport(0, 0, width, vpH);
 
-    // 全屏背景
-    this.add.rectangle(width / 2, height / 2, width, height, this.colors.bgDark, 0.98);
+    // 背景仅覆盖视口区域
+    this.add.rectangle(width / 2, vpH / 2, width, vpH, this.colors.bgDark, 0.98);
 
     // 标题栏
     this.createHeader();
 
     // 上半部分：装备栏（武器、铠甲、灵器）
     this.createEquipmentSection();
-
-    // 中间：状态栏
-    this.createStatusBar();
 
     // 下半部分：背包栏
     this.createInventorySection();
@@ -85,9 +75,7 @@ export class InventoryScene extends Phaser.Scene {
 
     // ESC关闭
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (this.statusPopup) {
-        this.closeStatusPopup();
-      } else if (this.popup) {
+      if (this.popup) {
         this.closePopup();
       } else {
         this.closeScene();
@@ -113,14 +101,6 @@ export class InventoryScene extends Phaser.Scene {
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
-
-    // 玩家状态（左侧）
-    const player = gameState.getPlayerState();
-    this.add.text(width * 0.03, headerHeight / 2, `❤️ ${player.hp}/${player.maxHp}  ⚔️ ${gameState.getTotalAttack()}  🛡️ ${gameState.getTotalDefense()}  ⚡ ${gameState.getTotalSpeed()}`, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
 
     // 碎片数量（右侧）
     const fragments = gameState.getFragmentCount();
@@ -212,370 +192,12 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
-  private createStatusBar(): void {
-    const { width, height } = this.cameras.main;
-    const headerHeight = height * 0.08;
-    const topSectionHeight = height * 0.36;
-    const sectionY = headerHeight + topSectionHeight + height * 0.02;
-    const sectionHeight = height * 0.10; // 增加高度以容纳两行
-
-    // 状态栏背景
-    const sectionBg = this.add.graphics();
-    sectionBg.fillStyle(this.colors.inkBlack, 0.3);
-    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 6);
-    sectionBg.lineStyle(1, this.colors.goldAccent, 0.3);
-    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 6);
-
-    // 获取装备和技能
-    const equipment = {
-      weapon: gameState.getWeapon(),
-      armor: gameState.getArmor(),
-      treasures: gameState.getTreasures(),
-    };
-
-    // 获取所有装备技能
-    const allSkills = getAllEquipmentSkills(equipment);
-
-    // 获取五行被动状态
-    const wuxingPassives = getWuxingPassiveStatuses(equipment);
-
-    const rowHeight = sectionHeight / 2;
-    const row1Y = sectionY + rowHeight / 2;
-    const row2Y = sectionY + rowHeight + rowHeight / 2;
-    const labelPadding = 6;
-    const labelHeight = rowHeight * 0.75;
-
-    // === 第一行：五行技能 ===
-    this.add.text(width * 0.04, row1Y, '技能:', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
-
-    if (allSkills.length === 0) {
-      this.add.text(width * 0.11, row1Y, '暂无技能', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontXS}px`,
-        color: '#484f58',
-        fontStyle: 'italic',
-      }).setOrigin(0, 0.5);
-    } else {
-      let currentX = width * 0.11;
-      const maxX = width * 0.96;
-
-      for (const skill of allSkills) {
-        const displayText = `${skill.name} Lv.${skill.level}`;
-        const labelWidth = Math.max(60, displayText.length * 8 + 16);
-
-        if (currentX + labelWidth > maxX) break;
-
-        const skillColor = this.colors.goldAccent;
-
-        const labelBg = this.add.rectangle(
-          currentX + labelWidth / 2,
-          row1Y,
-          labelWidth,
-          labelHeight,
-          skillColor,
-          0.15
-        );
-        labelBg.setStrokeStyle(1, skillColor, 0.5);
-        labelBg.setInteractive({ useHandCursor: true });
-
-        this.add.text(currentX + labelWidth / 2, row1Y, displayText, {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontXS}px`,
-          color: '#d4a853',
-        }).setOrigin(0.5);
-
-        // 点击显示技能详情
-        labelBg.on('pointerup', () => this.showSkillDetail(skill.name, skill.description));
-        labelBg.on('pointerover', () => labelBg.setFillStyle(skillColor, 0.35));
-        labelBg.on('pointerout', () => labelBg.setFillStyle(skillColor, 0.15));
-
-        currentX += labelWidth + labelPadding;
-      }
-    }
-
-    // === 第二行：五行状态 ===
-    this.add.text(width * 0.04, row2Y, '状态:', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
-
-    if (wuxingPassives.length === 0) {
-      this.add.text(width * 0.11, row2Y, '暂无状态', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontXS}px`,
-        color: '#484f58',
-        fontStyle: 'italic',
-      }).setOrigin(0, 0.5);
-    } else {
-      let currentX = width * 0.11;
-      const maxX = width * 0.88;
-
-      for (const status of wuxingPassives) {
-        const definition = STATUS_DEFINITIONS[status.type];
-        if (!definition) continue;
-
-        const displayText = `${definition.icon}${definition.name} Lv.${status.level}`;
-        const labelWidth = Math.max(70, displayText.length * 8 + 12);
-
-        if (currentX + labelWidth > maxX) break;
-
-        const statusColor = Phaser.Display.Color.HexStringToColor(definition.color).color;
-
-        const labelBg = this.add.rectangle(
-          currentX + labelWidth / 2,
-          row2Y,
-          labelWidth,
-          labelHeight,
-          statusColor,
-          0.2
-        );
-        labelBg.setStrokeStyle(1, statusColor, 0.6);
-        labelBg.setInteractive({ useHandCursor: true });
-
-        this.add.text(currentX + labelWidth / 2, row2Y, displayText, {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontXS}px`,
-          color: definition.color,
-          fontStyle: 'bold',
-        }).setOrigin(0.5);
-
-        // 点击显示状态详情
-        labelBg.on('pointerup', () => this.showStatusPopup(status.type, status.level));
-        labelBg.on('pointerover', () => labelBg.setFillStyle(statusColor, 0.4));
-        labelBg.on('pointerout', () => labelBg.setFillStyle(statusColor, 0.2));
-
-        currentX += labelWidth + labelPadding;
-      }
-    }
-
-    // 五行收集进度（右下角）
-    if (!gameState.hasStatus(StatusType.WUXING_MASTERY)) {
-      const treasures = gameState.getTreasures();
-      const uniqueWuxings = new Set(
-        treasures.map(t => t.wuxing).filter((w): w is Wuxing => w !== undefined)
-      );
-      const collected = uniqueWuxings.size;
-
-      if (collected > 0 && collected < 5) {
-        this.add.text(width * 0.94, row2Y, `五行: ${collected}/5`, {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontXS}px`,
-          color: '#8b949e',
-        }).setOrigin(1, 0.5);
-      }
-    }
-  }
-
-  private showStatusPopup(statusType: StatusType, level?: number): void {
-    this.closeStatusPopup();
-
-    const definition = STATUS_DEFINITIONS[statusType];
-    if (!definition) return;
-
-    const { width, height } = this.cameras.main;
-
-    this.statusPopup = this.add.container(width / 2, height / 2);
-
-    // 背景遮罩
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
-    overlay.setInteractive();
-    overlay.on('pointerup', () => this.closeStatusPopup());
-    this.statusPopup.add(overlay);
-
-    // 弹窗尺寸
-    const panelWidth = Math.max(400, Math.min(500, width * 0.45));
-    const panelHeight = Math.max(280, Math.min(350, height * 0.5));
-    const statusColor = Phaser.Display.Color.HexStringToColor(definition.color).color;
-
-    // 弹窗背景
-    const panel = this.add.graphics();
-    panel.fillStyle(this.colors.inkBlack, 0.98);
-    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    panel.lineStyle(3, statusColor, 0.9);
-    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    this.statusPopup.add(panel);
-
-    // 图标
-    const iconBg = this.add.circle(0, -panelHeight * 0.28, 35, statusColor, 0.2);
-    iconBg.setStrokeStyle(2, statusColor, 0.8);
-    this.statusPopup.add(iconBg);
-
-    const iconText = this.add.text(0, -panelHeight * 0.28, definition.icon, {
-      fontSize: `${uiConfig.font2XL}px`,
-    }).setOrigin(0.5);
-    this.statusPopup.add(iconText);
-
-    // 标题（显示等级）
-    const titleStr = level ? `${definition.name} Lv.${level}` : definition.name;
-    const titleText = this.add.text(0, -panelHeight * 0.12, titleStr, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontXL}px`,
-      color: definition.color,
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-    this.statusPopup.add(titleText);
-
-    // 描述
-    const descText = this.add.text(0, panelHeight * 0.02, definition.description, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: '#8b949e',
-      wordWrap: { width: panelWidth * 0.85 },
-      align: 'center',
-    }).setOrigin(0.5, 0);
-    this.statusPopup.add(descText);
-
-    // 效果列表（根据等级获取具体效果）
-    const effects = level
-      ? getStatusEffectsForLevel(statusType, level)
-      : definition.effects;
-
-    let effectY = panelHeight * 0.15;
-    const effectsTitle = this.add.text(-panelWidth * 0.38, effectY, '当前效果:', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
-      fontStyle: 'bold',
-    }).setOrigin(0, 0);
-    this.statusPopup.add(effectsTitle);
-
-    effectY += uiConfig.fontSM + 8;
-
-    effects.forEach((effect) => {
-      const effectText = this.add.text(-panelWidth * 0.35, effectY, `• ${effect}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontSM}px`,
-        color: '#3fb950',
-      }).setOrigin(0, 0);
-      this.statusPopup!.add(effectText);
-      effectY += uiConfig.fontSM + 6;
-    });
-
-    // 关闭按钮
-    const closeBtnY = panelHeight / 2 - 30;
-    const closeBtn = this.add.rectangle(0, closeBtnY, 100, 36, this.colors.inkGrey);
-    closeBtn.setStrokeStyle(2, statusColor, 0.5);
-    closeBtn.setInteractive({ useHandCursor: true });
-
-    const closeBtnText = this.add.text(0, closeBtnY, '关闭', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: '#f0e6d3',
-    }).setOrigin(0.5);
-
-    this.statusPopup.add([closeBtn, closeBtnText]);
-
-    closeBtn.on('pointerover', () => closeBtn.setFillStyle(statusColor, 0.5));
-    closeBtn.on('pointerout', () => closeBtn.setFillStyle(this.colors.inkGrey));
-    closeBtn.on('pointerup', () => this.closeStatusPopup());
-
-    // 入场动画
-    this.statusPopup.setAlpha(0);
-    this.statusPopup.setScale(0.9);
-    this.tweens.add({
-      targets: this.statusPopup,
-      alpha: 1,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 200,
-      ease: 'Back.easeOut',
-    });
-  }
-
-  private closeStatusPopup(): void {
-    if (this.statusPopup) {
-      this.statusPopup.destroy();
-      this.statusPopup = undefined;
-    }
-  }
-
-  private showSkillDetail(skillName: string, skillDescription: string): void {
-    this.closeStatusPopup();
-
-    const { width, height } = this.cameras.main;
-
-    this.statusPopup = this.add.container(width / 2, height / 2);
-
-    // 背景遮罩
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
-    overlay.setInteractive();
-    overlay.on('pointerup', () => this.closeStatusPopup());
-    this.statusPopup.add(overlay);
-
-    // 弹窗尺寸
-    const panelWidth = Math.max(320, Math.min(400, width * 0.35));
-    const panelHeight = Math.max(180, Math.min(220, height * 0.32));
-
-    // 弹窗背景
-    const panel = this.add.graphics();
-    panel.fillStyle(this.colors.inkBlack, 0.98);
-    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    panel.lineStyle(3, this.colors.goldAccent, 0.9);
-    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    this.statusPopup.add(panel);
-
-    // 技能名称
-    const titleText = this.add.text(0, -panelHeight * 0.28, `【${skillName}】`, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#d4a853',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-    this.statusPopup.add(titleText);
-
-    // 技能描述
-    const descText = this.add.text(0, panelHeight * 0.02, skillDescription, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: '#f0e6d3',
-      wordWrap: { width: panelWidth * 0.85 },
-      align: 'center',
-    }).setOrigin(0.5);
-    this.statusPopup.add(descText);
-
-    // 关闭按钮
-    const closeBtnY = panelHeight / 2 - 30;
-    const closeBtn = this.add.rectangle(0, closeBtnY, 80, 32, this.colors.inkGrey);
-    closeBtn.setStrokeStyle(2, this.colors.goldAccent, 0.5);
-    closeBtn.setInteractive({ useHandCursor: true });
-
-    const closeBtnText = this.add.text(0, closeBtnY, '关闭', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#f0e6d3',
-    }).setOrigin(0.5);
-
-    this.statusPopup.add([closeBtn, closeBtnText]);
-
-    closeBtn.on('pointerover', () => closeBtn.setFillStyle(this.colors.goldAccent, 0.8));
-    closeBtn.on('pointerout', () => closeBtn.setFillStyle(this.colors.inkGrey));
-    closeBtn.on('pointerup', () => this.closeStatusPopup());
-
-    // 入场动画
-    this.statusPopup.setAlpha(0);
-    this.statusPopup.setScale(0.9);
-    this.tweens.add({
-      targets: this.statusPopup,
-      alpha: 1,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 200,
-      ease: 'Back.easeOut',
-    });
-  }
-
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
     const headerHeight = height * 0.08;
     const topSectionHeight = height * 0.36;
-    const statusBarHeight = height * 0.12; // 两行状态栏
-    const sectionY = headerHeight + topSectionHeight + statusBarHeight + height * 0.02;
-    const sectionHeight = height * 0.36;
+    const sectionY = headerHeight + topSectionHeight + height * 0.02;
+    const sectionHeight = height - sectionY - 8;
 
     // 背包区域背景
     const sectionBg = this.add.graphics();
@@ -922,6 +544,8 @@ export class InventoryScene extends Phaser.Scene {
 
     if (success) {
       this.showTopMessage(`装备了 ${equipment.name}`, '#3fb950');
+      eventBus.emit(GameEvent.WUXING_CHOSEN, gameState.getChosenWuxing());
+      eventBus.emit(GameEvent.STATS_CHANGED);
       // 立即刷新界面
       this.scene.restart();
     } else {
@@ -950,6 +574,11 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     if (success) {
+      const wasReset = gameState.validateChosenWuxing();
+      if (wasReset) {
+        eventBus.emit(GameEvent.WUXING_CHOSEN, undefined);
+      }
+      eventBus.emit(GameEvent.STATS_CHANGED);
       this.showTopMessage(`卸下了 ${equipment.name}`, '#3fb950');
       // 立即刷新界面
       this.scene.restart();
@@ -1293,6 +922,42 @@ export class InventoryScene extends Phaser.Scene {
       case EquipmentType.TREASURE: return '灵器';
       default: return '器物';
     }
+  }
+
+  private showSkillDetail(skillName: string, skillDescription: string): void {
+    if (this.popup) {
+      // Reuse popup slot for skill detail (close item popup first)
+      this.closePopup();
+    }
+    const { width, height } = this.cameras.main;
+    this.popup = this.add.container(width / 2, height / 2).setDepth(100);
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
+    overlay.setInteractive();
+    overlay.on('pointerup', () => this.closePopup());
+    this.popup.add(overlay);
+    const panelWidth = Math.min(360, width * 0.85);
+    const panelHeight = 180;
+    const panel = this.add.graphics();
+    panel.fillStyle(0x1c2128, 0.98);
+    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    panel.lineStyle(2, 0xd4a853, 0.9);
+    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
+    this.popup.add(panel);
+    this.popup.add(this.add.text(0, -panelHeight * 0.28, `【${skillName}】`, {
+      fontFamily: '"Noto Serif SC", serif', fontSize: '18px', color: '#d4a853', fontStyle: 'bold',
+    }).setOrigin(0.5));
+    this.popup.add(this.add.text(0, 10, skillDescription, {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '14px', color: '#f0e6d3',
+      wordWrap: { width: panelWidth * 0.85 }, align: 'center',
+    }).setOrigin(0.5));
+    const closeBtn = this.add.rectangle(0, panelHeight / 2 - 28, 80, 30, 0x30363d);
+    closeBtn.setStrokeStyle(1.5, 0xd4a853, 0.5);
+    closeBtn.setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerup', () => this.closePopup());
+    this.popup.add(closeBtn);
+    this.popup.add(this.add.text(0, panelHeight / 2 - 28, '关闭', {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '13px', color: '#f0e6d3',
+    }).setOrigin(0.5));
   }
 
   private createCloseButton(): void {

@@ -7,8 +7,8 @@ import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { gameState } from '../GameStateManager.js';
 
-const BASE_ATTACK_INTERVAL = 1000;  // 默认基准攻击间隔 1 秒
-const BASE_SPEED = 10;
+const BASE_ATTACK_INTERVAL = 3000;  // 默认基准攻击间隔 3 秒
+const BASE_SPEED = 1;
 
 /** 自动普攻范围 */
 export const AUTO_ATTACK_RANGE = 120;
@@ -131,7 +131,7 @@ export class CombatSystem {
       const dist = Phaser.Math.Distance.Between(
         entity.sprite.x, entity.sprite.y, player.x, player.y
       );
-      if (dist < 50 && entity.attackTimer <= 0 && entity.state === 'attack') {
+      if (dist < 100 && entity.attackTimer <= 0 && entity.state === 'attack') {
         entity.attackTimer = this.getAttackInterval(entity.combatant.speed);
         this.attackPlayer(entity.combatant, playerCombatant);
         // 播放妖异攻击动画
