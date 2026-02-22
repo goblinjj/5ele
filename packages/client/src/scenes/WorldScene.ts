@@ -18,9 +18,17 @@ import { EntityManager } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
 import { CombatSystem } from '../systems/combat/CombatSystem.js';
 
-/** 世界尺寸（视口的5倍，Brotato风格大地图） */
-const WORLD_W = 3600;
-const WORLD_H = 4680;
+/**
+ * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 200
+ * 9200 × 9200（正方形，Brotato 风格）
+ */
+const WORLD_W = 9200;
+const WORLD_H = 9200;
+
+/** 每轮击杀目标公式：第 N 轮需击杀 10 + (N-1)*5 只 */
+function getKillTarget(round: number): number {
+  return 10 + (round - 1) * 5;
+}
 
 /** 玩家移动速度 */
 const PLAYER_SPEED = 220;
@@ -46,6 +54,10 @@ export class WorldScene extends Phaser.Scene {
   private spawnSystem!: SpawnSystem;
   private combatSystem!: CombatSystem;
   private activeSkillIds: AttributeSkillId[] = [];
+  private killCount: number = 0;
+  private killTarget: number = 10;
+  private currentRound: number = 1;
+  private roundCompleting: boolean = false;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -70,9 +82,10 @@ export class WorldScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const viewportH = Math.floor(height * LAYOUT.VIEWPORT_RATIO);
 
-    // ---- 相机视口：只占上 60% ----
+    // ---- 相机视口：只占上 60%，地图外显示黑色 ----
     this.cameras.main.setViewport(0, 0, width, viewportH);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.cameras.main.setBackgroundColor('#000000');
 
     // ---- 世界背景 ----
     this.createWorldBackground();
@@ -96,10 +109,16 @@ export class WorldScene extends Phaser.Scene {
 
     // ---- 怪物动画 + 生成 ----
     this.spawnSystem.createAnims();
-    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, 1);
+    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
 
     // ---- 战斗系统 ----
     this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem, this.activeSkillIds);
+
+    // ---- 回合目标 ----
+    this.killTarget = getKillTarget(this.currentRound);
+    this.killCount = 0;
+    eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyKilled());
+    eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
 
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
@@ -324,6 +343,57 @@ export class WorldScene extends Phaser.Scene {
         entity.hpBar.setPosition(sprite.x, sprite.y);
         entity.hpBarBg.setPosition(sprite.x, sprite.y);
       }
+    });
+  }
+
+  private onEnemyKilled(): void {
+    if (this.roundCompleting) return;
+    this.killCount++;
+    eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
+
+    if (this.killCount >= this.killTarget) {
+      this.roundCompleting = true;
+      this.showRoundCompleteOverlay();
+    }
+  }
+
+  private showRoundCompleteOverlay(): void {
+    const cam = this.cameras.main;
+    const cx = cam.worldView.x + cam.width / 2;
+    const cy = cam.worldView.y + cam.height / 2;
+
+    const bg = this.add.graphics().setDepth(200);
+    bg.fillStyle(0x000000, 0.65);
+    bg.fillRoundedRect(cx - 160, cy - 50, 320, 100, 16);
+
+    this.add.text(cx, cy - 14, `第 ${this.currentRound} 轮完成！`, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '28px',
+      color: '#d4a853',
+    }).setOrigin(0.5).setDepth(201);
+
+    this.add.text(cx, cy + 22, `下一轮目标：击杀 ${getKillTarget(this.currentRound + 1)} 只`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '16px',
+      color: '#8b949e',
+    }).setOrigin(0.5).setDepth(201);
+
+    this.time.delayedCall(2500, () => {
+      this.currentRound++;
+      this.killCount = 0;
+      this.killTarget = getKillTarget(this.currentRound);
+      this.roundCompleting = false;
+
+      // 清理旧 overlay（通过 depth 销毁所有 depth≥200 的对象）
+      this.children.list
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter(c => (c as any).depth >= 200)
+        .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
+
+      // 生成新一波（新圆心仍是世界中心，不影响玩家位置）
+      this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
+
+      eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
     });
   }
 

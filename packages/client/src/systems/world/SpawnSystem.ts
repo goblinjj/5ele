@@ -66,36 +66,37 @@ export class SpawnSystem {
     });
   }
 
-  /** 在地图上生成一批敌人 */
+  /**
+   * 在地图上生成一批敌人（大地图每轮 60 + round×10 只）
+   */
   spawnEnemies(worldW: number, worldH: number, round: number = 1): void {
     const playerState = gameState.getPlayerState();
     const scaling = playerState.monsterScaling ?? 0.3;
 
-    // 初始一批
-    const enemies = generateEnemies('normal', round, scaling, 0);
-
+    const totalCount = 60 + round * 10;
     const centerX = worldW / 2;
     const centerY = worldH / 2;
-    const safeRadius = 400;
+    const safeRadius = 600;
 
-    enemies.forEach(combatant => {
-      let x: number, y: number;
-      do {
-        x = Phaser.Math.Between(100, worldW - 100);
-        y = Phaser.Math.Between(100, worldH - 100);
-      } while (Phaser.Math.Distance.Between(x, y, centerX, centerY) < safeRadius);
-      this.spawnEnemy(combatant, x, y);
-    });
-
-    // 额外分散生成
-    for (let i = 0; i < 8; i++) {
-      const moreEnemies = generateEnemies('normal', round, scaling, 0);
-      const e = moreEnemies[Math.floor(Math.random() * moreEnemies.length)];
-      const x = Phaser.Math.Between(100, worldW - 100);
-      const y = Phaser.Math.Between(100, worldH - 100);
-      // Give unique id to avoid collision
-      e.id = `${e.id}_extra_${i}`;
-      this.spawnEnemy(e, x, y);
+    let spawned = 0;
+    while (spawned < totalCount) {
+      const batch = generateEnemies('normal', round, scaling, 0);
+      for (const combatant of batch) {
+        if (spawned >= totalCount) break;
+        let x: number, y: number;
+        let tries = 0;
+        do {
+          x = Phaser.Math.Between(150, worldW - 150);
+          y = Phaser.Math.Between(150, worldH - 150);
+          tries++;
+        } while (
+          Phaser.Math.Distance.Between(x, y, centerX, centerY) < safeRadius &&
+          tries < 20
+        );
+        if (spawned > 0) combatant.id = `${combatant.id}_r${round}_${spawned}`;
+        this.spawnEnemy(combatant, x, y);
+        spawned++;
+      }
     }
   }
 

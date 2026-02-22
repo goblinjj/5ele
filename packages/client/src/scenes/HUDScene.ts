@@ -32,6 +32,7 @@ export class HUDScene extends Phaser.Scene {
   private playerHp: number = 100;
   private cdOverlays: Phaser.GameObjects.Graphics[] = [];
   private cdTexts: Phaser.GameObjects.Text[] = [];
+  private killCountText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'HUDScene' });
@@ -47,6 +48,15 @@ export class HUDScene extends Phaser.Scene {
     panelBg.fillRect(0, panelY, width, height * LAYOUT.PANEL_RATIO);
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
+
+    // 击杀进度（视口区域顶部居中）
+    this.killCountText = this.add.text(width / 2, 18, '击杀 0/10', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#d4a853',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(50);
 
     // 玩家HP条
     this.createPlayerHpBar(width, panelY);
@@ -84,6 +94,11 @@ export class HUDScene extends Phaser.Scene {
     // 监听技能 CD
     eventBus.on(GameEvent.SKILL_CD_UPDATE, (timers: unknown, maxTimers: unknown) => {
       this.updateSkillCds(timers as number[], maxTimers as number[]);
+    });
+
+    // 监听击杀进度
+    eventBus.on(GameEvent.KILL_COUNT_UPDATE, (count: unknown, target: unknown) => {
+      this.killCountText?.setText(`击杀 ${count}/${target}`);
     });
   }
 
