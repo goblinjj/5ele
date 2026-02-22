@@ -351,11 +351,17 @@ export class WorldScene extends Phaser.Scene {
 
       if (entity.atlasKey) {
         const isMoving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
-        const runKey = `${entity.atlasKey}_run`;
+        const runKey  = `${entity.atlasKey}_run`;
         const idleKey = `${entity.atlasKey}_idle`;
+        const atkKey  = `${entity.atlasKey}_atk`;
+        const hurtKey = `${entity.atlasKey}_hurt`;
         const cur = sprite.anims.currentAnim?.key;
-        if (isMoving && cur !== runKey && this.anims.exists(runKey)) sprite.play(runKey, true);
-        else if (!isMoving && cur !== idleKey && this.anims.exists(idleKey)) sprite.play(idleKey, true);
+        // 攻击/受击动画优先：播放中不允许被移动动画覆盖
+        const isBusy = sprite.anims.isPlaying && (cur === atkKey || cur === hurtKey);
+        if (!isBusy) {
+          if (isMoving && cur !== runKey && this.anims.exists(runKey)) sprite.play(runKey, true);
+          else if (!isMoving && cur !== idleKey && this.anims.exists(idleKey)) sprite.play(idleKey, true);
+        }
       }
 
       if (entity.hpBar && entity.hpBarBg) {

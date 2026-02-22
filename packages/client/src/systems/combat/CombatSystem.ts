@@ -95,6 +95,9 @@ export class CombatSystem {
         const animDuration = interval * 0.6;
         this.playerAttackAnimTimer = animDuration;
 
+        // 朝向目标
+        player.setFlipX(target.sprite.x < player.x);
+
         // 播放攻击动画
         const magicKey = 'player_spirit_magic';
         if (this.scene.anims.exists(magicKey)) {
@@ -129,6 +132,11 @@ export class CombatSystem {
       if (dist < 50 && entity.attackTimer <= 0 && entity.state === 'attack') {
         entity.attackTimer = this.getAttackInterval(entity.combatant.speed);
         this.attackPlayer(entity.combatant, playerCombatant);
+        // 播放妖异攻击动画
+        if (entity.atlasKey) {
+          const atkKey = `${entity.atlasKey}_atk`;
+          if (this.scene.anims.exists(atkKey)) entity.sprite.play(atkKey, true);
+        }
         eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
       }
     });
