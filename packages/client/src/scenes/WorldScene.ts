@@ -15,6 +15,7 @@ import {
 } from '@xiyou/shared';
 import { EntityManager } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
+import { CombatSystem } from '../systems/combat/CombatSystem.js';
 
 /** 世界尺寸（视口的3倍） */
 const WORLD_W = 2160;
@@ -33,6 +34,7 @@ export class WorldScene extends Phaser.Scene {
   private _cdBroadcastTick: number = 0;
   private entityManager!: EntityManager;
   private spawnSystem!: SpawnSystem;
+  private combatSystem!: CombatSystem;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -80,6 +82,9 @@ export class WorldScene extends Phaser.Scene {
     this.spawnSystem.createAnims();
     this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, 1);
 
+    // ---- 战斗系统 ----
+    this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem);
+
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
 
@@ -94,6 +99,17 @@ export class WorldScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
     this.updateEnemies(delta);
+    this.combatSystem.update(delta, this.player, this.playerCombatant);
+
+    // 广播技能 CD（每5帧一次）
+    this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
+    if (this._cdBroadcastTick === 0) {
+      eventBus.emit(
+        GameEvent.SKILL_CD_UPDATE,
+        this.combatSystem.getPlayerSkillTimers(),
+        this.combatSystem.getPlayerSkillMaxTimers()
+      );
+    }
   }
 
   // -----------------------------------------------
