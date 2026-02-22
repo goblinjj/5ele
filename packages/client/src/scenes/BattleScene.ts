@@ -306,7 +306,7 @@ export class BattleScene extends Phaser.Scene {
 
     bgGraphics.lineStyle(2, this.colors.goldAccent, 0.3);
     bgGraphics.lineBetween(width * 0.04, height * 0.12, width * 0.96, height * 0.12);
-    bgGraphics.lineBetween(width * 0.04, height * 0.58, width * 0.96, height * 0.58);
+    bgGraphics.lineBetween(width * 0.04, height * LAYOUT.VIEWPORT_RATIO, width * 0.96, height * LAYOUT.VIEWPORT_RATIO);
   }
 
   private createTopBar(): void {
