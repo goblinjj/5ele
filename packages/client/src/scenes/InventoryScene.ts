@@ -33,7 +33,7 @@ interface SlotInfo {
 }
 
 /**
- * 灵囊管理场景 - 横屏优化 (1280x720)
+ * 灵囊管理场景
  */
 export class InventoryScene extends Phaser.Scene {
   private popup?: Phaser.GameObjects.Container;
