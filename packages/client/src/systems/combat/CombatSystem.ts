@@ -38,6 +38,8 @@ export class CombatSystem {
   private playerAttackTimer: number = 0;
   /** 攻击动画保护计时器：>0 时不允许移动动画覆盖攻击动画 */
   private playerAttackAnimTimer: number = 0;
+  /** 塑型中：暂停玩家自动普攻 */
+  private playerChanneling: boolean = false;
   private playerSkillTimers: number[] = [0, 0];
   private playerSkillMaxTimers: number[] = [5000, 8000];
   /** 延迟伤害队列：攻击动画播完后才结算 */
@@ -85,8 +87,8 @@ export class CombatSystem {
       return true;
     });
 
-    // ---- 自动普攻（伤害延迟到动画结束） ----
-    if (this.playerAttackTimer <= 0) {
+    // ---- 自动普攻（伤害延迟到动画结束，塑型中暂停） ----
+    if (this.playerAttackTimer <= 0 && !this.playerChanneling) {
       const target = this.getNearestEnemy(player, alive, AUTO_ATTACK_RANGE);
       if (target) {
         const interval = this.getAttackInterval(playerCombatant.speed);
@@ -145,6 +147,11 @@ export class CombatSystem {
   /** 攻击动画是否正在播放（供 WorldScene 保护动画不被覆盖） */
   isAttackAnimActive(): boolean {
     return this.playerAttackAnimTimer > 0;
+  }
+
+  /** 设置塑型状态（塑型中暂停自动普攻） */
+  setPlayerChanneling(value: boolean): void {
+    this.playerChanneling = value;
   }
 
   private executeActiveSkill(

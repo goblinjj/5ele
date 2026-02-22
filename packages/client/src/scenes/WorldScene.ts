@@ -35,6 +35,47 @@ function getKillTarget(round: number): number {
   return 5 * round;
 }
 
+/** 塑型基准时长（ms） */
+const CHANNEL_DURATION = 2000;
+
+/** 五行相生链：A 生 B */
+const WX_GENERATES: Partial<Record<Wuxing, Wuxing>> = {
+  [Wuxing.WOOD]:  Wuxing.FIRE,
+  [Wuxing.FIRE]:  Wuxing.EARTH,
+  [Wuxing.EARTH]: Wuxing.METAL,
+  [Wuxing.METAL]: Wuxing.WATER,
+  [Wuxing.WATER]: Wuxing.WOOD,
+};
+/** 五行相克链：A 克 B */
+const WX_OVERCOMES: Partial<Record<Wuxing, Wuxing>> = {
+  [Wuxing.WOOD]:  Wuxing.EARTH,
+  [Wuxing.EARTH]: Wuxing.WATER,
+  [Wuxing.WATER]: Wuxing.FIRE,
+  [Wuxing.FIRE]:  Wuxing.METAL,
+  [Wuxing.METAL]: Wuxing.WOOD,
+};
+
+/**
+ * 从能量的角度计算五行关系及成功率
+ * 生(50%) 助(40%) 泄(35%) 克(30%) 耗(25%)
+ */
+function calcWuxingResult(
+  defWuxing: Wuxing | undefined,
+  energyWuxing: Wuxing
+): { rel: string; rate: number } {
+  if (defWuxing === undefined) return { rel: '无属', rate: 0.25 };
+  if (defWuxing === energyWuxing) return { rel: '助', rate: 0.40 };
+  // 生：防御生能量（对能量有利）
+  if (WX_GENERATES[defWuxing] === energyWuxing) return { rel: '生', rate: 0.50 };
+  // 泄：能量生防御（能量被泄耗）
+  if (WX_GENERATES[energyWuxing] === defWuxing) return { rel: '泄', rate: 0.35 };
+  // 克：防御克能量
+  if (WX_OVERCOMES[defWuxing] === energyWuxing) return { rel: '克', rate: 0.30 };
+  // 耗：能量克防御（能量被耗）
+  if (WX_OVERCOMES[energyWuxing] === defWuxing) return { rel: '耗', rate: 0.25 };
+  return { rel: '无属', rate: 0.25 };
+}
+
 /** 玩家移动速度 */
 const PLAYER_SPEED = 220;
 
@@ -76,6 +117,11 @@ export class WorldScene extends Phaser.Scene {
   private enemyIndicator!: Phaser.GameObjects.Graphics;
   private attackRangeIndicator!: Phaser.GameObjects.Graphics;
   private lootDrops: LootDrop[] = [];
+  // 塑型系统
+  private isChanneling: boolean = false;
+  private channelingTimer: number = 0;
+  private channelingTarget?: LootDrop;
+  private channelingIndicator!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -137,6 +183,7 @@ export class WorldScene extends Phaser.Scene {
     // ---- 指示器（世界坐标，随相机移动） ----
     this.enemyIndicator = this.add.graphics().setDepth(15);
     this.attackRangeIndicator = this.add.graphics().setDepth(14);
+    this.channelingIndicator = this.add.graphics().setDepth(16);
 
     // ---- 回合目标 ----
     this.killTarget = getKillTarget(this.currentRound);
@@ -166,6 +213,7 @@ export class WorldScene extends Phaser.Scene {
     this.updateEnemyIndicator();
     this.updateAttackRangeIndicator();
     this.updateLootDrops();
+    this.updateChanneling(delta);
 
     // 广播技能 CD（每5帧一次）
     this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
@@ -275,6 +323,18 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private movePlayer(_delta: number): void {
+    // 塑型中：锁定位置，强制播放 magic 动画
+    if (this.isChanneling) {
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      if (this.textures.exists(PLAYER_ATLAS)) {
+        const magicKey = `${PLAYER_ATLAS}_magic`;
+        if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== magicKey) {
+          this.player.play(magicKey, true);
+        }
+      }
+      return;
+    }
+
     let vx = inputManager.moveX;
     let vy = inputManager.moveY;
 
@@ -475,30 +535,99 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private updateLootDrops(): void {
-    this.lootDrops = this.lootDrops.filter(drop => {
-      if (drop.collected) return false;
+    if (this.isChanneling) return; // 塑型中不检测新的能量
+    for (let i = 0; i < this.lootDrops.length; i++) {
+      const drop = this.lootDrops[i];
+      if (drop.collected) continue;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y);
       if (dist < 35) {
-        drop.collected = true;
-        // 成功率：防御 / (防御 + 五行等级×10 + 5)，范围约 0.05 ~ 0.95
-        const defense = this.playerCombatant.defense;
-        const successRate = Math.min(0.95, (defense + 5) / (defense + drop.level * 10 + 5));
-        if (Math.random() < successRate) {
-          const items = generateSimpleLoot('normal', 1, 1.0);
-          items.forEach(eq => gameState.addToInventory(eq as Equipment));
-          this.showLootText(drop.x, drop.y, '引导成功！', 0x3fb950);
-        } else {
-          this.showLootText(drop.x, drop.y, '引导失败', 0xf85149);
-        }
-        drop.graphics.destroy();
-        drop.label.destroy();
-        return false;
+        this.lootDrops.splice(i, 1);
+        this.startChanneling(drop);
+        break;
       }
-      return true;
-    });
+    }
+  }
+
+  private startChanneling(drop: LootDrop): void {
+    this.isChanneling = true;
+    this.channelingTimer = CHANNEL_DURATION;
+    this.channelingTarget = drop;
+    this.combatSystem.setPlayerChanneling(true);
+
+    // 在能量体上显示五行关系标签
+    const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
+    const { rel, rate } = calcWuxingResult(defWuxing, drop.wuxing);
+    const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
+    const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
+    const relTxt = this.add.text(drop.x, drop.y - 32, `【${rel}】${Math.round(rate * 100)}%`, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '13px',
+      color: relColorHex,
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(20);
+    // 2秒后随塑型结束自动消失
+    this.time.delayedCall(CHANNEL_DURATION + 400, () => relTxt.destroy());
+  }
+
+  private updateChanneling(delta: number): void {
+    if (!this.isChanneling || !this.channelingTarget) return;
+    this.channelingTimer -= delta;
+
+    // 绘制进度弧（金色圆弧，顺时针填充）
+    const g = this.channelingIndicator;
+    g.clear();
+    const progress = 1 - Math.max(0, this.channelingTimer) / CHANNEL_DURATION;
+    if (progress > 0) {
+      const endAngle = -Math.PI / 2 + Math.PI * 2 * progress;
+      g.lineStyle(3, 0xd4a853, 0.9);
+      g.beginPath();
+      g.arc(this.player.x, this.player.y, 42, -Math.PI / 2, endAngle, false, 0.02);
+      g.strokePath();
+      // 背景圆（灰色）
+      g.lineStyle(3, 0x30363d, 0.5);
+      g.strokeCircle(this.player.x, this.player.y, 42);
+    }
+
+    if (this.channelingTimer <= 0) {
+      this.resolveChanneling();
+    }
+  }
+
+  private resolveChanneling(): void {
+    this.isChanneling = false;
+    this.channelingIndicator.clear();
+    this.combatSystem.setPlayerChanneling(false);
+
+    const target = this.channelingTarget;
+    this.channelingTarget = undefined;
+    if (!target) return;
+
+    target.graphics.destroy();
+    target.label.destroy();
+
+    // 五行关系决定成功率
+    const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
+    const { rel, rate } = calcWuxingResult(defWuxing, target.wuxing);
+
+    if (Math.random() < rate) {
+      const items = generateSimpleLoot('normal', 1, 1.0);
+      items.forEach(eq => gameState.addToInventory(eq as Equipment));
+      this.showLootText(target.x, target.y, `塑型成功【${rel}】`, 0x3fb950);
+    } else {
+      this.showLootText(target.x, target.y, `塑型失败【${rel}】`, 0xf85149);
+    }
   }
 
   private clearLootDrops(): void {
+    if (this.isChanneling) {
+      this.isChanneling = false;
+      this.channelingIndicator.clear();
+      this.channelingTarget?.graphics.destroy();
+      this.channelingTarget?.label.destroy();
+      this.channelingTarget = undefined;
+      this.combatSystem?.setPlayerChanneling(false);
+    }
     this.lootDrops.forEach(drop => {
       drop.graphics.destroy();
       drop.label.destroy();
