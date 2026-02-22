@@ -19,11 +19,11 @@ import { SpawnSystem } from '../systems/world/SpawnSystem.js';
 import { CombatSystem } from '../systems/combat/CombatSystem.js';
 
 /**
- * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 200
- * 9200 × 9200（正方形，Brotato 风格）
+ * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 50
+ * 2300 × 2300
  */
-const WORLD_W = 9200;
-const WORLD_H = 9200;
+const WORLD_W = 2300;
+const WORLD_H = 2300;
 
 /** 每轮击杀目标公式：第 N 轮需击杀 5×N 只（与 5 波×N 只/波 对应） */
 function getKillTarget(round: number): number {
@@ -58,6 +58,7 @@ export class WorldScene extends Phaser.Scene {
   private killTarget: number = 10;
   private currentRound: number = 1;
   private roundCompleting: boolean = false;
+  private enemyIndicator!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -123,6 +124,9 @@ export class WorldScene extends Phaser.Scene {
     eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyKilled());
     eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
 
+    // ---- 最近妖异方向指示器 ----
+    this.enemyIndicator = this.add.graphics().setDepth(15);
+
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
 
@@ -138,6 +142,7 @@ export class WorldScene extends Phaser.Scene {
     this.movePlayer(delta);
     this.updateEnemies(delta);
     this.combatSystem.update(delta, this.player, this.playerCombatant);
+    this.updateEnemyIndicator();
 
     // 广播技能 CD（每5帧一次）
     this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
@@ -406,6 +411,56 @@ export class WorldScene extends Phaser.Scene {
 
       eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
     });
+  }
+
+  private updateEnemyIndicator(): void {
+    const g = this.enemyIndicator;
+    g.clear();
+
+    const alive = this.entityManager.getAlive();
+    if (alive.length === 0) return;
+
+    // 找最近妖异
+    let nearest = alive[0];
+    let minDist = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y, nearest.sprite.x, nearest.sprite.y
+    );
+    for (let i = 1; i < alive.length; i++) {
+      const d = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y
+      );
+      if (d < minDist) { minDist = d; nearest = alive[i]; }
+    }
+
+    // 在攻击范围内不显示指示器
+    if (minDist < 80) return;
+
+    const angle = Math.atan2(
+      nearest.sprite.y - this.player.y,
+      nearest.sprite.x - this.player.x
+    );
+
+    // 绘制箭头：以玩家为中心，半径 36px 处
+    const R = 36;
+    const cx = this.player.x + Math.cos(angle) * R;
+    const cy = this.player.y + Math.sin(angle) * R;
+
+    // 箭头三角形（指向敌人方向）
+    const arrowLen = 12;
+    const arrowW = 6;
+    const tipX = cx + Math.cos(angle) * arrowLen;
+    const tipY = cy + Math.sin(angle) * arrowLen;
+    const leftX = cx + Math.cos(angle + Math.PI * 0.7) * arrowW;
+    const leftY = cy + Math.sin(angle + Math.PI * 0.7) * arrowW;
+    const rightX = cx + Math.cos(angle - Math.PI * 0.7) * arrowW;
+    const rightY = cy + Math.sin(angle - Math.PI * 0.7) * arrowW;
+
+    g.fillStyle(0xf85149, 0.9);
+    g.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY);
+
+    // 外圈细环
+    g.lineStyle(1.5, 0xf85149, 0.4);
+    g.strokeCircle(this.player.x, this.player.y, R);
   }
 
   /** 供 CombatSystem 调用 */
