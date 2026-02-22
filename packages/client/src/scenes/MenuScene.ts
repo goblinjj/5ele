@@ -137,17 +137,11 @@ export class MenuScene extends Phaser.Scene {
   private createButtons(): void {
     const { width, height } = this.cameras.main;
 
-    // 按钮区域在屏幕 65% 位置
-    const btnY = height * 0.65;
+    // 开始游戏按钮 - 纵向排列 62%
+    this.createButton(width / 2, height * 0.62, '开始游戏', '单人模式', () => this.startSinglePlayer());
 
-    // 响应式按钮间距
-    const btnSpacing = Math.max(120, Math.min(150, width * 0.12));
-
-    // 开始游戏按钮
-    this.createButton(width / 2 - btnSpacing, btnY, '开始游戏', '单人模式', () => this.startSinglePlayer());
-
-    // 多人模式按钮
-    this.createButton(width / 2 + btnSpacing, btnY, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
+    // 多人模式按钮 - 纵向排列 70%
+    this.createButton(width / 2, height * 0.70, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
 
     // 游戏介绍链接
     this.createLinkButton(width / 2, height * 0.78, '游戏介绍', () => this.openLanding());
@@ -190,8 +184,8 @@ export class MenuScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
 
     // 响应式按钮尺寸
-    const buttonWidth = Math.max(160, Math.min(260, width * 0.2));
-    const buttonHeight = Math.max(50, Math.min(70, height * 0.1));
+    const buttonWidth = Math.max(200, Math.min(460, width * 0.60));
+    const buttonHeight = Math.max(50, Math.min(70, height * 0.055));
 
     const container = this.add.container(x, y);
 
