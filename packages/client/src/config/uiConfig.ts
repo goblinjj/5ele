@@ -9,6 +9,10 @@ export const LAYOUT = {
   ICON_WIDTH_RATIO: 0.35,
   /** 文字区域宽度占比 */
   TEXT_WIDTH_RATIO: 0.65,
+  /** 游戏视口区域高度占比（上半） */
+  VIEWPORT_RATIO: 0.60,
+  /** 操控面板区域高度占比（下半） */
+  PANEL_RATIO: 0.40,
 };
 
 export class UIConfig {
@@ -77,6 +81,16 @@ export class UIConfig {
    */
   get height(): number {
     return this._height;
+  }
+
+  /** 游戏视口底部 Y（分区线） */
+  get panelY(): number {
+    return this._height * LAYOUT.VIEWPORT_RATIO;
+  }
+
+  /** 操控面板中心 Y */
+  get panelCenterY(): number {
+    return this._height * (LAYOUT.VIEWPORT_RATIO + LAYOUT.PANEL_RATIO / 2);
   }
 
   // ============ 字体大小获取方法 ============

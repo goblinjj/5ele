@@ -7,9 +7,9 @@ import { BattleScene } from '../scenes/BattleScene.js';
 import { RewardScene } from '../scenes/RewardScene.js';
 import { InventoryScene } from '../scenes/InventoryScene.js';
 
-// 设计基准尺寸（16:9 横屏）
-export const GAME_WIDTH = 1280;
-export const GAME_HEIGHT = 720;
+// 设计基准尺寸（9:19.5 竖屏）
+export const GAME_WIDTH = 720;
+export const GAME_HEIGHT = 1560;
 
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
