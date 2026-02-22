@@ -21,7 +21,7 @@ import {
 } from '@xiyou/shared';
 import { EntityManager } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
-import { CombatSystem, AUTO_ATTACK_RANGE } from '../systems/combat/CombatSystem.js';
+import { CombatSystem, AUTO_ATTACK_RANGE, ENEMY_ATTACK_RANGE } from '../systems/combat/CombatSystem.js';
 
 /**
  * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 50
@@ -383,7 +383,8 @@ export class WorldScene extends Phaser.Scene {
     const playerX = this.player.x;
     const playerY = this.player.y;
     const DETECT_RANGE = 300;
-    const ATTACK_RANGE = 160;
+    // 妖异进入 attack 状态的范围（略大于实际攻击判定，让妖异缓慢接近）
+    const ATTACK_STATE_RANGE = ENEMY_ATTACK_RANGE + 60; // 140
     const PATROL_SPEED = 60;
     const CHASE_SPEED = 110;
 
@@ -391,7 +392,7 @@ export class WorldScene extends Phaser.Scene {
       const { sprite } = entity;
       const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, playerX, playerY);
 
-      if (dist < ATTACK_RANGE) {
+      if (dist < ATTACK_STATE_RANGE) {
         entity.state = 'attack';
       } else if (dist < DETECT_RANGE) {
         entity.state = 'chase';
@@ -402,9 +403,17 @@ export class WorldScene extends Phaser.Scene {
       const body = sprite.body as Phaser.Physics.Arcade.Body;
 
       if (entity.state === 'chase' || entity.state === 'attack') {
-        const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
-        const speed = entity.state === 'attack' ? CHASE_SPEED * 0.3 : CHASE_SPEED;
-        body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        // 攻击动画播放中：停止移动
+        if (entity.attackPhase === 'attacking') {
+          body.setVelocity(0, 0);
+        } else {
+          const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
+          // 减速状态：移速降低 50%
+          const isSlowed = this.combatSystem?.isEnemySlowed(entity.combatant.id) ?? false;
+          const baseSpeed = entity.state === 'attack' ? CHASE_SPEED * 0.3 : CHASE_SPEED;
+          const speed = isSlowed ? baseSpeed * 0.5 : baseSpeed;
+          body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        }
         sprite.setFlipX(playerX < sprite.x);
       } else {
         entity.patrolTimer -= delta;

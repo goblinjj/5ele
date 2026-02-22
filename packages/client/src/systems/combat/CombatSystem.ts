@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
-import { Combatant, AttributeSkillId } from '@xiyou/shared';
+import {
+  Combatant, AttributeSkillId,
+  calculateSkillEffectLevels, getSkillValue,
+} from '@xiyou/shared';
 import { EntityManager, WorldEntity } from '../world/EntityManager.js';
 import { SpawnSystem } from '../world/SpawnSystem.js';
 import { inputManager } from '../input/InputManager.js';
@@ -7,11 +10,15 @@ import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { gameState } from '../GameStateManager.js';
 
-const BASE_ATTACK_INTERVAL = 3000;  // 默认基准攻击间隔 3 秒
+/** 基准攻击间隔：1 秒（速度=1 时） */
+const BASE_ATTACK_INTERVAL = 1000;
 const BASE_SPEED = 1;
 
-/** 自动普攻范围 */
+/** 残魂（玩家）自动普攻范围 */
 export const AUTO_ATTACK_RANGE = 120;
+
+/** 妖异攻击范围：残魂的 2/3（残魂比妖异大 50%） */
+export const ENEMY_ATTACK_RANGE = 80;
 
 /** AOE 技能配置：颜色 + 范围 */
 const AOE_CONFIG: Record<string, { color: number; radius: number; label: string; cd: number }> = {
@@ -29,6 +36,13 @@ interface PendingDamage {
   range: number;
 }
 
+/** 时间制状态效果追踪（沙盒模式，单位 ms） */
+interface TimedStatus {
+  burning: number;   // 剩余时间 ms（>0 = 激活）
+  slowed: number;    // 剩余时间 ms
+  burnTickTimer: number; // 灼烧伤害 tick 计时
+}
+
 export class CombatSystem {
   private scene: Phaser.Scene;
   private entityManager: EntityManager;
@@ -44,6 +58,14 @@ export class CombatSystem {
   private playerSkillMaxTimers: number[] = [5000, 8000];
   /** 延迟伤害队列：攻击动画播完后才结算 */
   private pendingDamages: PendingDamage[] = [];
+
+  /** 生机：被动回血计时器 */
+  private passiveHealTimer: number = 3000;
+
+  /** 玩家状态效果追踪 */
+  private playerStatus: TimedStatus = { burning: 0, slowed: 0, burnTickTimer: 0 };
+  /** 敌人状态效果追踪（按 combatant.id 映射） */
+  private enemyStatuses: Map<string, TimedStatus> = new Map();
 
   constructor(
     scene: Phaser.Scene,
@@ -69,17 +91,29 @@ export class CombatSystem {
     this.playerAttackAnimTimer = Math.max(0, this.playerAttackAnimTimer - delta);
     this.playerSkillTimers = this.playerSkillTimers.map(t => Math.max(0, t - delta));
 
+    // ── 生机被动回血（每 3 秒） ──
+    this.passiveHealTimer -= delta;
+    if (this.passiveHealTimer <= 0) {
+      this.passiveHealTimer = 3000;
+      this.applyShengjiHeal(player, playerCombatant);
+    }
+
+    // ── 玩家状态效果 Tick ──
+    this.tickPlayerStatus(delta, player, playerCombatant);
+
+    // ── 敌人状态效果 Tick ──
+    this.tickEnemyStatuses(delta);
+
     const alive = this.entityManager.getAlive();
 
-    // ---- 结算延迟伤害 ----
+    // ---- 结算延迟伤害（玩家普攻动画结束后） ----
     this.pendingDamages = this.pendingDamages.filter(pd => {
       pd.timer -= delta;
       if (pd.timer <= 0) {
         const target = this.getNearestEnemy(pd.playerSprite, this.entityManager.getAlive(), pd.range);
         if (target) {
-          this.attackEnemy(pd.attacker, target);
+          this.attackEnemy(pd.attacker, target, player);
         } else {
-          // 目标移出范围：miss
           this.showMissText(pd.playerSprite.x, pd.playerSprite.y - 30);
         }
         return false;
@@ -87,26 +121,28 @@ export class CombatSystem {
       return true;
     });
 
-    // ---- 自动普攻（伤害延迟到动画结束，塑型中暂停） ----
+    // ---- 玩家自动普攻（伤害延迟到动画结束，塑型中暂停） ----
     if (this.playerAttackTimer <= 0 && !this.playerChanneling) {
       const target = this.getNearestEnemy(player, alive, AUTO_ATTACK_RANGE);
       if (target) {
         const interval = this.getAttackInterval(playerCombatant.speed);
         this.playerAttackTimer = interval;
-        // 动画保护时长 = 攻击间隔 60%
+        // 攻击阶段 = 60% 间隔
         const animDuration = interval * 0.6;
         this.playerAttackAnimTimer = animDuration;
 
         // 朝向目标
         player.setFlipX(target.sprite.x < player.x);
 
-        // 播放攻击动画
+        // 播放攻击动画，速度随攻击速度缩放
         const magicKey = 'player_spirit_magic';
         if (this.scene.anims.exists(magicKey)) {
           player.play(magicKey, true);
+          // timeScale = 基准/实际间隔：速度快则动画快
+          player.anims.timeScale = BASE_ATTACK_INTERVAL / interval;
         }
 
-        // 伤害在动画约结束时才结算（animDuration 后）
+        // 在攻击动画约结束时结算伤害
         this.pendingDamages.push({
           timer: animDuration,
           attacker: playerCombatant,
@@ -125,21 +161,55 @@ export class CombatSystem {
       }
     });
 
-    // ---- 敌人攻击玩家 ----
+    // ---- 妖异攻击玩家（相位制：60%攻击 + 40%冷却） ----
     alive.forEach(entity => {
-      entity.attackTimer = Math.max(0, entity.attackTimer - delta);
       const dist = Phaser.Math.Distance.Between(
         entity.sprite.x, entity.sprite.y, player.x, player.y
       );
-      if (dist < 100 && entity.attackTimer <= 0 && entity.state === 'attack') {
-        entity.attackTimer = this.getAttackInterval(entity.combatant.speed);
-        this.attackPlayer(entity.combatant, playerCombatant);
-        // 播放妖异攻击动画
-        if (entity.atlasKey) {
-          const atkKey = `${entity.atlasKey}_atk`;
-          if (this.scene.anims.exists(atkKey)) entity.sprite.play(atkKey, true);
+
+      if (entity.attackPhase === 'ready') {
+        // 进入攻击范围且处于 attack 状态 → 开始攻击阶段
+        if (dist <= ENEMY_ATTACK_RANGE && entity.state === 'attack') {
+          const interval = this.getAttackInterval(entity.combatant.speed);
+          entity.attackCurrentInterval = interval;
+          entity.attackPhase = 'attacking';
+          entity.attackPhaseTimer = interval * 0.6;
+
+          // 朝向玩家
+          entity.sprite.setFlipX(player.x < entity.sprite.x);
+
+          // 播放攻击动画，速度随攻击速度缩放
+          if (entity.atlasKey) {
+            const atkKey = `${entity.atlasKey}_atk`;
+            if (this.scene.anims.exists(atkKey)) {
+              entity.sprite.play(atkKey, true);
+              entity.sprite.anims.timeScale = BASE_ATTACK_INTERVAL / interval;
+            }
+          }
         }
-        eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+      } else if (entity.attackPhase === 'attacking') {
+        entity.attackPhaseTimer -= delta;
+
+        if (dist > ENEMY_ATTACK_RANGE) {
+          // 目标移出攻击范围：中断攻击，重新待机
+          entity.attackPhase = 'ready';
+          entity.attackPhaseTimer = 0;
+        } else if (entity.attackPhaseTimer <= 0) {
+          // 攻击阶段结束：触发伤害
+          this.attackPlayer(entity, playerCombatant);
+          eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+
+          // 进入冷却阶段（40%）
+          entity.attackPhase = 'cooldown';
+          entity.attackPhaseTimer = entity.attackCurrentInterval * 0.4;
+        }
+      } else {
+        // cooldown
+        entity.attackPhaseTimer -= delta;
+        if (entity.attackPhaseTimer <= 0) {
+          entity.attackPhase = 'ready';
+          entity.attackPhaseTimer = 0;
+        }
       }
     });
   }
@@ -153,6 +223,83 @@ export class CombatSystem {
   setPlayerChanneling(value: boolean): void {
     this.playerChanneling = value;
   }
+
+  // ───────────────────────── 被动技能 ─────────────────────────
+
+  /** 生机：每 3 秒恢复 X% 最大生命 */
+  private applyShengjiHeal(
+    player: Phaser.Physics.Arcade.Sprite,
+    playerCombatant: Combatant
+  ): void {
+    if (!playerCombatant.attributeSkills?.includes(AttributeSkillId.SHENGJI)) return;
+    if (playerCombatant.hp >= playerCombatant.maxHp) return;
+
+    const wuxingLevels = playerCombatant.allWuxingLevels ?? new Map();
+    const skillLevels = calculateSkillEffectLevels(playerCombatant.attributeSkills, wuxingLevels);
+    const level = skillLevels.levels.get(AttributeSkillId.SHENGJI);
+    if (!level) return;
+
+    const healPct = getSkillValue(AttributeSkillId.SHENGJI, level); // e.g. 2-12
+    const healAmount = Math.max(1, Math.floor(playerCombatant.maxHp * healPct / 100));
+    playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + healAmount);
+    eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+    this.showHealText(player.x, player.y - 30, healAmount);
+  }
+
+  /** 玩家状态效果 Tick（灼烧伤害、减速过期） */
+  private tickPlayerStatus(
+    delta: number,
+    _player: Phaser.Physics.Arcade.Sprite,
+    playerCombatant: Combatant
+  ): void {
+    if (this.playerStatus.burning > 0) {
+      this.playerStatus.burning -= delta;
+      this.playerStatus.burnTickTimer -= delta;
+      if (this.playerStatus.burnTickTimer <= 0) {
+        this.playerStatus.burnTickTimer = 2000;
+        const burnDmg = Math.max(1, Math.floor(playerCombatant.maxHp * 0.03));
+        playerCombatant.hp = Math.max(0, playerCombatant.hp - burnDmg);
+        eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+        if (playerCombatant.hp <= 0) {
+          eventBus.emit(GameEvent.PLAYER_DEATH);
+          this.scene.scene.start('MenuScene');
+        }
+      }
+    }
+    if (this.playerStatus.slowed > 0) {
+      this.playerStatus.slowed -= delta;
+    }
+  }
+
+  /** 敌人状态效果 Tick（灼烧伤害、减速过期） */
+  private tickEnemyStatuses(delta: number): void {
+    const alive = this.entityManager.getAlive();
+    alive.forEach(entity => {
+      const id = entity.combatant.id;
+      const st = this.enemyStatuses.get(id);
+      if (!st) return;
+
+      if (st.burning > 0) {
+        st.burning -= delta;
+        st.burnTickTimer -= delta;
+        if (st.burnTickTimer <= 0) {
+          st.burnTickTimer = 2000;
+          const burnDmg = Math.max(1, Math.floor(entity.combatant.maxHp * 0.04));
+          entity.combatant.hp = Math.max(0, entity.combatant.hp - burnDmg);
+          this.showDamageText(entity.sprite.x, entity.sprite.y - 30, burnDmg, 0xff6633);
+          if (entity.hpBar) {
+            this.spawnSystem.updateEnemyHpBar(entity.hpBar, entity.combatant.hp, entity.combatant.maxHp);
+          }
+          if (entity.combatant.hp <= 0) this.onEnemyDeath(entity);
+        }
+      }
+      if (st.slowed > 0) {
+        st.slowed -= delta;
+      }
+    });
+  }
+
+  // ───────────────────────── 主动技能 ─────────────────────────
 
   private executeActiveSkill(
     skillId: AttributeSkillId,
@@ -187,6 +334,15 @@ export class CombatSystem {
         const result = resolveCombat(playerCombatant, e.combatant);
         this.applyDamageToEnemy(e, result.damage, playerCombatant);
         totalDamage += result.damage;
+
+        // 焚天：施加灼烧
+        if (skillId === AttributeSkillId.FENTIAN) {
+          this.applyBurningToEnemy(e, 6000);
+        }
+        // 寒潮：施加减速
+        if (skillId === AttributeSkillId.HANCHAO) {
+          this.applySlowToEnemy(e, 4000);
+        }
       }
     });
 
@@ -194,9 +350,11 @@ export class CombatSystem {
       const heal = Math.floor(totalDamage * 0.3);
       playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + heal);
       eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
-      this.showDamageText(player.x, player.y - 50, heal, 0x3fb950);
+      this.showHealText(player.x, player.y - 50, heal);
     }
   }
+
+  // ───────────────────────── 伤害计算 ─────────────────────────
 
   private getAttackInterval(speed: number): number {
     if (speed <= 0) return BASE_ATTACK_INTERVAL;
@@ -217,9 +375,63 @@ export class CombatSystem {
     return nearest;
   }
 
-  private attackEnemy(attacker: Combatant, target: WorldEntity): void {
+  private attackEnemy(
+    attacker: Combatant,
+    target: WorldEntity,
+    playerSprite: Phaser.Physics.Arcade.Sprite
+  ): void {
     const result = resolveCombat(attacker, target.combatant);
     this.applyDamageToEnemy(target, result.damage, attacker);
+
+    // 被动：攻击后触发效果
+    this.processPlayerAfterAttackPassives(attacker, target, playerSprite);
+  }
+
+  /** 处理玩家攻击后被动技能（燎原/凝滞/余烬等） */
+  private processPlayerAfterAttackPassives(
+    attacker: Combatant,
+    target: WorldEntity,
+    _playerSprite: Phaser.Physics.Arcade.Sprite
+  ): void {
+    if (!attacker.attributeSkills || attacker.attributeSkills.length === 0) return;
+    const wuxingLevels = attacker.allWuxingLevels ?? new Map();
+    const skillLevels = calculateSkillEffectLevels(attacker.attributeSkills, wuxingLevels);
+
+    // 燎原：X% 概率灼烧敌人
+    const liaoyuanLevel = skillLevels.levels.get(AttributeSkillId.LIAOYUAN);
+    if (liaoyuanLevel) {
+      const chance = getSkillValue(AttributeSkillId.LIAOYUAN, liaoyuanLevel);
+      if (Math.random() * 100 < chance) {
+        this.applyBurningToEnemy(target, 6000);
+      }
+    }
+
+    // 凝滞：X% 概率减速敌人
+    const ningzhiLevel = skillLevels.levels.get(AttributeSkillId.NINGZHI);
+    if (ningzhiLevel) {
+      const chance = getSkillValue(AttributeSkillId.NINGZHI, ningzhiLevel);
+      if (Math.random() * 100 < chance) {
+        this.applySlowToEnemy(target, 4000);
+      }
+    }
+  }
+
+  private applyBurningToEnemy(target: WorldEntity, durationMs: number): void {
+    const id = target.combatant.id;
+    const st = this.enemyStatuses.get(id) ?? { burning: 0, slowed: 0, burnTickTimer: 0 };
+    st.burning = Math.max(st.burning, durationMs);
+    if (st.burnTickTimer <= 0) st.burnTickTimer = 2000;
+    this.enemyStatuses.set(id, st);
+  }
+
+  private applySlowToEnemy(target: WorldEntity, durationMs: number): void {
+    const id = target.combatant.id;
+    const st = this.enemyStatuses.get(id) ?? { burning: 0, slowed: 0, burnTickTimer: 0 };
+    st.slowed = Math.max(st.slowed, durationMs);
+    this.enemyStatuses.set(id, st);
+    // 减速：在 combatant.statusEffects 中标记，WorldScene 可据此调整移速
+    if (!target.combatant.statusEffects) target.combatant.statusEffects = {};
+    target.combatant.statusEffects.slowed = { turnsLeft: 1 }; // 标记存在
   }
 
   private applyDamageToEnemy(target: WorldEntity, damage: number, _attacker: Combatant): void {
@@ -236,8 +448,8 @@ export class CombatSystem {
     if (target.combatant.hp <= 0) this.onEnemyDeath(target);
   }
 
-  private attackPlayer(attacker: Combatant, player: Combatant): void {
-    const result = resolveCombat(attacker, player);
+  private attackPlayer(entity: WorldEntity, player: Combatant): void {
+    const result = resolveCombat(entity.combatant, player);
     player.hp = Math.max(0, player.hp - result.damage);
     this.showDamageText(
       this.scene.cameras.main.worldView.x + this.scene.cameras.main.width / 2,
@@ -245,13 +457,42 @@ export class CombatSystem {
       result.damage,
       0xf85149
     );
+
+    // 余烬：受击时 X% 概率使攻击者灼烧
+    if (player.attributeSkills) {
+      const wuxingLevels = player.allWuxingLevels ?? new Map();
+      const skillLevels = calculateSkillEffectLevels(player.attributeSkills, wuxingLevels);
+      const yujinLevel = skillLevels.levels.get(AttributeSkillId.YUJIN);
+      if (yujinLevel) {
+        const chance = getSkillValue(AttributeSkillId.YUJIN, yujinLevel);
+        if (Math.random() * 100 < chance) {
+          this.applyBurningToEnemy(entity, 6000);
+        }
+      }
+    }
+
     if (player.hp <= 0) {
       eventBus.emit(GameEvent.PLAYER_DEATH);
       this.scene.scene.start('MenuScene');
     }
   }
 
+  /** 查询敌人是否处于减速状态（供 WorldScene 调整移速） */
+  isEnemySlowed(id: string): boolean {
+    const st = this.enemyStatuses.get(id);
+    return !!(st && st.slowed > 0);
+  }
+
+  /** 查询敌人是否处于灼烧状态（供显示用） */
+  isEnemyBurning(id: string): boolean {
+    const st = this.enemyStatuses.get(id);
+    return !!(st && st.burning > 0);
+  }
+
   private onEnemyDeath(entity: WorldEntity): void {
+    // 清除状态追踪
+    this.enemyStatuses.delete(entity.combatant.id);
+
     if (entity.atlasKey) {
       const dieKey = `${entity.atlasKey}_die`;
       if (this.scene.anims.exists(dieKey)) {
@@ -272,7 +513,6 @@ export class CombatSystem {
     this.entityManager.remove(entity.combatant.id);
     eventBus.emit(GameEvent.ENEMY_DIED, entity.combatant);
 
-    // 在原地发出五行能量掉落事件（不直接给装备）
     const wuxing = entity.combatant.attackWuxing?.wuxing;
     const level = entity.combatant.attackWuxing?.level ?? 1;
     if (wuxing !== undefined) {
@@ -295,6 +535,24 @@ export class CombatSystem {
       y: y - 40,
       alpha: 0,
       duration: 800,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private showHealText(x: number, y: number, amount: number): void {
+    const text = this.scene.add.text(x, y, `+${amount}`, {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#3fb950',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(30);
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 35,
+      alpha: 0,
+      duration: 700,
       ease: 'Power2',
       onComplete: () => text.destroy(),
     });

@@ -10,7 +10,12 @@ export interface WorldEntity {
   patrolCenterY: number;
   state: 'patrol' | 'chase' | 'attack';
   patrolTimer: number;   // 巡逻换向计时（ms）
-  attackTimer: number;   // 攻击 CD 计时（ms）
+  /** 攻击阶段：ready=待机, attacking=攻击中(60%), cooldown=冷却中(40%) */
+  attackPhase: 'ready' | 'attacking' | 'cooldown';
+  /** 当前攻击阶段剩余时间(ms) */
+  attackPhaseTimer: number;
+  /** 本轮攻击总间隔(ms)，用于计算冷却和动画速度 */
+  attackCurrentInterval: number;
   atlasKey: string;
 }
 

@@ -168,7 +168,9 @@ export class SpawnSystem {
       patrolCenterY,
       state: 'patrol',
       patrolTimer: 0,
-      attackTimer: 1000,
+      attackPhase: 'ready',
+      attackPhaseTimer: 0,
+      attackCurrentInterval: 1000,
       atlasKey: atlasKey || '',
     };
 

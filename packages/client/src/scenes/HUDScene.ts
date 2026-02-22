@@ -53,13 +53,14 @@ export class HUDScene extends Phaser.Scene {
 
   create(): void {
     const { width, height } = this.cameras.main;
+    const panelH = height * LAYOUT.PANEL_RATIO;
     const panelY = height * LAYOUT.VIEWPORT_RATIO;
     this.panelY = panelY;
 
     // 操控面板背景
     const panelBg = this.add.graphics();
     panelBg.fillStyle(0x0d1117, 0.92);
-    panelBg.fillRect(0, panelY, width, height * LAYOUT.PANEL_RATIO);
+    panelBg.fillRect(0, panelY, width, panelH);
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
 
@@ -72,82 +73,68 @@ export class HUDScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5).setDepth(50);
 
-    // 玩家HP条
+    // ── 左上：HP 条 + 属性/技能/状态 ──
     this.createPlayerHpBar(width, panelY);
 
-    // 虚拟摇杆（左下）
-    const joystickX = width * 0.22;
-    const joystickY = panelY + (height * LAYOUT.PANEL_RATIO) * 0.55;
+    // 属性/技能/状态展示区（HP条正下方）
+    this.infoArea = this.add.container(0, panelY + 36).setDepth(51);
+    this.refreshInfoArea();
+
+    // Buff 展示区（技能/状态条下方）
+    this.buffArea = this.add.container(0, panelY + 90).setDepth(51);
+
+    // ── 右上：灵囊 + 赋能按钮 ──
+    this.createInventoryButton(width, panelY);
+    this.createWuxingButton(width, panelY);
+
+    // ── 中央：虚拟摇杆 ──
+    const joystickX = width * 0.5;
+    const joystickY = panelY + panelH * 0.62;
     this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.12, 80));
 
-    // 获取玩家装备中的主动技能（最多2个）
+    // ── 右侧：主动技能按钮 ──
     const playerState = gameState.getPlayerState();
     const allSkills = getAllAttributeSkills(playerState.equipment);
     const activeSkills = allSkills.filter(id => AOE_SKILL_IDS.has(id)).slice(0, 2);
 
-    // 技能按钮（右下，只显示装备获得的主动技能）
     if (activeSkills.length > 0) {
-      this.createSkillButtons(width, panelY, height, activeSkills);
-    } else {
-      this.add.text(width * 0.75, panelY + (height * LAYOUT.PANEL_RATIO) * 0.5, '装备技能\n解锁技能', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontXS}px`,
-        color: '#484f58',
-        align: 'center',
-      }).setOrigin(0.5);
+      this.createSkillButtons(width, panelY, panelH, activeSkills);
     }
 
-    // 灵囊按钮（面板右上区）
-    this.createInventoryButton(width, panelY, height);
-
-    // 赋能按钮（灵囊左侧）
-    this.createWuxingButton(width, panelY, height);
-
-    // 属性/技能/状态显示区（HP条正下方，装备变化后可刷新）
-    this.infoArea = this.add.container(0, panelY + 38).setDepth(51);
-    this.refreshInfoArea();
-
-    // 动态 Buff 显示区（channelingBonus 等）
-    this.buffArea = this.add.container(0, panelY + 78).setDepth(51);
-
-    // 监听 HP 变更
+    // ── 事件监听 ──
     eventBus.on(GameEvent.PLAYER_HP_CHANGE, (hp: unknown, maxHp: unknown) => {
       this.playerHp = hp as number;
       this.playerMaxHp = maxHp as number;
       this.updateHpBar();
     });
 
-    // 监听技能 CD
     eventBus.on(GameEvent.SKILL_CD_UPDATE, (timers: unknown, maxTimers: unknown) => {
       this.updateSkillCds(timers as number[], maxTimers as number[]);
     });
 
-    // 监听击杀进度
     eventBus.on(GameEvent.KILL_COUNT_UPDATE, (count: unknown, target: unknown) => {
       this.killCountText?.setText(`击杀 ${count}/${target}`);
     });
 
-    // 监听 buff 列表
     eventBus.on(GameEvent.BUFF_UPDATE, (buffs: unknown) => {
       this.renderBuffs(buffs as { label: string; color: number }[]);
     });
 
-    // 监听五行所属变更，刷新赋能按钮
     eventBus.on(GameEvent.WUXING_CHOSEN, (wuxing: unknown) => {
       this.refreshWuxingButton(wuxing as Wuxing | undefined);
     });
 
-    // 监听装备变化，刷新属性/技能/状态展示
     eventBus.on(GameEvent.STATS_CHANGED, () => {
       this.refreshInfoArea();
     });
   }
 
   private createPlayerHpBar(width: number, panelY: number): void {
-    const barW = width * 0.55;
+    // HP 条宽度：左侧 60%，右侧留给赋能+灵囊按钮
+    const barW = width * 0.50;
     const barH = 14;
-    const barX = width * 0.06;
-    const barY = panelY + 18;
+    const barX = width * 0.05;
+    const barY = panelY + 14;
 
     const bg = this.add.graphics();
     bg.fillStyle(0x1c2128, 1);
@@ -162,7 +149,7 @@ export class HUDScene extends Phaser.Scene {
       color: '#ffffff',
     }).setOrigin(0.5).setDepth(10);
 
-    this.add.text(barX, barY - 14, '残魂', {
+    this.add.text(barX, barY - 12, '残魂', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontXS}px`,
       color: '#d4a853',
@@ -173,10 +160,10 @@ export class HUDScene extends Phaser.Scene {
     if (!this.playerHpBar) return;
     const { width, height } = this.cameras.main;
     const panelY = height * LAYOUT.VIEWPORT_RATIO;
-    const barW = width * 0.55;
+    const barW = width * 0.50;
     const barH = 14;
-    const barX = width * 0.06;
-    const barY = panelY + 18;
+    const barX = width * 0.05;
+    const barY = panelY + 14;
 
     const pct = Math.max(0, this.playerHp / this.playerMaxHp);
     const color = pct > 0.5 ? 0x3fb950 : pct > 0.25 ? 0xeab308 : 0xf85149;
@@ -193,18 +180,20 @@ export class HUDScene extends Phaser.Scene {
   private createSkillButtons(
     width: number,
     panelY: number,
-    height: number,
+    panelH: number,
     activeSkills: AttributeSkillId[]
   ): void {
-    const btnSize = Math.min(width * 0.17, 100);
-    const btnY = panelY + (height * LAYOUT.PANEL_RATIO) * 0.52;
-    const gap = btnSize + width * 0.05;
-    const totalW = activeSkills.length * btnSize + (activeSkills.length - 1) * width * 0.05;
-    const startX = width - width * 0.06 - totalW / 2 + btnSize / 2;
+    const btnSize = Math.min(width * 0.16, 90);
+    // 技能按钮放在右侧，摇杆右边
+    const btnY = panelY + panelH * 0.62;
+    const rightMargin = width * 0.05;
+    const gap = btnSize + width * 0.03;
+    // 从右向左排列
+    const startX = width - rightMargin - btnSize / 2;
 
     activeSkills.forEach((skillId, i) => {
       const meta = AOE_SKILL_META[skillId] ?? { label: '技能', color: 0x8b949e };
-      const btnX = startX + i * gap;
+      const btnX = startX - i * gap;
       const container = this.add.container(btnX, btnY);
 
       const color = meta.color;
@@ -269,7 +258,7 @@ export class HUDScene extends Phaser.Scene {
       overlay.clear();
       if (t > 0 && maxTimers[i] > 0) {
         const pct = t / maxTimers[i];
-        const btnSize = Math.min(this.cameras.main.width * 0.17, 100);
+        const btnSize = Math.min(this.cameras.main.width * 0.16, 90);
         overlay.fillStyle(0x000000, 0.6 * pct);
         overlay.fillCircle(0, 0, btnSize / 2);
         cdText.setText(`${(t / 1000).toFixed(1)}s`).setAlpha(1);
@@ -279,11 +268,12 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
-  private createInventoryButton(width: number, panelY: number, height: number): void {
-    const panelH = height * LAYOUT.PANEL_RATIO;
-    const btnSize = 50;
-    const btnX = width - 32 - btnSize / 2;
-    const btnY = panelY + panelH * 0.28;
+  /** 灵囊按钮：右上角 */
+  private createInventoryButton(width: number, panelY: number): void {
+    const btnSize = 46;
+    const rightMargin = 12;
+    const btnX = width - rightMargin - btnSize / 2;
+    const btnY = panelY + 14 + btnSize / 2; // 顶部对齐 HP 条
 
     const container = this.add.container(btnX, btnY).setDepth(52);
     const bg = this.add.graphics();
@@ -296,10 +286,10 @@ export class HUDScene extends Phaser.Scene {
     };
     drawBg(false);
     const icon = this.add.text(0, -4, '灵', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '18px', color: '#d4a853',
+      fontFamily: '"Noto Serif SC", serif', fontSize: '16px', color: '#d4a853',
     }).setOrigin(0.5);
-    const sub = this.add.text(0, 14, '囊', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '11px', color: '#8b949e',
+    const sub = this.add.text(0, 12, '囊', {
+      fontFamily: '"Noto Serif SC", serif', fontSize: '10px', color: '#8b949e',
     }).setOrigin(0.5);
     container.add([bg, icon, sub]);
     container.setSize(btnSize, btnSize).setInteractive();
@@ -311,88 +301,13 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
-  /** 重建属性/技能/状态显示（装备/五行变化时调用） */
-  private refreshInfoArea(): void {
-    this.infoArea.removeAll(true);
-    const { width } = this.cameras.main;
-    const eq = {
-      weapon: gameState.getWeapon(),
-      armor: gameState.getArmor(),
-      treasures: gameState.getTreasures(),
-    };
-
-    // ── 第一行：ATK / DEF / SPD ──
-    const atk = gameState.getTotalAttack();
-    const def = gameState.getTotalDefense();
-    const spd = gameState.getTotalSpeed();
-    const statsStr = `攻 ${atk}  防 ${def}  速 ${spd}`;
-    const statsLabel = this.add.text(width * 0.06, 0, statsStr, {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
-    this.infoArea.add(statsLabel);
-
-    // ── 第二行（+20px）：技能 pills ──
-    const skills = getAllEquipmentSkills(eq);
-    let x = width * 0.06;
-    const row2Y = 20;
-    const pillH = 16;
-    if (skills.length === 0) {
-      this.infoArea.add(this.add.text(x, row2Y, '技能: 暂无', { fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58' }).setOrigin(0, 0.5));
-    } else {
-      this.infoArea.add(this.add.text(x, row2Y, '技能', { fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58' }).setOrigin(0, 0.5));
-      x += 26;
-      for (const skill of skills) {
-        const label = `${skill.name} Lv${skill.level}`;
-        const pill = this.createInfoPill(x, row2Y, label, 0xd4a853, pillH);
-        this.infoArea.add(pill);
-        x += pill.width + 5;
-        if (x > width * 0.88) break;
-      }
-    }
-
-    // ── 第三行（+20px）：五行被动状态 pills ──
-    const statuses = getWuxingPassiveStatuses(eq);
-    x = width * 0.06;
-    const row3Y = 40;
-    if (statuses.length > 0) {
-      this.infoArea.add(this.add.text(x, row3Y, '状态', { fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58' }).setOrigin(0, 0.5));
-      x += 26;
-      for (const st of statuses) {
-        const def2 = STATUS_DEFINITIONS[st.type];
-        if (!def2) continue;
-        const label = `${def2.name} Lv${st.level}`;
-        const color = parseInt(def2.color.replace('#', ''), 16);
-        const pill = this.createInfoPill(x, row3Y, label, color, pillH);
-        this.infoArea.add(pill);
-        x += pill.width + 5;
-        if (x > width * 0.88) break;
-      }
-    }
-  }
-
-  /** 创建一个 pill 标签 Text 对象（带背景需用 Graphics，这里简化为带色的 Text） */
-  private createInfoPill(x: number, y: number, label: string, color: number, pillH: number): Phaser.GameObjects.Text {
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const txt = this.add.text(x, y, label, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '10px',
-      color: colorHex,
-      backgroundColor: colorHex + '22',
-      padding: { x: 5, y: 2 },
-    }).setOrigin(0, 0.5);
-    void pillH; // pillH reserved for future border drawing
-    return txt;
-  }
-
-  /** 赋能按钮（灵囊左侧，展示当前五行所属） */
-  private createWuxingButton(width: number, panelY: number, height: number): void {
-    const panelH = height * LAYOUT.PANEL_RATIO;
-    const btnSize = 50;
-    // 灵囊按钮在 width-32-25，赋能在其左边 btnSize+8
-    const btnX = width - 32 - btnSize / 2 - btnSize - 10;
-    const btnY = panelY + panelH * 0.28;
+  /** 赋能按钮：灵囊左侧 */
+  private createWuxingButton(width: number, panelY: number): void {
+    const btnSize = 46;
+    const rightMargin = 12;
+    const gap = 8;
+    const btnX = width - rightMargin - btnSize / 2 - btnSize - gap;
+    const btnY = panelY + 14 + btnSize / 2;
 
     const container = this.add.container(btnX, btnY).setDepth(52);
     this.wuxingBtnBg = this.add.graphics();
@@ -412,10 +327,10 @@ export class HUDScene extends Phaser.Scene {
     const iconText = initWuxing ? WUXING_NAMES[initWuxing] : '无';
     const iconColor = initWuxing ? ('#' + WUXING_COLORS[initWuxing].toString(16).padStart(6, '0')) : '#484f58';
     this.wuxingBtnLabel = this.add.text(0, -4, iconText, {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '18px', color: iconColor,
+      fontFamily: '"Noto Serif SC", serif', fontSize: '16px', color: iconColor,
     }).setOrigin(0.5);
-    this.wuxingBtnSub = this.add.text(0, 14, '赋能', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '11px', color: '#8b949e',
+    this.wuxingBtnSub = this.add.text(0, 12, '赋能', {
+      fontFamily: '"Noto Serif SC", serif', fontSize: '10px', color: '#8b949e',
     }).setOrigin(0.5);
 
     container.add([this.wuxingBtnBg, this.wuxingBtnLabel, this.wuxingBtnSub]);
@@ -424,26 +339,28 @@ export class HUDScene extends Phaser.Scene {
     container.on('pointerout', () => drawWuxingBg(false, gameState.getChosenWuxing()));
     container.on('pointerup', () => {
       drawWuxingBg(false, gameState.getChosenWuxing());
-      this.toggleWuxingPicker(btnX, btnY - btnSize / 2 - 8);
+      // 向下展开选择器（按钮在顶部，往下展开）
+      this.toggleWuxingPicker(btnX, btnY + btnSize / 2 + 6);
     });
   }
 
   /** 刷新赋能按钮显示（五行所属变化时） */
   private refreshWuxingButton(wuxing: Wuxing | undefined): void {
     if (!this.wuxingBtnBg || !this.wuxingBtnLabel) return;
+    const btnSize = 46;
     const color = wuxing ? WUXING_COLORS[wuxing] : 0x8b949e;
     this.wuxingBtnBg.clear();
     this.wuxingBtnBg.fillStyle(0x1c2128, 0.9);
-    this.wuxingBtnBg.fillRoundedRect(-25, -25, 50, 50, 8);
+    this.wuxingBtnBg.fillRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
     this.wuxingBtnBg.lineStyle(1.5, color, 0.6);
-    this.wuxingBtnBg.strokeRoundedRect(-25, -25, 50, 50, 8);
+    this.wuxingBtnBg.strokeRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
 
     const iconText = wuxing ? WUXING_NAMES[wuxing] : '无';
     const iconColor = wuxing ? ('#' + WUXING_COLORS[wuxing].toString(16).padStart(6, '0')) : '#484f58';
     this.wuxingBtnLabel.setText(iconText).setColor(iconColor);
   }
 
-  /** 打开/关闭五行选择器浮层（全部使用 scene 直属对象，避免 Container 嵌套 input 问题） */
+  /** 打开/关闭五行选择器浮层（向下展开） */
   private toggleWuxingPicker(anchorX: number, anchorY: number): void {
     if (this.wuxingPickerObjects.length > 0) {
       this.closeWuxingPicker();
@@ -452,7 +369,7 @@ export class HUDScene extends Phaser.Scene {
 
     const available = gameState.getAvailableWuxing();
     if (available.length === 0) {
-      const tip = this.add.text(anchorX, anchorY - 10, '装备有五行属性的灵器', {
+      const tip = this.add.text(anchorX, anchorY + 10, '装备有五行属性的灵器', {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: '12px',
         color: '#8b949e',
@@ -483,9 +400,10 @@ export class HUDScene extends Phaser.Scene {
     const gap = 8;
     const totalW = options.length * pillW + (options.length - 1) * gap;
     const startX = anchorX - totalW / 2 + pillW / 2;
-    const cy = anchorY - pillH / 2 - 4;
+    // 向下展开：cy 是 pill 行中心，在 anchorY 下方
+    const cy = anchorY + pillH / 2 + 4;
 
-    // 背景遮罩（tap 关闭）— scene 直属
+    // 背景遮罩（tap 关闭）
     const overlay = this.add.rectangle(
       this.cameras.main.width / 2,
       this.cameras.main.height / 2,
@@ -500,7 +418,6 @@ export class HUDScene extends Phaser.Scene {
       const ox = startX + i * (pillW + gap);
       const isSelected = opt.wuxing !== null && opt.wuxing === currentWuxing;
 
-      // 背景图形（scene 直属，无 input）
       const bg = this.add.graphics().setDepth(201);
       bg.fillStyle(0x1c2128, 0.95);
       bg.fillRoundedRect(ox - pillW / 2, cy - pillH / 2, pillW, pillH, 10);
@@ -508,7 +425,6 @@ export class HUDScene extends Phaser.Scene {
       bg.strokeRoundedRect(ox - pillW / 2, cy - pillH / 2, pillW, pillH, 10);
       this.wuxingPickerObjects.push(bg);
 
-      // 文字标签（scene 直属）
       const lbl = this.add.text(ox, cy, opt.label, {
         fontFamily: '"Noto Serif SC", serif',
         fontSize: '18px',
@@ -516,7 +432,6 @@ export class HUDScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(202);
       this.wuxingPickerObjects.push(lbl);
 
-      // 交互区（scene 直属透明矩形）
       const hit = this.add.rectangle(ox, cy, pillW, pillH, 0xffffff, 0)
         .setDepth(203).setInteractive();
       hit.on('pointerup', () => {
@@ -533,13 +448,93 @@ export class HUDScene extends Phaser.Scene {
     this.wuxingPickerObjects = [];
   }
 
+  /** 重建属性/技能/状态显示（装备/五行变化时调用） */
+  private refreshInfoArea(): void {
+    this.infoArea.removeAll(true);
+    const { width } = this.cameras.main;
+    const eq = {
+      weapon: gameState.getWeapon(),
+      armor: gameState.getArmor(),
+      treasures: gameState.getTreasures(),
+    };
+
+    // ── 第一行：ATK / DEF / SPD ──
+    const atk = gameState.getTotalAttack();
+    const def = gameState.getTotalDefense();
+    const spd = gameState.getTotalSpeed();
+    const statsStr = `攻 ${atk}  防 ${def}  速 ${spd}`;
+    const statsLabel = this.add.text(width * 0.05, 0, statsStr, {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#8b949e',
+    }).setOrigin(0, 0.5);
+    this.infoArea.add(statsLabel);
+
+    // ── 第二行（+18px）：技能 pills ──
+    const skills = getAllEquipmentSkills(eq);
+    let x = width * 0.05;
+    const row2Y = 18;
+    const pillH = 16;
+    if (skills.length === 0) {
+      this.infoArea.add(this.add.text(x, row2Y, '技能: 暂无', {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+      }).setOrigin(0, 0.5));
+    } else {
+      this.infoArea.add(this.add.text(x, row2Y, '技能', {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+      }).setOrigin(0, 0.5));
+      x += 26;
+      for (const skill of skills) {
+        const label = `${skill.name} Lv${skill.level}`;
+        const pill = this.createInfoPill(x, row2Y, label, 0xd4a853, pillH);
+        this.infoArea.add(pill);
+        x += pill.width + 5;
+        if (x > width * 0.82) break;
+      }
+    }
+
+    // ── 第三行（+18px）：五行被动状态 pills ──
+    const statuses = getWuxingPassiveStatuses(eq);
+    x = width * 0.05;
+    const row3Y = 36;
+    if (statuses.length > 0) {
+      this.infoArea.add(this.add.text(x, row3Y, '状态', {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+      }).setOrigin(0, 0.5));
+      x += 26;
+      for (const st of statuses) {
+        const def2 = STATUS_DEFINITIONS[st.type];
+        if (!def2) continue;
+        const label = `${def2.name} Lv${st.level}`;
+        const color = parseInt(def2.color.replace('#', ''), 16);
+        const pill = this.createInfoPill(x, row3Y, label, color, pillH);
+        this.infoArea.add(pill);
+        x += pill.width + 5;
+        if (x > width * 0.82) break;
+      }
+    }
+  }
+
+  private createInfoPill(x: number, y: number, label: string, color: number, pillH: number): Phaser.GameObjects.Text {
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+    const txt = this.add.text(x, y, label, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '10px',
+      color: colorHex,
+      backgroundColor: colorHex + '22',
+      padding: { x: 5, y: 2 },
+    }).setOrigin(0, 0.5);
+    void pillH;
+    return txt;
+  }
+
   private renderBuffs(buffs: { label: string; color: number }[]): void {
     this.buffArea.removeAll(true);
     if (!buffs || buffs.length === 0) return;
 
     const pillH = 18;
     const gap = 6;
-    let x = this.cameras.main.width * 0.06;
+    let x = this.cameras.main.width * 0.05;
 
     buffs.forEach(({ label, color }) => {
       const colorHex = '#' + color.toString(16).padStart(6, '0');
