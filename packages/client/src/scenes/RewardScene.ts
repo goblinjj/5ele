@@ -268,13 +268,13 @@ export class RewardScene extends Phaser.Scene {
     // 技能描述
     const skills = getEquipmentSkillsDisplay(equip, equip.wuxingLevel ?? 1);
     if (skills.length > 0) {
-      this.add.text(x, y + cardHeight * 0.36, `【${skills[0].name}】${skills[0].description}`, {
+      this.add.text(x, y + cardHeight * 0.28, `【${skills[0].name}】${skills[0].description}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
         fontSize: `${uiConfig.fontXS}px`,
         color: '#fbbf24',
         wordWrap: { width: cardWidth * 0.85 },
         align: 'center',
-      }).setOrigin(0.5, 0);
+      }).setOrigin(0.5, 0.5);
     }
 
     // 交互效果
