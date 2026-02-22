@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "wrangler pages deploy dist --project-name=xiyou-roguelike",
-    "deploy:preview": "wrangler pages deploy dist --project-name=xiyou-roguelike --branch=preview"
+    "deploy": "wrangler pages deploy dist --project-name=5ele",
+    "deploy:preview": "wrangler pages deploy dist --project-name=5ele --branch=preview"
   },
   "dependencies": {
     "phaser": "^3.80.1",
