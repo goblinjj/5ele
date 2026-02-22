@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Combatant, generateSimpleLoot, AttributeSkillId } from '@xiyou/shared';
+import { Combatant, AttributeSkillId } from '@xiyou/shared';
 import { EntityManager, WorldEntity } from '../world/EntityManager.js';
 import { SpawnSystem } from '../world/SpawnSystem.js';
 import { inputManager } from '../input/InputManager.js';
@@ -10,6 +10,9 @@ import { gameState } from '../GameStateManager.js';
 const BASE_ATTACK_INTERVAL = 1000;  // 默认基准攻击间隔 1 秒
 const BASE_SPEED = 10;
 
+/** 自动普攻范围 */
+export const AUTO_ATTACK_RANGE = 120;
+
 /** AOE 技能配置：颜色 + 范围 */
 const AOE_CONFIG: Record<string, { color: number; radius: number; label: string; cd: number }> = {
   [AttributeSkillId.LIEKONGZHAN]: { color: 0xd4a853, radius: 180, label: '裂空斩', cd: 5000 },
@@ -19,6 +22,13 @@ const AOE_CONFIG: Record<string, { color: number; radius: number; label: string;
   [AttributeSkillId.DILIE]:       { color: 0xa16946, radius: 140, label: '地裂',   cd: 6000 },
 };
 
+interface PendingDamage {
+  timer: number;
+  attacker: Combatant;
+  playerSprite: Phaser.Physics.Arcade.Sprite;
+  range: number;
+}
+
 export class CombatSystem {
   private scene: Phaser.Scene;
   private entityManager: EntityManager;
@@ -26,8 +36,12 @@ export class CombatSystem {
   private activeSkillIds: AttributeSkillId[];
 
   private playerAttackTimer: number = 0;
+  /** 攻击动画保护计时器：>0 时不允许移动动画覆盖攻击动画 */
+  private playerAttackAnimTimer: number = 0;
   private playerSkillTimers: number[] = [0, 0];
-  private playerSkillMaxTimers: number[] = [5000, 8000]; // 默认值，会被 activeSkillIds 覆盖
+  private playerSkillMaxTimers: number[] = [5000, 8000];
+  /** 延迟伤害队列：攻击动画播完后才结算 */
+  private pendingDamages: PendingDamage[] = [];
 
   constructor(
     scene: Phaser.Scene,
@@ -40,7 +54,6 @@ export class CombatSystem {
     this.spawnSystem = spawnSystem;
     this.activeSkillIds = activeSkillIds.slice(0, 2);
 
-    // 根据装备技能设置 CD
     this.playerSkillMaxTimers = this.activeSkillIds.map(id => AOE_CONFIG[id]?.cd ?? 5000);
     this.playerSkillTimers = this.playerSkillMaxTimers.map(() => 0);
   }
@@ -51,20 +64,54 @@ export class CombatSystem {
     playerCombatant: Combatant
   ): void {
     this.playerAttackTimer = Math.max(0, this.playerAttackTimer - delta);
+    this.playerAttackAnimTimer = Math.max(0, this.playerAttackAnimTimer - delta);
     this.playerSkillTimers = this.playerSkillTimers.map(t => Math.max(0, t - delta));
 
     const alive = this.entityManager.getAlive();
 
-    // ---- 自动普攻（无需按键） ----
+    // ---- 结算延迟伤害 ----
+    this.pendingDamages = this.pendingDamages.filter(pd => {
+      pd.timer -= delta;
+      if (pd.timer <= 0) {
+        const target = this.getNearestEnemy(pd.playerSprite, this.entityManager.getAlive(), pd.range);
+        if (target) {
+          this.attackEnemy(pd.attacker, target);
+        } else {
+          // 目标移出范围：miss
+          this.showMissText(pd.playerSprite.x, pd.playerSprite.y - 30);
+        }
+        return false;
+      }
+      return true;
+    });
+
+    // ---- 自动普攻（伤害延迟到动画结束） ----
     if (this.playerAttackTimer <= 0) {
-      const target = this.getNearestEnemy(player, alive, 120);
+      const target = this.getNearestEnemy(player, alive, AUTO_ATTACK_RANGE);
       if (target) {
-        this.playerAttackTimer = this.getAttackInterval(playerCombatant.speed);
-        this.attackEnemy(playerCombatant, target);
+        const interval = this.getAttackInterval(playerCombatant.speed);
+        this.playerAttackTimer = interval;
+        // 动画保护时长 = 攻击间隔 60%
+        const animDuration = interval * 0.6;
+        this.playerAttackAnimTimer = animDuration;
+
+        // 播放攻击动画
+        const magicKey = 'player_spirit_magic';
+        if (this.scene.anims.exists(magicKey)) {
+          player.play(magicKey, true);
+        }
+
+        // 伤害在动画约结束时才结算（animDuration 后）
+        this.pendingDamages.push({
+          timer: animDuration,
+          attacker: playerCombatant,
+          playerSprite: player,
+          range: AUTO_ATTACK_RANGE,
+        });
       }
     }
 
-    // ---- 手动主动技能（来自装备）----
+    // ---- 手动主动技能 ----
     const justPressed = inputManager.consumeJustPressed();
     this.activeSkillIds.forEach((skillId, i) => {
       if (justPressed[i] && this.playerSkillTimers[i] <= 0) {
@@ -87,6 +134,11 @@ export class CombatSystem {
     });
   }
 
+  /** 攻击动画是否正在播放（供 WorldScene 保护动画不被覆盖） */
+  isAttackAnimActive(): boolean {
+    return this.playerAttackAnimTimer > 0;
+  }
+
   private executeActiveSkill(
     skillId: AttributeSkillId,
     player: Phaser.Physics.Arcade.Sprite,
@@ -99,7 +151,6 @@ export class CombatSystem {
     const radius = cfg.radius;
     const color = cfg.color;
 
-    // 视觉效果
     const circle = this.scene.add.graphics();
     circle.lineStyle(3, color, 0.9);
     circle.strokeCircle(player.x, player.y, radius);
@@ -114,7 +165,6 @@ export class CombatSystem {
       onComplete: () => circle.destroy(),
     });
 
-    // AOE 命中 + 吸血（荆棘）
     let totalDamage = 0;
     alive.forEach(e => {
       const d = Phaser.Math.Distance.Between(player.x, player.y, e.sprite.x, e.sprite.y);
@@ -125,7 +175,6 @@ export class CombatSystem {
       }
     });
 
-    // 荆棘：回血
     if (skillId === AttributeSkillId.JINGJI && totalDamage > 0) {
       const heal = Math.floor(totalDamage * 0.3);
       playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + heal);
@@ -200,13 +249,20 @@ export class CombatSystem {
   }
 
   private cleanupEnemy(entity: WorldEntity): void {
+    const ex = entity.sprite.x;
+    const ey = entity.sprite.y;
     entity.sprite.destroy();
     entity.hpBar?.destroy();
     entity.hpBarBg?.destroy();
     this.entityManager.remove(entity.combatant.id);
     eventBus.emit(GameEvent.ENEMY_DIED, entity.combatant);
-    const loot = generateSimpleLoot('normal', 1, 0.3);
-    loot.forEach(eq => gameState.addToInventory(eq));
+
+    // 在原地发出五行能量掉落事件（不直接给装备）
+    const wuxing = entity.combatant.attackWuxing?.wuxing;
+    const level = entity.combatant.attackWuxing?.level ?? 1;
+    if (wuxing !== undefined) {
+      eventBus.emit(GameEvent.LOOT_DROPPED, { x: ex, y: ey, wuxing, level });
+    }
   }
 
   private showDamageText(x: number, y: number, damage: number, color: number): void {
@@ -224,6 +280,24 @@ export class CombatSystem {
       y: y - 40,
       alpha: 0,
       duration: 800,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private showMissText(x: number, y: number): void {
+    const text = this.scene.add.text(x, y, 'miss', {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#8b949e',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(30);
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 30,
+      alpha: 0,
+      duration: 600,
       ease: 'Power2',
       onComplete: () => text.destroy(),
     });

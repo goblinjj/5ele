@@ -5,6 +5,7 @@ import { eventBus, GameEvent } from '../core/EventBus.js';
 import { gameState } from '../systems/GameStateManager.js';
 import {
   Combatant,
+  Equipment,
   getTotalAttack,
   getTotalDefense,
   getTotalSpeed,
@@ -13,10 +14,14 @@ import {
   getAllWuxingLevels,
   getAllAttributeSkills,
   AttributeSkillId,
+  Wuxing,
+  WUXING_COLORS,
+  WUXING_NAMES,
+  generateSimpleLoot,
 } from '@xiyou/shared';
 import { EntityManager } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
-import { CombatSystem } from '../systems/combat/CombatSystem.js';
+import { CombatSystem, AUTO_ATTACK_RANGE } from '../systems/combat/CombatSystem.js';
 
 /**
  * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 50
@@ -45,6 +50,16 @@ const AOE_SKILL_IDS = new Set([
   AttributeSkillId.DILIE,
 ]);
 
+interface LootDrop {
+  graphics: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  x: number;
+  y: number;
+  wuxing: Wuxing;
+  level: number;
+  collected: boolean;
+}
+
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerCombatant!: Combatant;
@@ -59,6 +74,8 @@ export class WorldScene extends Phaser.Scene {
   private currentRound: number = 1;
   private roundCompleting: boolean = false;
   private enemyIndicator!: Phaser.GameObjects.Graphics;
+  private attackRangeIndicator!: Phaser.GameObjects.Graphics;
+  private lootDrops: LootDrop[] = [];
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -73,7 +90,6 @@ export class WorldScene extends Phaser.Scene {
       );
     }
 
-    // 初始化实体管理器（在preload中创建以便preloadAtlases可以加载图集）
     this.entityManager = new EntityManager();
     this.spawnSystem = new SpawnSystem(this, this.entityManager);
     this.spawnSystem.preloadAtlases();
@@ -118,14 +134,19 @@ export class WorldScene extends Phaser.Scene {
     // ---- 战斗系统 ----
     this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem, this.activeSkillIds);
 
+    // ---- 指示器（世界坐标，随相机移动） ----
+    this.enemyIndicator = this.add.graphics().setDepth(15);
+    this.attackRangeIndicator = this.add.graphics().setDepth(14);
+
     // ---- 回合目标 ----
     this.killTarget = getKillTarget(this.currentRound);
     this.killCount = 0;
     eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyKilled());
+    eventBus.on(GameEvent.LOOT_DROPPED, (data: unknown) => {
+      const d = data as { x: number; y: number; wuxing: Wuxing; level: number };
+      this.createLootDrop(d.x, d.y, d.wuxing, d.level);
+    });
     eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
-
-    // ---- 最近妖异方向指示器 ----
-    this.enemyIndicator = this.add.graphics().setDepth(15);
 
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
@@ -143,6 +164,8 @@ export class WorldScene extends Phaser.Scene {
     this.updateEnemies(delta);
     this.combatSystem.update(delta, this.player, this.playerCombatant);
     this.updateEnemyIndicator();
+    this.updateAttackRangeIndicator();
+    this.updateLootDrops();
 
     // 广播技能 CD（每5帧一次）
     this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
@@ -160,11 +183,9 @@ export class WorldScene extends Phaser.Scene {
   private createWorldBackground(): void {
     const g = this.add.graphics();
 
-    // 底色：明显深绿，与地图外的纯黑形成对比
     g.fillStyle(0x1a3a1a, 1);
     g.fillRect(0, 0, WORLD_W, WORLD_H);
 
-    // 网格纹理（气脉感）
     g.lineStyle(1, 0x2d5c2d, 0.8);
     for (let x = 0; x <= WORLD_W; x += 120) {
       g.lineBetween(x, 0, x, WORLD_H);
@@ -173,7 +194,6 @@ export class WorldScene extends Phaser.Scene {
       g.lineBetween(0, y, WORLD_W, y);
     }
 
-    // 散布气穴光点
     for (let i = 0; i < 60; i++) {
       const x = Phaser.Math.Between(0, WORLD_W);
       const y = Phaser.Math.Between(0, WORLD_H);
@@ -182,10 +202,8 @@ export class WorldScene extends Phaser.Scene {
       g.fillCircle(x, y, r);
     }
 
-    // 地图边界：金色粗线，清晰标注边缘
     g.lineStyle(8, 0xd4a853, 0.9);
     g.strokeRect(0, 0, WORLD_W, WORLD_H);
-    // 内侧加一圈细线增强视觉
     g.lineStyle(3, 0xf0e6d3, 0.4);
     g.strokeRect(10, 10, WORLD_W - 20, WORLD_H - 20);
   }
@@ -195,10 +213,8 @@ export class WorldScene extends Phaser.Scene {
     const startY = WORLD_H / 2;
 
     const playerState = gameState.getPlayerState();
-
     const equipment = playerState.equipment;
 
-    // 构建 Combatant 数据
     this.playerCombatant = {
       id: 'player',
       name: '残魂',
@@ -215,25 +231,20 @@ export class WorldScene extends Phaser.Scene {
       frozen: false,
     };
 
-    // AOE_ATTACK 类技能作为主动技能（最多2个）
     const allSkills = getAllAttributeSkills(equipment);
     this.activeSkillIds = allSkills.filter(id => AOE_SKILL_IDS.has(id)).slice(0, 2);
 
     if (this.textures.exists(PLAYER_ATLAS)) {
       this.player = this.physics.add.sprite(startX, startY, PLAYER_ATLAS, 'character_idle_0');
     } else {
-      // 占位（无贴图时用默认精灵）
       this.player = this.physics.add.sprite(startX, startY, '__DEFAULT');
     }
 
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
-    // At scale 0.15, sprite 307px → displayed ~46px
     this.player.setScale(0.15);
 
-    // 碰撞体：在本地坐标系下设置，offset 居中
     if (this.player.body) {
-      // At scale 0.15, sprite 307px → displayed 46px. Body in local coords: 200×260, offset to center
       (this.player.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
     }
   }
@@ -267,7 +278,6 @@ export class WorldScene extends Phaser.Scene {
     let vx = inputManager.moveX;
     let vy = inputManager.moveY;
 
-    // 键盘备用
     if (this.cursors) {
       if (this.cursors.left?.isDown) vx = -1;
       else if (this.cursors.right?.isDown) vx = 1;
@@ -282,12 +292,11 @@ export class WorldScene extends Phaser.Scene {
       vy * PLAYER_SPEED
     );
 
-    // 面向
     if (vx < 0) this.player.setFlipX(true);
     else if (vx > 0) this.player.setFlipX(false);
 
-    // 动画
-    if (this.textures.exists(PLAYER_ATLAS)) {
+    // 攻击动画优先级最高，播放期间不允许被移动动画覆盖
+    if (this.textures.exists(PLAYER_ATLAS) && !this.combatSystem.isAttackAnimActive()) {
       const currentAnim = this.player.anims.currentAnim?.key;
       const runKey = `${PLAYER_ATLAS}_run`;
       const idleKey = `${PLAYER_ATLAS}_idle`;
@@ -308,7 +317,6 @@ export class WorldScene extends Phaser.Scene {
       const { sprite } = entity;
       const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, playerX, playerY);
 
-      // 状态切换
       if (dist < ATTACK_RANGE) {
         entity.state = 'attack';
       } else if (dist < DETECT_RANGE) {
@@ -320,13 +328,11 @@ export class WorldScene extends Phaser.Scene {
       const body = sprite.body as Phaser.Physics.Arcade.Body;
 
       if (entity.state === 'chase' || entity.state === 'attack') {
-        // 追击
         const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
         const speed = entity.state === 'attack' ? CHASE_SPEED * 0.3 : CHASE_SPEED;
         body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
         sprite.setFlipX(playerX < sprite.x);
       } else {
-        // 巡逻：定时随机方向
         entity.patrolTimer -= delta;
         if (entity.patrolTimer <= 0) {
           entity.patrolTimer = Phaser.Math.Between(2000, 4000);
@@ -343,7 +349,6 @@ export class WorldScene extends Phaser.Scene {
         }
       }
 
-      // 动画切换
       if (entity.atlasKey) {
         const isMoving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
         const runKey = `${entity.atlasKey}_run`;
@@ -353,11 +358,164 @@ export class WorldScene extends Phaser.Scene {
         else if (!isMoving && cur !== idleKey && this.anims.exists(idleKey)) sprite.play(idleKey, true);
       }
 
-      // 更新 HP 条位置（跟随精灵）
       if (entity.hpBar && entity.hpBarBg) {
         entity.hpBar.setPosition(sprite.x, sprite.y);
         entity.hpBarBg.setPosition(sprite.x, sprite.y);
       }
+    });
+  }
+
+  // ---- 攻击范围指示器（在玩家周围显示可攻击圆圈） ----
+  private updateAttackRangeIndicator(): void {
+    const g = this.attackRangeIndicator;
+    g.clear();
+
+    const alive = this.entityManager.getAlive();
+    if (alive.length === 0) return;
+
+    // 有敌人在攻击范围内才显示
+    const hasInRange = alive.some(e =>
+      Phaser.Math.Distance.Between(this.player.x, this.player.y, e.sprite.x, e.sprite.y) < AUTO_ATTACK_RANGE
+    );
+    if (!hasInRange) return;
+
+    // 细蓝白圆圈标注攻击范围
+    g.lineStyle(1.5, 0xadd8e6, 0.5);
+    g.strokeCircle(this.player.x, this.player.y, AUTO_ATTACK_RANGE);
+  }
+
+  // ---- 最近妖异方向指示器 ----
+  private updateEnemyIndicator(): void {
+    const g = this.enemyIndicator;
+    g.clear();
+
+    const alive = this.entityManager.getAlive();
+    if (alive.length === 0) return;
+
+    // 画面内有妖异时隐藏指示器
+    const camView = this.cameras.main.worldView;
+    const anyVisible = alive.some(e => camView.contains(e.sprite.x, e.sprite.y));
+    if (anyVisible) return;
+
+    // 找最近妖异
+    let nearest = alive[0];
+    let minDist = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y, nearest.sprite.x, nearest.sprite.y
+    );
+    for (let i = 1; i < alive.length; i++) {
+      const d = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y
+      );
+      if (d < minDist) { minDist = d; nearest = alive[i]; }
+    }
+
+    const angle = Math.atan2(
+      nearest.sprite.y - this.player.y,
+      nearest.sprite.x - this.player.x
+    );
+
+    const R = 36;
+    const cx = this.player.x + Math.cos(angle) * R;
+    const cy = this.player.y + Math.sin(angle) * R;
+
+    const arrowLen = 12;
+    const arrowW = 6;
+    const tipX = cx + Math.cos(angle) * arrowLen;
+    const tipY = cy + Math.sin(angle) * arrowLen;
+    const leftX = cx + Math.cos(angle + Math.PI * 0.7) * arrowW;
+    const leftY = cy + Math.sin(angle + Math.PI * 0.7) * arrowW;
+    const rightX = cx + Math.cos(angle - Math.PI * 0.7) * arrowW;
+    const rightY = cy + Math.sin(angle - Math.PI * 0.7) * arrowW;
+
+    g.fillStyle(0xf85149, 0.9);
+    g.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY);
+
+    g.lineStyle(1.5, 0xf85149, 0.4);
+    g.strokeCircle(this.player.x, this.player.y, R);
+  }
+
+  // ---- 五行能量掉落 ----
+  private createLootDrop(x: number, y: number, wuxing: Wuxing, level: number): void {
+    const color = WUXING_COLORS[wuxing];
+    const wuxingName = WUXING_NAMES[wuxing] ?? '元';
+
+    const g = this.add.graphics().setDepth(8);
+    g.fillStyle(color, 0.85);
+    g.fillCircle(0, 0, 10);
+    g.lineStyle(2, 0xffffff, 0.7);
+    g.strokeCircle(0, 0, 10);
+    g.setPosition(x, y);
+
+    this.tweens.add({
+      targets: g,
+      scaleX: 1.35,
+      scaleY: 1.35,
+      alpha: 0.65,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    const label = this.add.text(x, y - 18, `${wuxingName}能 Lv${level}`, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '10px',
+      color: '#' + color.toString(16).padStart(6, '0'),
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(9);
+
+    this.lootDrops.push({ graphics: g, label, x, y, wuxing, level, collected: false });
+  }
+
+  private updateLootDrops(): void {
+    this.lootDrops = this.lootDrops.filter(drop => {
+      if (drop.collected) return false;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y);
+      if (dist < 35) {
+        drop.collected = true;
+        // 成功率：防御 / (防御 + 五行等级×10 + 5)，范围约 0.05 ~ 0.95
+        const defense = this.playerCombatant.defense;
+        const successRate = Math.min(0.95, (defense + 5) / (defense + drop.level * 10 + 5));
+        if (Math.random() < successRate) {
+          const items = generateSimpleLoot('normal', 1, 1.0);
+          items.forEach(eq => gameState.addToInventory(eq as Equipment));
+          this.showLootText(drop.x, drop.y, '引导成功！', 0x3fb950);
+        } else {
+          this.showLootText(drop.x, drop.y, '引导失败', 0xf85149);
+        }
+        drop.graphics.destroy();
+        drop.label.destroy();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  private clearLootDrops(): void {
+    this.lootDrops.forEach(drop => {
+      drop.graphics.destroy();
+      drop.label.destroy();
+    });
+    this.lootDrops = [];
+  }
+
+  private showLootText(x: number, y: number, msg: string, color: number): void {
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+    const text = this.add.text(x, y - 20, msg, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '12px',
+      color: colorHex,
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(30);
+    this.tweens.add({
+      targets: text,
+      y: y - 50,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
     });
   }
 
@@ -399,68 +557,18 @@ export class WorldScene extends Phaser.Scene {
       this.killTarget = getKillTarget(this.currentRound);
       this.roundCompleting = false;
 
-      // 清理旧 overlay（通过 depth 销毁所有 depth≥200 的对象）
       this.children.list
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter(c => (c as any).depth >= 200)
         .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
 
-      // 清除旧怪，生成新一波
+      // 清除残余怪物和能量掉落，生成新一波
       this.spawnSystem.clearAll();
+      this.clearLootDrops();
       this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
 
       eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
     });
-  }
-
-  private updateEnemyIndicator(): void {
-    const g = this.enemyIndicator;
-    g.clear();
-
-    const alive = this.entityManager.getAlive();
-    if (alive.length === 0) return;
-
-    // 找最近妖异
-    let nearest = alive[0];
-    let minDist = Phaser.Math.Distance.Between(
-      this.player.x, this.player.y, nearest.sprite.x, nearest.sprite.y
-    );
-    for (let i = 1; i < alive.length; i++) {
-      const d = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y
-      );
-      if (d < minDist) { minDist = d; nearest = alive[i]; }
-    }
-
-    // 在攻击范围内不显示指示器
-    if (minDist < 80) return;
-
-    const angle = Math.atan2(
-      nearest.sprite.y - this.player.y,
-      nearest.sprite.x - this.player.x
-    );
-
-    // 绘制箭头：以玩家为中心，半径 36px 处
-    const R = 36;
-    const cx = this.player.x + Math.cos(angle) * R;
-    const cy = this.player.y + Math.sin(angle) * R;
-
-    // 箭头三角形（指向敌人方向）
-    const arrowLen = 12;
-    const arrowW = 6;
-    const tipX = cx + Math.cos(angle) * arrowLen;
-    const tipY = cy + Math.sin(angle) * arrowLen;
-    const leftX = cx + Math.cos(angle + Math.PI * 0.7) * arrowW;
-    const leftY = cy + Math.sin(angle + Math.PI * 0.7) * arrowW;
-    const rightX = cx + Math.cos(angle - Math.PI * 0.7) * arrowW;
-    const rightY = cy + Math.sin(angle - Math.PI * 0.7) * arrowW;
-
-    g.fillStyle(0xf85149, 0.9);
-    g.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY);
-
-    // 外圈细环
-    g.lineStyle(1.5, 0xf85149, 0.4);
-    g.strokeCircle(this.player.x, this.player.y, R);
   }
 
   /** 供 CombatSystem 调用 */

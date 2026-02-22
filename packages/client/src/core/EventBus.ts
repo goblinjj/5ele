@@ -12,6 +12,8 @@ export enum GameEvent {
   ENEMY_DIED        = 'world:enemy_died',
   // UI事件
   SKILL_CD_UPDATE   = 'ui:skill_cd',
+  // 掉落事件
+  LOOT_DROPPED      = 'world:loot_dropped',
   // 回合事件
   KILL_COUNT_UPDATE = 'world:kill_count',
   ROUND_COMPLETE    = 'world:round_complete',

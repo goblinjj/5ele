@@ -84,6 +84,9 @@ export class HUDScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
+    // 灵囊按钮（面板右上区）
+    this.createInventoryButton(width, panelY, height);
+
     // 监听 HP 变更
     eventBus.on(GameEvent.PLAYER_HP_CHANGE, (hp: unknown, maxHp: unknown) => {
       this.playerHp = hp as number;
@@ -235,6 +238,53 @@ export class HUDScene extends Phaser.Scene {
         cdText.setText(`${(t / 1000).toFixed(1)}s`).setAlpha(1);
       } else {
         cdText.setText('').setAlpha(0);
+      }
+    });
+  }
+
+  private createInventoryButton(width: number, panelY: number, height: number): void {
+    const panelH = height * LAYOUT.PANEL_RATIO;
+    const btnSize = 50;
+    const btnX = width - 32 - btnSize / 2;
+    const btnY = panelY + panelH * 0.28;
+
+    const container = this.add.container(btnX, btnY).setDepth(52);
+
+    const bg = this.add.graphics();
+    const drawBg = (active: boolean) => {
+      bg.clear();
+      bg.fillStyle(0x1c2128, active ? 0.5 : 0.9);
+      bg.fillRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
+      bg.lineStyle(1.5, 0xd4a853, active ? 1 : 0.6);
+      bg.strokeRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
+    };
+    drawBg(false);
+
+    const icon = this.add.text(0, -4, '灵', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '18px',
+      color: '#d4a853',
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(0, 14, '囊', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '11px',
+      color: '#8b949e',
+    }).setOrigin(0.5);
+
+    container.add([bg, icon, sub]);
+    container.setSize(btnSize, btnSize);
+    container.setInteractive();
+
+    container.on('pointerdown', () => drawBg(true));
+    container.on('pointerout', () => drawBg(false));
+    container.on('pointerup', () => {
+      drawBg(false);
+      // 背包作为 UI 层叠加，不暂停游戏
+      if (!this.scene.isActive('InventoryScene')) {
+        this.scene.launch('InventoryScene');
+      } else {
+        this.scene.stop('InventoryScene');
       }
     });
   }
