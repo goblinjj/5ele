@@ -12,20 +12,30 @@ import {
   getDefenseWuxing,
   getAllWuxingLevels,
   getAllAttributeSkills,
+  AttributeSkillId,
 } from '@xiyou/shared';
 import { EntityManager } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
 import { CombatSystem } from '../systems/combat/CombatSystem.js';
 
-/** 世界尺寸（视口的3倍） */
-const WORLD_W = 2160;
-const WORLD_H = 2808;
+/** 世界尺寸（视口的5倍，Brotato风格大地图） */
+const WORLD_W = 3600;
+const WORLD_H = 4680;
 
 /** 玩家移动速度 */
 const PLAYER_SPEED = 220;
 
 /** 图集键 */
 const PLAYER_ATLAS = 'player_spirit';
+
+/** AOE 攻击技能 ID 集合 */
+const AOE_SKILL_IDS = new Set([
+  AttributeSkillId.LIEKONGZHAN,
+  AttributeSkillId.HANCHAO,
+  AttributeSkillId.JINGJI,
+  AttributeSkillId.FENTIAN,
+  AttributeSkillId.DILIE,
+]);
 
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -35,6 +45,7 @@ export class WorldScene extends Phaser.Scene {
   private entityManager!: EntityManager;
   private spawnSystem!: SpawnSystem;
   private combatSystem!: CombatSystem;
+  private activeSkillIds: AttributeSkillId[] = [];
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -72,6 +83,11 @@ export class WorldScene extends Phaser.Scene {
     // ---- 相机跟随玩家 ----
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    // 碰撞：玩家与敌人不重叠
+    this.physics.add.collider(this.player, this.spawnSystem.getEnemyGroup());
+    // 碰撞：敌人之间不重叠
+    this.physics.add.collider(this.spawnSystem.getEnemyGroup(), this.spawnSystem.getEnemyGroup());
+
     // ---- 键盘备用 ----
     this.cursors = this.input.keyboard?.createCursorKeys();
 
@@ -83,7 +99,7 @@ export class WorldScene extends Phaser.Scene {
     this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, 1);
 
     // ---- 战斗系统 ----
-    this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem);
+    this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem, this.activeSkillIds);
 
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
@@ -165,6 +181,10 @@ export class WorldScene extends Phaser.Scene {
       frozen: false,
     };
 
+    // AOE_ATTACK 类技能作为主动技能（最多2个）
+    const allSkills = getAllAttributeSkills(equipment);
+    this.activeSkillIds = allSkills.filter(id => AOE_SKILL_IDS.has(id)).slice(0, 2);
+
     if (this.textures.exists(PLAYER_ATLAS)) {
       this.player = this.physics.add.sprite(startX, startY, PLAYER_ATLAS, 'character_idle_0');
     } else {
@@ -174,11 +194,13 @@ export class WorldScene extends Phaser.Scene {
 
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
-    this.player.setScale(2.5);
+    // At scale 0.15, sprite 307px → displayed ~46px
+    this.player.setScale(0.15);
 
-    // 碰撞体缩小
+    // 碰撞体：在本地坐标系下设置，offset 居中
     if (this.player.body) {
-      (this.player.body as Phaser.Physics.Arcade.Body).setSize(24, 32).setOffset(20, 24);
+      // At scale 0.15, sprite 307px → displayed 46px. Body in local coords: 200×260, offset to center
+      (this.player.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
     }
   }
 
@@ -310,4 +332,5 @@ export class WorldScene extends Phaser.Scene {
   getPlayerCombatant(): Combatant { return this.playerCombatant; }
   getEntityManager(): EntityManager { return this.entityManager; }
   getSpawnSystem(): SpawnSystem { return this.spawnSystem; }
+  getActiveSkillIds(): AttributeSkillId[] { return this.activeSkillIds; }
 }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Combatant, generateSimpleLoot } from '@xiyou/shared';
+import { Combatant, generateSimpleLoot, AttributeSkillId } from '@xiyou/shared';
 import { EntityManager, WorldEntity } from '../world/EntityManager.js';
 import { SpawnSystem } from '../world/SpawnSystem.js';
 import { inputManager } from '../input/InputManager.js';
@@ -7,29 +7,44 @@ import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { gameState } from '../GameStateManager.js';
 
-/** 普攻攻击间隔（ms），速度越高间隔越短 */
-const BASE_ATTACK_INTERVAL = 1200;
+const BASE_ATTACK_INTERVAL = 800;  // 自动普攻稍快
 const BASE_SPEED = 10;
+
+/** AOE 技能配置：颜色 + 范围 */
+const AOE_CONFIG: Record<string, { color: number; radius: number; label: string; cd: number }> = {
+  [AttributeSkillId.LIEKONGZHAN]: { color: 0xd4a853, radius: 180, label: '裂空斩', cd: 5000 },
+  [AttributeSkillId.HANCHAO]:     { color: 0x58a6ff, radius: 200, label: '寒潮',   cd: 6000 },
+  [AttributeSkillId.JINGJI]:      { color: 0x3fb950, radius: 160, label: '荆棘',   cd: 5000 },
+  [AttributeSkillId.FENTIAN]:     { color: 0xf85149, radius: 220, label: '焚天',   cd: 7000 },
+  [AttributeSkillId.DILIE]:       { color: 0xa16946, radius: 140, label: '地裂',   cd: 6000 },
+};
 
 export class CombatSystem {
   private scene: Phaser.Scene;
   private entityManager: EntityManager;
   private spawnSystem: SpawnSystem;
+  private activeSkillIds: AttributeSkillId[];
 
-  /** 玩家攻击冷却（ms） */
   private playerAttackTimer: number = 0;
-  private playerSkillTimers: number[] = [0, 0, 0];
-  private readonly playerSkillMaxTimers: number[] = [0, 5000, 8000];
+  private playerSkillTimers: number[] = [0, 0];
+  private playerSkillMaxTimers: number[] = [5000, 8000]; // 默认值，会被 activeSkillIds 覆盖
 
-  constructor(scene: Phaser.Scene, entityManager: EntityManager, spawnSystem: SpawnSystem) {
+  constructor(
+    scene: Phaser.Scene,
+    entityManager: EntityManager,
+    spawnSystem: SpawnSystem,
+    activeSkillIds: AttributeSkillId[] = []
+  ) {
     this.scene = scene;
     this.entityManager = entityManager;
     this.spawnSystem = spawnSystem;
+    this.activeSkillIds = activeSkillIds.slice(0, 2);
+
+    // 根据装备技能设置 CD
+    this.playerSkillMaxTimers = this.activeSkillIds.map(id => AOE_CONFIG[id]?.cd ?? 5000);
+    this.playerSkillTimers = this.playerSkillMaxTimers.map(() => 0);
   }
 
-  /**
-   * 每帧调用
-   */
   update(
     delta: number,
     player: Phaser.Physics.Arcade.Sprite,
@@ -38,34 +53,25 @@ export class CombatSystem {
     this.playerAttackTimer = Math.max(0, this.playerAttackTimer - delta);
     this.playerSkillTimers = this.playerSkillTimers.map(t => Math.max(0, t - delta));
 
-    const justPressed = inputManager.consumeJustPressed();
     const alive = this.entityManager.getAlive();
 
-    // ---- 玩家普攻（持续按住） ----
-    if (inputManager.skillActive[0] && this.playerAttackTimer <= 0) {
-      const target = this.getNearestEnemy(player, alive, 100);
+    // ---- 自动普攻（无需按键） ----
+    if (this.playerAttackTimer <= 0) {
+      const target = this.getNearestEnemy(player, alive, 120);
       if (target) {
         this.playerAttackTimer = this.getAttackInterval(playerCombatant.speed);
         this.attackEnemy(playerCombatant, target);
       }
     }
 
-    // ---- 玩家技能①（AOE，范围攻击） ----
-    if (justPressed[1] && this.playerSkillTimers[1] <= 0) {
-      this.playerSkillTimers[1] = this.playerSkillMaxTimers[1];
-      this.playerAoe(player, playerCombatant, alive, 180);
-    }
-
-    // ---- 玩家技能②（单体强攻 2.5×） ----
-    if (justPressed[2] && this.playerSkillTimers[2] <= 0) {
-      this.playerSkillTimers[2] = this.playerSkillMaxTimers[2];
-      const target = this.getNearestEnemy(player, alive, 200);
-      if (target) {
-        const result = resolveCombat(playerCombatant, target.combatant);
-        const ampDamage = Math.floor(result.damage * 2.5);
-        this.applyDamageToEnemy(target, ampDamage, playerCombatant);
+    // ---- 手动主动技能（来自装备）----
+    const justPressed = inputManager.consumeJustPressed();
+    this.activeSkillIds.forEach((skillId, i) => {
+      if (justPressed[i] && this.playerSkillTimers[i] <= 0) {
+        this.playerSkillTimers[i] = this.playerSkillMaxTimers[i];
+        this.executeActiveSkill(skillId, player, playerCombatant, alive);
       }
-    }
+    });
 
     // ---- 敌人攻击玩家 ----
     alive.forEach(entity => {
@@ -73,7 +79,7 @@ export class CombatSystem {
       const dist = Phaser.Math.Distance.Between(
         entity.sprite.x, entity.sprite.y, player.x, player.y
       );
-      if (dist < 90 && entity.attackTimer <= 0 && entity.state === 'attack') {
+      if (dist < 50 && entity.attackTimer <= 0 && entity.state === 'attack') {
         entity.attackTimer = this.getAttackInterval(entity.combatant.speed);
         this.attackPlayer(entity.combatant, playerCombatant);
         eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
@@ -81,8 +87,55 @@ export class CombatSystem {
     });
   }
 
+  private executeActiveSkill(
+    skillId: AttributeSkillId,
+    player: Phaser.Physics.Arcade.Sprite,
+    playerCombatant: Combatant,
+    alive: WorldEntity[]
+  ): void {
+    const cfg = AOE_CONFIG[skillId];
+    if (!cfg) return;
+
+    const radius = cfg.radius;
+    const color = cfg.color;
+
+    // 视觉效果
+    const circle = this.scene.add.graphics();
+    circle.lineStyle(3, color, 0.9);
+    circle.strokeCircle(player.x, player.y, radius);
+    circle.fillStyle(color, 0.15);
+    circle.fillCircle(player.x, player.y, radius);
+    this.scene.tweens.add({
+      targets: circle,
+      alpha: 0,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 600,
+      onComplete: () => circle.destroy(),
+    });
+
+    // AOE 命中 + 吸血（荆棘）
+    let totalDamage = 0;
+    alive.forEach(e => {
+      const d = Phaser.Math.Distance.Between(player.x, player.y, e.sprite.x, e.sprite.y);
+      if (d <= radius) {
+        const result = resolveCombat(playerCombatant, e.combatant);
+        this.applyDamageToEnemy(e, result.damage, playerCombatant);
+        totalDamage += result.damage;
+      }
+    });
+
+    // 荆棘：回血
+    if (skillId === AttributeSkillId.JINGJI && totalDamage > 0) {
+      const heal = Math.floor(totalDamage * 0.3);
+      playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + heal);
+      eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+      this.showDamageText(player.x, player.y - 50, heal, 0x3fb950);
+    }
+  }
+
   private getAttackInterval(speed: number): number {
-    return Math.max(400, BASE_ATTACK_INTERVAL / (speed / BASE_SPEED));
+    return Math.max(300, BASE_ATTACK_INTERVAL / (speed / BASE_SPEED));
   }
 
   private getNearestEnemy(
@@ -106,85 +159,39 @@ export class CombatSystem {
 
   private applyDamageToEnemy(target: WorldEntity, damage: number, _attacker: Combatant): void {
     target.combatant.hp = Math.max(0, target.combatant.hp - damage);
-
-    // 伤害飘字
-    this.showDamageText(target.sprite.x, target.sprite.y - 40, damage, 0xffffff);
-
-    // 更新 HP 条
+    this.showDamageText(target.sprite.x, target.sprite.y - 25, damage, 0xffffff);
     if (target.hpBar) {
       this.spawnSystem.updateEnemyHpBar(target.hpBar, target.combatant.hp, target.combatant.maxHp);
     }
-
-    // 受击动画
     if (target.atlasKey) {
       const hurtKey = `${target.atlasKey}_hurt`;
-      if (this.scene.anims.exists(hurtKey)) {
-        target.sprite.play(hurtKey, true);
-      }
+      if (this.scene.anims.exists(hurtKey)) target.sprite.play(hurtKey, true);
     }
-
     eventBus.emit(GameEvent.COMBAT_DAMAGE, { damage, target: target.combatant.id });
-
-    if (target.combatant.hp <= 0) {
-      this.onEnemyDeath(target);
-    }
+    if (target.combatant.hp <= 0) this.onEnemyDeath(target);
   }
 
   private attackPlayer(attacker: Combatant, player: Combatant): void {
     const result = resolveCombat(attacker, player);
     player.hp = Math.max(0, player.hp - result.damage);
-
-    // 伤害飘字（屏幕固定位置，因为相机跟随玩家）
     this.showDamageText(
       this.scene.cameras.main.worldView.x + this.scene.cameras.main.width / 2,
-      this.scene.cameras.main.worldView.y + 80,
+      this.scene.cameras.main.worldView.y + 60,
       result.damage,
       0xf85149
     );
-
     if (player.hp <= 0) {
       eventBus.emit(GameEvent.PLAYER_DEATH);
       this.scene.scene.start('MenuScene');
     }
   }
 
-  private playerAoe(
-    player: Phaser.Physics.Arcade.Sprite,
-    playerCombatant: Combatant,
-    targets: WorldEntity[],
-    radius: number
-  ): void {
-    // 视觉效果
-    const circle = this.scene.add.graphics();
-    circle.lineStyle(3, 0xa855f7, 0.8);
-    circle.strokeCircle(player.x, player.y, radius);
-    this.scene.tweens.add({
-      targets: circle,
-      alpha: 0,
-      scaleX: 1.3,
-      scaleY: 1.3,
-      duration: 500,
-      onComplete: () => circle.destroy(),
-    });
-
-    targets.forEach(e => {
-      const d = Phaser.Math.Distance.Between(player.x, player.y, e.sprite.x, e.sprite.y);
-      if (d <= radius) {
-        const result = resolveCombat(playerCombatant, e.combatant);
-        this.applyDamageToEnemy(e, result.damage, playerCombatant);
-      }
-    });
-  }
-
   private onEnemyDeath(entity: WorldEntity): void {
-    // 死亡动画
     if (entity.atlasKey) {
       const dieKey = `${entity.atlasKey}_die`;
       if (this.scene.anims.exists(dieKey)) {
         entity.sprite.play(dieKey);
-        entity.sprite.once('animationcomplete', () => {
-          this.cleanupEnemy(entity);
-        });
+        entity.sprite.once('animationcomplete', () => this.cleanupEnemy(entity));
         return;
       }
     }
@@ -197,8 +204,6 @@ export class CombatSystem {
     entity.hpBarBg?.destroy();
     this.entityManager.remove(entity.combatant.id);
     eventBus.emit(GameEvent.ENEMY_DIED, entity.combatant);
-
-    // 掉落：generateSimpleLoot(nodeType, round, dropRate) => Equipment[]
     const loot = generateSimpleLoot('normal', 1, 0.3);
     loot.forEach(eq => gameState.addToInventory(eq));
   }
@@ -208,27 +213,22 @@ export class CombatSystem {
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const text = this.scene.add.text(x, y, `-${damage}`, {
       fontFamily: 'monospace',
-      fontSize: '20px',
+      fontSize: '14px',
       color: colorHex,
       stroke: '#000000',
       strokeThickness: 3,
     }).setOrigin(0.5).setDepth(30);
-
     this.scene.tweens.add({
       targets: text,
-      y: y - 60,
+      y: y - 40,
       alpha: 0,
-      duration: 900,
+      duration: 800,
       ease: 'Power2',
       onComplete: () => text.destroy(),
     });
   }
 
-  getPlayerSkillTimers(): number[] {
-    return [...this.playerSkillTimers];
-  }
-
-  getPlayerSkillMaxTimers(): number[] {
-    return [...this.playerSkillMaxTimers];
-  }
+  getActiveSkillIds(): AttributeSkillId[] { return this.activeSkillIds; }
+  getPlayerSkillTimers(): number[] { return [...this.playerSkillTimers]; }
+  getPlayerSkillMaxTimers(): number[] { return [...this.playerSkillMaxTimers]; }
 }

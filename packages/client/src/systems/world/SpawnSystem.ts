@@ -115,17 +115,19 @@ export class SpawnSystem {
       sprite.setTint(color);
     }
 
-    sprite.setScale(2.0);
+    // At scale 0.13, sprite 307px → ~40px displayed
+    sprite.setScale(0.13);
     sprite.setDepth(9);
     sprite.setCollideWorldBounds(true);
     if (sprite.body) {
-      (sprite.body as Phaser.Physics.Arcade.Body).setSize(28, 36).setOffset(18, 20);
+      // At scale 0.13, sprite 307px → 40px displayed. Body local coords center the hitbox.
+      (sprite.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
     }
 
-    // HP 条背景
+    // HP 条背景（位置适配 scale 0.13，精灵显示高约 40px，头顶约 y-20）
     const hpBarBg = this.scene.add.graphics();
     hpBarBg.fillStyle(0x1c2128, 1);
-    hpBarBg.fillRect(-24, -50, 48, 7);
+    hpBarBg.fillRect(-20, -25, 40, 5);
     hpBarBg.setDepth(20);
 
     const hpBar = this.scene.add.graphics();
@@ -155,7 +157,7 @@ export class SpawnSystem {
     const pct = Math.max(0, hp / maxHp);
     const color = pct > 0.5 ? 0x3fb950 : pct > 0.25 ? 0xeab308 : 0xf85149;
     hpBar.fillStyle(color, 1);
-    hpBar.fillRect(-24, -50, 48 * pct, 7);
+    hpBar.fillRect(-20, -25, 40 * pct, 5);
   }
 
   getEnemyGroup(): Phaser.Physics.Arcade.Group {
