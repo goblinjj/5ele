@@ -13,6 +13,7 @@ import {
   getEquipmentSkillsDisplay,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+import { uiConfig } from '../config/uiConfig.js';
 
 /**
  * 奖励场景 - 三选一
@@ -40,17 +41,17 @@ export class RewardScene extends Phaser.Scene {
     this.add.rectangle(width / 2, height / 2, width, height, 0x1a1a2e);
 
     // 标题
-    this.add.text(width / 2, 60, '选择奖励', {
-      fontFamily: 'Arial',
-      fontSize: '36px',
-      color: '#ffffff',
+    this.add.text(width / 2, height * 0.04, '选择器物', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontXL}px`,
+      color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, 100, '选择一件装备加入背包', {
-      fontFamily: 'Arial',
-      fontSize: '18px',
-      color: '#aaaaaa',
+    this.add.text(width / 2, height * 0.07, '五行之力已凝练，选择一件器物', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: '#8b949e',
     }).setOrigin(0.5);
 
     // 生成奖励选项
@@ -183,19 +184,19 @@ export class RewardScene extends Phaser.Scene {
 
   private displayRewards(): void {
     const { width, height } = this.cameras.main;
-    const cardWidth = 200;
-    const cardHeight = 300;
-    const spacing = 250;
-    const startX = width / 2 - spacing;
+    const cardWidth = width * 0.85;
+    const cardHeight = height * 0.22;
+    const startY = height * 0.15;
+    const spacing = cardHeight * 1.12;
 
     this.rewardOptions.forEach((equip, index) => {
-      this.createRewardCard(startX + index * spacing, height / 2, equip, index);
+      this.createRewardCard(width / 2, startY + index * spacing, equip, index, cardWidth, cardHeight);
     });
 
     // 跳过按钮
-    const skipBtn = this.add.text(width / 2, height - 60, '跳过', {
-      fontFamily: 'Arial',
-      fontSize: '18px',
+    const skipBtn = this.add.text(width / 2, height * 0.92, '跳过', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#888888',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -204,103 +205,87 @@ export class RewardScene extends Phaser.Scene {
     skipBtn.on('pointerup', () => this.skipReward());
   }
 
-  private createRewardCard(x: number, y: number, equip: Equipment, index: number): void {
-    const cardWidth = 200;
-    const cardHeight = 300;
-
-    // 卡片背景（根据稀有度变色）
+  private createRewardCard(x: number, y: number, equip: Equipment, index: number, cardWidth: number, cardHeight: number): void {
+    // 卡片背景
     const bgColor = this.getRarityColor(equip.rarity);
     const bg = this.add.rectangle(x, y, cardWidth, cardHeight, bgColor);
     bg.setStrokeStyle(3, 0xffffff, 0.5);
     bg.setInteractive({ useHandCursor: true });
 
-    // 五行图标（无属性时用灰色）
+    // 五行图标（左侧）
+    const iconX = x - cardWidth * 0.35;
+    const iconRadius = Math.min(cardHeight * 0.25, cardWidth * 0.1);
     const wuxingColor = equip.wuxing !== undefined ? WUXING_COLORS[equip.wuxing] : 0x8b949e;
-    const icon = this.add.circle(x, y - 80, 30, wuxingColor);
+    const icon = this.add.circle(iconX, y, iconRadius, wuxingColor);
     icon.setStrokeStyle(2, 0xffffff, 0.5);
 
-    // 五行等级（无属性时显示"-"）
-    this.add.text(x, y - 80, equip.wuxing !== undefined ? `${equip.wuxingLevel ?? 1}` : '-', {
+    this.add.text(iconX, y, equip.wuxing !== undefined ? `${equip.wuxingLevel ?? 1}` : '-', {
       fontFamily: 'Arial',
-      fontSize: '20px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
+
+    // 右侧文字区域
+    const textX = x - cardWidth * 0.1;
 
     // 装备名称
-    this.add.text(x, y - 30, equip.name, {
-      fontFamily: 'Arial',
-      fontSize: '18px',
+    this.add.text(textX, y - cardHeight * 0.32, equip.name, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 稀有度
-    this.add.text(x, y, this.getRarityName(equip.rarity), {
-      fontFamily: 'Arial',
-      fontSize: '14px',
-      color: this.getRarityTextColor(equip.rarity),
-    }).setOrigin(0.5);
-
-    // 类型
+    // 稀有度 + 类型
     const typeName = equip.type === EquipmentType.WEAPON ? '武器' :
                      equip.type === EquipmentType.ARMOR ? '铠甲' : '灵器';
-    this.add.text(x, y + 25, typeName, {
-      fontFamily: 'Arial',
-      fontSize: '14px',
-      color: '#aaaaaa',
+    this.add.text(textX, y - cardHeight * 0.12, `${this.getRarityName(equip.rarity)} · ${typeName}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
+      color: this.getRarityTextColor(equip.rarity),
     }).setOrigin(0.5);
 
     // 属性
     let statsText = '';
     if (equip.attack) statsText += `攻击 +${equip.attack}  `;
     if (equip.defense) statsText += `防御 +${equip.defense}`;
-
-    this.add.text(x, y + 60, statsText, {
-      fontFamily: 'Arial',
-      fontSize: '16px',
+    this.add.text(textX, y + cardHeight * 0.05, statsText, {
+      fontFamily: 'monospace',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#22c55e',
     }).setOrigin(0.5);
 
-    // 五行属性（无属性时显示"无属性"）
+    // 五行属性
     const wuxingName = equip.wuxing !== undefined ? WUXING_NAMES[equip.wuxing] : '无';
     const wuxingLevelStr = equip.wuxing !== undefined ? ` Lv.${equip.wuxingLevel ?? 1}` : '';
-    this.add.text(x, y + 90, `${wuxingName}属性${wuxingLevelStr}`, {
-      fontFamily: 'Arial',
-      fontSize: '14px',
+    this.add.text(textX, y + cardHeight * 0.22, `${wuxingName}属性${wuxingLevelStr}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#' + wuxingColor.toString(16).padStart(6, '0'),
     }).setOrigin(0.5);
 
     // 技能描述
     const skills = getEquipmentSkillsDisplay(equip, equip.wuxingLevel ?? 1);
     if (skills.length > 0) {
-      this.add.text(x, y + 115, `【${skills[0].name}】`, {
-        fontFamily: 'Arial',
-        fontSize: '12px',
+      this.add.text(x, y + cardHeight * 0.36, `【${skills[0].name}】${skills[0].description}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#fbbf24',
-        fontStyle: 'bold',
-      }).setOrigin(0.5);
-
-      this.add.text(x, y + 130, skills[0].description, {
-        fontFamily: 'Arial',
-        fontSize: '11px',
-        color: '#cccccc',
-        wordWrap: { width: cardWidth - 20 },
+        wordWrap: { width: cardWidth * 0.85 },
         align: 'center',
       }).setOrigin(0.5, 0);
     }
 
     // 交互效果
     bg.on('pointerover', () => {
-      bg.setScale(1.05);
+      bg.setScale(1.02);
       bg.setStrokeStyle(3, 0xffff00, 1);
     });
-
     bg.on('pointerout', () => {
       bg.setScale(1);
       bg.setStrokeStyle(3, 0xffffff, 0.5);
     });
-
     bg.on('pointerup', () => {
       this.selectReward(equip, index);
     });
