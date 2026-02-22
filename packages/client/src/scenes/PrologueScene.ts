@@ -176,7 +176,7 @@ export class PrologueScene extends Phaser.Scene {
       alpha: 1,
       duration: 800,
       onComplete: () => {
-        this.scene.start('MapScene', { mode: 'single', round: 1 });
+        this.scene.start('WorldScene');
       },
     });
   }
