@@ -6,6 +6,7 @@ import { MapScene } from '../scenes/MapScene.js';
 import { BattleScene } from '../scenes/BattleScene.js';
 import { RewardScene } from '../scenes/RewardScene.js';
 import { InventoryScene } from '../scenes/InventoryScene.js';
+import { HUDScene } from '../scenes/HUDScene.js';
 
 // 设计基准尺寸（9:19.5 竖屏）
 export const GAME_WIDTH = 720;
@@ -17,7 +18,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   height: GAME_HEIGHT,
   parent: 'game-container',
   backgroundColor: '#0d1117',
-  scene: [BootScene, MenuScene, PrologueScene, MapScene, BattleScene, RewardScene, InventoryScene],
+  scene: [BootScene, MenuScene, PrologueScene, MapScene, BattleScene, RewardScene, InventoryScene, HUDScene],
   physics: {
     default: 'arcade',
     arcade: {
