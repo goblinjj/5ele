@@ -25,9 +25,9 @@ import { CombatSystem } from '../systems/combat/CombatSystem.js';
 const WORLD_W = 9200;
 const WORLD_H = 9200;
 
-/** 每轮击杀目标公式：第 N 轮需击杀 10 + (N-1)*5 只 */
+/** 每轮击杀目标公式：第 N 轮需击杀 5×N 只（与 5 波×N 只/波 对应） */
 function getKillTarget(round: number): number {
-  return 10 + (round - 1) * 5;
+  return 5 * round;
 }
 
 /** 玩家移动速度 */
@@ -86,6 +86,9 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.setViewport(0, 0, width, viewportH);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBackgroundColor('#000000');
+
+    // 物理世界边界（必须单独设置，与相机边界无关）
+    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
 
     // ---- 世界背景 ----
     this.createWorldBackground();
@@ -397,7 +400,8 @@ export class WorldScene extends Phaser.Scene {
         .filter(c => (c as any).depth >= 200)
         .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
 
-      // 生成新一波（新圆心仍是世界中心，不影响玩家位置）
+      // 清除旧怪，生成新一波
+      this.spawnSystem.clearAll();
       this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
 
       eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);

@@ -19,6 +19,15 @@ const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
   monster_stone_spirit: { json: 'assets/monsters/石头精/atlas.json',  image: 'assets/monsters/石头精/atlas.png' },
 };
 
+/** 5 波次 → 5 种五行，固定在地图各个区域 */
+const WAVE_DEFINITIONS = [
+  { wuxing: Wuxing.METAL, relX: 0.18, relY: 0.18 }, // 左上 - 金
+  { wuxing: Wuxing.WOOD,  relX: 0.82, relY: 0.18 }, // 右上 - 木
+  { wuxing: Wuxing.WATER, relX: 0.18, relY: 0.82 }, // 左下 - 水
+  { wuxing: Wuxing.FIRE,  relX: 0.82, relY: 0.82 }, // 右下 - 火
+  { wuxing: Wuxing.EARTH, relX: 0.50, relY: 0.10 }, // 上中 - 土
+];
+
 export class SpawnSystem {
   private scene: Phaser.Scene;
   private entityManager: EntityManager;
@@ -67,40 +76,61 @@ export class SpawnSystem {
   }
 
   /**
-   * 在地图上生成一批敌人（大地图每轮 60 + round×10 只）
+   * 每轮生成 5 波敌人，每波固定位置、固定五行属性，每波数量 = 轮数
    */
   spawnEnemies(worldW: number, worldH: number, round: number = 1): void {
     const playerState = gameState.getPlayerState();
     const scaling = playerState.monsterScaling ?? 0.3;
+    const enemiesPerWave = round;
 
-    const totalCount = 60 + round * 10;
-    const centerX = worldW / 2;
-    const centerY = worldH / 2;
-    const safeRadius = 600;
+    WAVE_DEFINITIONS.forEach((waveDef, waveIdx) => {
+      const centerX = worldW * waveDef.relX;
+      const centerY = worldH * waveDef.relY;
+      const wuxingColor = WUXING_COLORS[waveDef.wuxing];
 
-    let spawned = 0;
-    while (spawned < totalCount) {
-      const batch = generateEnemies('normal', round, scaling, 0);
-      for (const combatant of batch) {
-        if (spawned >= totalCount) break;
-        let x: number, y: number;
-        let tries = 0;
-        do {
-          x = Phaser.Math.Between(150, worldW - 150);
-          y = Phaser.Math.Between(150, worldH - 150);
-          tries++;
-        } while (
-          Phaser.Math.Distance.Between(x, y, centerX, centerY) < safeRadius &&
-          tries < 20
-        );
-        if (spawned > 0) combatant.id = `${combatant.id}_r${round}_${spawned}`;
-        this.spawnEnemy(combatant, x, y);
-        spawned++;
+      // 生成足够的怪物模板
+      const templates = generateEnemies('normal', round, scaling, 0);
+
+      for (let i = 0; i < enemiesPerWave; i++) {
+        const base = templates[i % templates.length];
+
+        // 克隆并赋予唯一 ID + 强制五行属性
+        const combatant: Combatant = {
+          ...base,
+          id: `${base.id}_w${waveIdx}_${i}_r${round}`,
+          attackWuxing: { wuxing: waveDef.wuxing, level: round },
+        };
+
+        // 在波次中心周围均匀散布（环形排布）
+        const angle = (i / enemiesPerWave) * Math.PI * 2;
+        const radius = 120 + i * 20; // 小半径聚拢，避免叠在一起
+        const x = Math.max(200, Math.min(worldW - 200, centerX + Math.cos(angle) * radius));
+        const y = Math.max(200, Math.min(worldH - 200, centerY + Math.sin(angle) * radius));
+
+        this.spawnEnemy(combatant, x, y, centerX, centerY, wuxingColor);
       }
-    }
+    });
   }
 
-  private spawnEnemy(combatant: Combatant, x: number, y: number): void {
+  /** 清除地图上所有剩余敌人（换轮时调用） */
+  clearAll(): void {
+    this.entityManager.getAll().forEach(entity => {
+      entity.hpBar?.destroy();
+      entity.hpBarBg?.destroy();
+      if (entity.sprite.active) entity.sprite.destroy();
+    });
+    this.entityManager.clear();
+    this.enemyGroup.clear(); // 清空引用（不重复 destroy）
+  }
+
+  private spawnEnemy(
+    combatant: Combatant,
+    x: number,
+    y: number,
+    patrolCenterX: number,
+    patrolCenterY: number,
+    tintColor: number,
+  ): void {
     const atlasKey = MONSTER_ATLAS_MAP[combatant.name];
     let sprite: Phaser.Physics.Arcade.Sprite;
 
@@ -108,24 +138,18 @@ export class SpawnSystem {
       sprite = this.scene.physics.add.sprite(x, y, atlasKey, 'character_idle_0');
       sprite.play(`${atlasKey}_idle`);
     } else {
-      // Fallback: colored rectangle approximation using graphics overlay
       sprite = this.scene.physics.add.sprite(x, y, '__DEFAULT');
-      const color = combatant.attackWuxing?.wuxing !== undefined
-        ? WUXING_COLORS[combatant.attackWuxing.wuxing as Wuxing]
-        : 0x8b949e;
-      sprite.setTint(color);
     }
 
-    // At scale 0.13, sprite 307px → ~40px displayed
+    // 用五行颜色染色，使每波视觉上统一
+    sprite.setTint(tintColor);
     sprite.setScale(0.13);
     sprite.setDepth(9);
     sprite.setCollideWorldBounds(true);
     if (sprite.body) {
-      // At scale 0.13, sprite 307px → 40px displayed. Body local coords center the hitbox.
       (sprite.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
     }
 
-    // HP 条背景（位置适配 scale 0.13，精灵显示高约 40px，头顶约 y-20）
     const hpBarBg = this.scene.add.graphics();
     hpBarBg.fillStyle(0x1c2128, 1);
     hpBarBg.fillRect(-20, -25, 40, 5);
@@ -133,7 +157,6 @@ export class SpawnSystem {
 
     const hpBar = this.scene.add.graphics();
     hpBar.setDepth(21);
-
     this.updateEnemyHpBar(hpBar, combatant.hp, combatant.maxHp);
 
     const entity: WorldEntity = {
@@ -141,8 +164,8 @@ export class SpawnSystem {
       combatant,
       hpBar,
       hpBarBg,
-      patrolCenterX: x,
-      patrolCenterY: y,
+      patrolCenterX,
+      patrolCenterY,
       state: 'patrol',
       patrolTimer: 0,
       attackTimer: 1000,

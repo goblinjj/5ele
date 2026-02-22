@@ -7,7 +7,7 @@ import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { gameState } from '../GameStateManager.js';
 
-const BASE_ATTACK_INTERVAL = 800;  // 自动普攻稍快
+const BASE_ATTACK_INTERVAL = 1000;  // 默认基准攻击间隔 1 秒
 const BASE_SPEED = 10;
 
 /** AOE 技能配置：颜色 + 范围 */
@@ -135,8 +135,8 @@ export class CombatSystem {
   }
 
   private getAttackInterval(speed: number): number {
-    // 防止 speed=0（未装备时）导致除零得到 Infinity
-    return Math.max(300, BASE_ATTACK_INTERVAL / (Math.max(1, speed) / BASE_SPEED));
+    if (speed <= 0) return BASE_ATTACK_INTERVAL;
+    return Math.max(300, BASE_ATTACK_INTERVAL / (speed / BASE_SPEED));
   }
 
   private getNearestEnemy(
