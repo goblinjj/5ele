@@ -83,8 +83,8 @@ export class MapScene extends Phaser.Scene {
 
   private createPlayerStatus(): void {
     const { width, height } = this.cameras.main;
-    const y = height * 0.17;
-    const statHeight = height * 0.08;
+    const y = height * 0.14;
+    const statHeight = height * 0.06;
 
     // 属性背景
     const statsBg = this.add.graphics();
@@ -165,10 +165,10 @@ export class MapScene extends Phaser.Scene {
   private createInventoryButton(): void {
     const { width, height } = this.cameras.main;
 
-    const btnWidth = Math.max(100, Math.min(140, width * 0.12));
-    const btnHeight = Math.max(36, Math.min(50, height * 0.07));
+    const btnWidth = Math.max(120, Math.min(200, width * 0.35));
+    const btnHeight = Math.max(44, Math.min(60, height * 0.04));
     const btnX = width / 2;
-    const btnY = height * 0.9;
+    const btnY = height * 0.64;
 
     const bg = this.add.rectangle(btnX, btnY, btnWidth, btnHeight, this.colors.inkGrey);
     bg.setStrokeStyle(2, this.colors.goldAccent, 0.5);
@@ -301,23 +301,30 @@ export class MapScene extends Phaser.Scene {
   private displayNodes(): void {
     const { width, height } = this.cameras.main;
 
-    // 标题 - 28%
-    this.add.text(width / 2, height * 0.28, '选择气穴', {
+    // 标题
+    this.add.text(width / 2, height * 0.22, '选择气穴', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontLG}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 响应式卡片尺寸
-    const cardWidth = Math.max(180, Math.min(320, width * 0.26));
-    const cardHeight = Math.max(120, Math.min(180, height * 0.28));
-    const spacing = cardWidth * 1.1;
-    const startX = width / 2 - (this.nodeOptions.length - 1) * spacing / 2;
-    const y = height * 0.55;
+    // 2 列 Grid 布局
+    const cols = 2;
+    const cardWidth = Math.max(160, Math.min(300, width * 0.44));
+    const cardHeight = Math.max(110, Math.min(160, height * 0.13));
+    const colSpacing = cardWidth * 1.1;
+    const rowSpacing = cardHeight * 1.2;
+    const gridWidth = (cols - 1) * colSpacing;
+    const startX = width / 2 - gridWidth / 2;
+    const startY = height * 0.30;
 
     this.nodeOptions.forEach((node, index) => {
-      this.createNodeCard(startX + index * spacing, y, node, index, cardWidth, cardHeight);
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const x = startX + col * colSpacing;
+      const y = startY + row * rowSpacing;
+      this.createNodeCard(x, y, node, index, cardWidth, cardHeight);
     });
   }
 
