@@ -60,7 +60,7 @@
       margin: auto;
     }
 
-    /* 横屏提示遮罩 */
+    /* 竖屏提示遮罩 */
     #orientation-overlay {
       display: none;
       position: fixed;
@@ -83,7 +83,7 @@
 
     @keyframes rotate-phone {
       0%, 100% { transform: rotate(0deg); }
-      50% { transform: rotate(90deg); }
+      50% { transform: rotate(-90deg); }
     }
 
     #orientation-overlay .title {
@@ -97,8 +97,8 @@
       color: #8b949e;
     }
 
-    /* 仅在竖屏时显示遮罩 */
-    @media screen and (orientation: portrait) {
+    /* 仅在横屏时显示遮罩 */
+    @media screen and (orientation: landscape) {
       #orientation-overlay {
         display: flex;
       }
@@ -108,10 +108,10 @@
 <body>
   <div id="game-container"></div>
 
-  <!-- 横屏提示 -->
+  <!-- 竖屏提示 -->
   <div id="orientation-overlay">
     <div class="icon">📱</div>
-    <div class="title">请横屏游玩</div>
+    <div class="title">请竖屏游玩</div>
     <div class="subtitle">旋转您的设备以获得最佳体验</div>
   </div>
 
