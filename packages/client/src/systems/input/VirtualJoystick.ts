@@ -47,8 +47,8 @@ export class VirtualJoystick {
 
   private bindInput(): void {
     this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // 只响应左半屏 + minY 以下的触摸（避免误触技能/buff区域）
-      if (pointer.x < this.scene.cameras.main.width / 2 && pointer.y >= this.minY && this.pointerId === -1) {
+      // 只响应 minY 以下的区域（全宽），避免误触上方内容区
+      if (pointer.y >= this.minY && this.pointerId === -1) {
         this.pointerId = pointer.id;
         this.update(pointer.x, pointer.y);
       }
