@@ -86,8 +86,10 @@ export class HUDScene extends Phaser.Scene {
     // Buff 展示区（技能/状态条下方）
     this.buffArea = this.add.container(0, panelY + 70).setDepth(51);
 
-    // AOE 技能按钮区（buff 栏下方）
-    this.aoeSkillArea = this.add.container(0, panelY + 92).setDepth(51);
+    // AOE 技能按钮区：位于分割线（上方35%区域最底部）正上方
+    const dividerY = panelY + panelH * 0.35;
+    const aoeSkillH = 32;
+    this.aoeSkillArea = this.add.container(0, dividerY - aoeSkillH).setDepth(51);
     this.refreshAoeSkillButtons();
 
     // ── 右上：灵囊 + 赋能按钮 ──
@@ -191,9 +193,11 @@ export class HUDScene extends Phaser.Scene {
     if (activeSkills.length === 0) return;
 
     const { width } = this.cameras.main;
-    const btnW = 68;
-    const btnH = 22;
-    const gap = 6;
+    const totalSkills = activeSkills.length;
+    const availW = width * 0.90;
+    const gap = 4;
+    const btnW = Math.floor((availW - gap * (totalSkills - 1)) / totalSkills);
+    const btnH = 28;
     let x = width * 0.05;
 
     activeSkills.forEach((skill, i) => {
@@ -261,9 +265,11 @@ export class HUDScene extends Phaser.Scene {
       if (t > 0 && maxTimers[i] > 0) {
         const pct = t / maxTimers[i];
         const { width } = this.cameras.main;
-        const btnW = 68;
-        const btnH = 22;
-        const gap = 6;
+        const totalSkills = this.aoeSkillCdOverlays.length;
+        const availW = width * 0.90;
+        const gap = 4;
+        const btnW = Math.floor((availW - gap * (totalSkills - 1)) / totalSkills);
+        const btnH = 28;
         const x = width * 0.05 + i * (btnW + gap);
         overlay.fillStyle(0x000000, 0.6 * pct);
         overlay.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
