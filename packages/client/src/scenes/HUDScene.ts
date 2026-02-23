@@ -41,12 +41,8 @@ export class HUDScene extends Phaser.Scene {
   /** 属性/技能/状态容器（装备变化时整体重建） */
   private infoArea!: Phaser.GameObjects.Container;
   private panelY: number = 0;
-  /** 赋能按钮：记录背景图形和标签，供刷新用 */
-  private wuxingBtnBg!: Phaser.GameObjects.Graphics;
-  private wuxingBtnLabel!: Phaser.GameObjects.Text;
-  private wuxingBtnSub!: Phaser.GameObjects.Text;
-  /** 当前五行选择器所有 scene 级别对象（scene 直属，非 Container 子节点） */
-  private wuxingPickerObjects: Phaser.GameObjects.GameObject[] = [];
+  /** 五行直列按钮容器（持久显示，无需点击展开） */
+  private wuxingDirectContainer!: Phaser.GameObjects.Container;
   /** 持久化弹窗（scene 级别对象，非 Container，避免 setVisible 不级联的问题） */
   private popupBg!: Phaser.GameObjects.Graphics;
   private popupTitle!: Phaser.GameObjects.Text;
@@ -96,9 +92,9 @@ export class HUDScene extends Phaser.Scene {
     this.aoeSkillArea = this.add.container(0, dividerY - aoeSkillH).setDepth(51);
     this.refreshAoeSkillButtons();
 
-    // ── 右上：灵囊 + 赋能按钮 ──
+    // ── 右上：灵囊 + 五行直列按钮 ──
     this.createInventoryButton(width, panelY);
-    this.createWuxingButton(width, panelY);
+    this.createWuxingDirectButtons(width, panelY);
 
     // ── 虚拟摇杆：面板下方 65% 全宽可用 ──
     const joystickMinY = panelY + panelH * 0.35; // 分割线以下全给摇杆
@@ -121,13 +117,14 @@ export class HUDScene extends Phaser.Scene {
       this.renderBuffs(buffs as { label: string; color: number }[]);
     });
 
-    eventBus.on(GameEvent.WUXING_CHOSEN, (wuxing: unknown) => {
-      this.refreshWuxingButton(wuxing as Wuxing | undefined);
+    eventBus.on(GameEvent.WUXING_CHOSEN, () => {
+      this.refreshWuxingDirectButtons();
     });
 
     eventBus.on(GameEvent.STATS_CHANGED, () => {
       this.refreshInfoArea();
       this.refreshAoeSkillButtons();
+      this.refreshWuxingDirectButtons();
     });
 
     eventBus.on(GameEvent.GAME_OVER, () => {
@@ -331,157 +328,60 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
-  /** 赋能按钮：灵囊左侧 */
-  private createWuxingButton(width: number, panelY: number): void {
-    const btnSize = 40;
-    const rightMargin = 12;
-    const gap = 6;
-    const btnX = width - rightMargin - btnSize / 2 - btnSize - gap;
-    const btnY = panelY + 10 + btnSize / 2;
-
-    const container = this.add.container(btnX, btnY).setDepth(52);
-    this.wuxingBtnBg = this.add.graphics();
-
-    const drawWuxingBg = (active: boolean, wuxing?: Wuxing) => {
-      const color = wuxing ? WUXING_COLORS[wuxing] : 0x8b949e;
-      this.wuxingBtnBg.clear();
-      this.wuxingBtnBg.fillStyle(0x1c2128, active ? 0.5 : 0.9);
-      this.wuxingBtnBg.fillRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-      this.wuxingBtnBg.lineStyle(1.5, color, active ? 1 : 0.6);
-      this.wuxingBtnBg.strokeRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-    };
-
-    const initWuxing = gameState.getChosenWuxing();
-    drawWuxingBg(false, initWuxing);
-
-    const iconText = initWuxing ? WUXING_NAMES[initWuxing] : '无';
-    const iconColor = initWuxing ? ('#' + WUXING_COLORS[initWuxing].toString(16).padStart(6, '0')) : '#484f58';
-    this.wuxingBtnLabel = this.add.text(0, -4, iconText, {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '16px', color: iconColor,
-    }).setOrigin(0.5);
-    this.wuxingBtnSub = this.add.text(0, 12, '赋能', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '10px', color: '#8b949e',
-    }).setOrigin(0.5);
-
-    container.add([this.wuxingBtnBg, this.wuxingBtnLabel, this.wuxingBtnSub]);
-    container.setSize(btnSize, btnSize).setInteractive();
-    container.on('pointerdown', () => drawWuxingBg(true, gameState.getChosenWuxing()));
-    container.on('pointerout', () => drawWuxingBg(false, gameState.getChosenWuxing()));
-    container.on('pointerup', () => {
-      drawWuxingBg(false, gameState.getChosenWuxing());
-      // 向下展开选择器（按钮在顶部，往下展开）
-      this.toggleWuxingPicker(btnX, btnY + btnSize / 2 + 6);
-    });
+  /** 创建五行直列按钮区（持久显示，无需展开，点击即选） */
+  private createWuxingDirectButtons(width: number, panelY: number): void {
+    void width; void panelY;
+    this.wuxingDirectContainer = this.add.container(0, 0).setDepth(52);
+    this.refreshWuxingDirectButtons();
   }
 
-  /** 刷新赋能按钮显示（五行所属变化时） */
-  private refreshWuxingButton(wuxing: Wuxing | undefined): void {
-    if (!this.wuxingBtnBg || !this.wuxingBtnLabel) return;
-    const btnSize = 40;
-    const color = wuxing ? WUXING_COLORS[wuxing] : 0x8b949e;
-    this.wuxingBtnBg.clear();
-    this.wuxingBtnBg.fillStyle(0x1c2128, 0.9);
-    this.wuxingBtnBg.fillRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-    this.wuxingBtnBg.lineStyle(1.5, color, 0.6);
-    this.wuxingBtnBg.strokeRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-
-    const iconText = wuxing ? WUXING_NAMES[wuxing] : '无';
-    const iconColor = wuxing ? ('#' + WUXING_COLORS[wuxing].toString(16).padStart(6, '0')) : '#484f58';
-    this.wuxingBtnLabel.setText(iconText).setColor(iconColor);
-  }
-
-  /** 打开/关闭五行选择器浮层（向下展开） */
-  private toggleWuxingPicker(anchorX: number, anchorY: number): void {
-    if (this.wuxingPickerObjects.length > 0) {
-      this.closeWuxingPicker();
-      return;
-    }
+  /** 刷新五行直列按钮（装备变化 / 五行选择变化时调用） */
+  private refreshWuxingDirectButtons(): void {
+    this.wuxingDirectContainer.removeAll(true);
+    const { width } = this.cameras.main;
 
     const available = gameState.getAvailableWuxing();
-    if (available.length === 0) {
-      const tip = this.add.text(anchorX, anchorY + 10, '装备有五行属性的灵器', {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
-        color: '#8b949e',
-        backgroundColor: '#1c2128',
-        padding: { x: 8, y: 4 },
-      }).setOrigin(0.5).setDepth(200);
-      this.wuxingPickerObjects.push(tip);
-      this.time.delayedCall(1500, () => {
-        const idx = this.wuxingPickerObjects.indexOf(tip);
-        if (idx !== -1) this.wuxingPickerObjects.splice(idx, 1);
-        tip.destroy();
-      });
-      return;
-    }
+    if (available.length === 0) return;
 
     const currentWuxing = gameState.getChosenWuxing();
-    const options: Array<{ wuxing: Wuxing | null; label: string; color: number }> = available.map(wx => ({
-      wuxing: wx,
-      label: WUXING_NAMES[wx],
-      color: WUXING_COLORS[wx],
-    }));
-    if (currentWuxing) {
-      options.push({ wuxing: null, label: '清除', color: 0x484f58 });
-    }
+    const rightMargin = 12;
+    const invBtnSize = 40; // 灵囊按钮宽度
+    const gap = 6;
+    const pillW = 40;
+    const pillH = 26;
+    const pillGap = 4;
+    // 列中心 x：灵囊按钮左侧（与原赋能按钮同位置）
+    const cx = width - rightMargin - invBtnSize - gap - pillW / 2;
+    const startY = this.panelY + 8;
 
-    const pillW = 52;
-    const pillH = 52;
-    const gap = 8;
-    const totalW = options.length * pillW + (options.length - 1) * gap;
-    // 防止超出右边框
-    const screenW = this.cameras.main.width;
-    const margin = 8;
-    const naturalStartX = anchorX - totalW / 2 + pillW / 2;
-    const naturalEndX = naturalStartX + (options.length - 1) * (pillW + gap) + pillW / 2;
-    const overflow = Math.max(0, naturalEndX - (screenW - margin));
-    const startX = naturalStartX - overflow;
-    // 向下展开：cy 是 pill 行中心，在 anchorY 下方
-    const cy = anchorY + pillH / 2 + 4;
+    available.forEach((wx, i) => {
+      const isSelected = wx === currentWuxing;
+      const color = WUXING_COLORS[wx];
+      const cy = startY + i * (pillH + pillGap) + pillH / 2;
 
-    // 背景遮罩（tap 关闭）
-    const overlay = this.add.rectangle(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      0x000000, 0.01
-    ).setDepth(199).setInteractive();
-    overlay.on('pointerup', () => this.closeWuxingPicker());
-    this.wuxingPickerObjects.push(overlay);
+      const bg = this.add.graphics();
+      bg.fillStyle(color, isSelected ? 0.35 : 0.08);
+      bg.fillRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 6);
+      bg.lineStyle(isSelected ? 2 : 1, color, isSelected ? 0.9 : 0.35);
+      bg.strokeRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 6);
+      this.wuxingDirectContainer.add(bg);
 
-    options.forEach((opt, i) => {
-      const ox = startX + i * (pillW + gap);
-      const isSelected = opt.wuxing !== null && opt.wuxing === currentWuxing;
-
-      const bg = this.add.graphics().setDepth(201);
-      bg.fillStyle(0x1c2128, 0.95);
-      bg.fillRoundedRect(ox - pillW / 2, cy - pillH / 2, pillW, pillH, 10);
-      bg.lineStyle(2, opt.color, isSelected ? 1 : 0.5);
-      bg.strokeRoundedRect(ox - pillW / 2, cy - pillH / 2, pillW, pillH, 10);
-      this.wuxingPickerObjects.push(bg);
-
-      const lbl = this.add.text(ox, cy, opt.label, {
+      const lbl = this.add.text(cx, cy, WUXING_NAMES[wx], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '18px',
-        color: '#' + opt.color.toString(16).padStart(6, '0'),
-      }).setOrigin(0.5).setDepth(202);
-      this.wuxingPickerObjects.push(lbl);
+        fontSize: isSelected ? '15px' : '13px',
+        color: '#' + color.toString(16).padStart(6, '0'),
+      }).setOrigin(0.5);
+      this.wuxingDirectContainer.add(lbl);
 
-      const hit = this.add.rectangle(ox, cy, pillW, pillH, 0xffffff, 0)
-        .setDepth(203).setInteractive();
+      // 点击选择/取消选择（再次点击已选中的则取消）
+      const hit = this.add.rectangle(cx, cy, pillW, pillH, 0, 0).setInteractive();
       hit.on('pointerup', () => {
-        this.closeWuxingPicker();
-        gameState.setChosenWuxing(opt.wuxing ?? undefined);
-        eventBus.emit(GameEvent.WUXING_CHOSEN, opt.wuxing ?? undefined);
+        const next = isSelected ? undefined : wx;
+        gameState.setChosenWuxing(next);
+        eventBus.emit(GameEvent.WUXING_CHOSEN, next);
       });
-      this.wuxingPickerObjects.push(hit);
+      this.wuxingDirectContainer.add(hit);
     });
-  }
-
-  private closeWuxingPicker(): void {
-    this.wuxingPickerObjects.forEach(o => (o as Phaser.GameObjects.GameObject).destroy());
-    this.wuxingPickerObjects = [];
   }
 
   /** 重建属性/技能/状态显示（装备/五行变化时调用） */
@@ -785,8 +685,6 @@ export class HUDScene extends Phaser.Scene {
 
   shutdown(): void {
     this.joystick?.destroy();
-    this.closeWuxingPicker();
-    this.wuxingPickerObjects = [];
     this.popupKey = '';
   }
 }
