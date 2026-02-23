@@ -133,105 +133,9 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.createPersistentInfoPopup();
-    this.createPopupTestRow();
   }
 
-  /** 临时测试行：验证弹窗在移动端是否可用（测完可删）
-   *  改用场景级 pointerdown（与摇杆同机制）替代 setInteractive，确保触控可用 */
-  private createPopupTestRow(): void {
-    const { width } = this.cameras.main;
-    const rowY = this.panelY + 110; // 面板内部，buff栏下方、AOE按钮上方
-
-    const labels = [
-      { text: 'A: setVisible弹窗', desc: '方法A：scene级别对象 setVisible 显示/隐藏，可行则弹窗正常', color: 0xd4a853 },
-      { text: 'B: 创建销毁弹窗', desc: '方法B：每次 add/destroy 弹窗容器，可行则弹窗正常', color: 0x58a6ff },
-    ];
-
-    const btnW = (width - 20) / labels.length - 4;
-    // 存储按钮坐标范围，供场景级监听器判断点击目标
-    const bounds: Array<{ x1: number; y1: number; x2: number; y2: number; idx: number }> = [];
-
-    labels.forEach((item, i) => {
-      const bx = 10 + i * (btnW + 4);
-      const bg = this.add.graphics().setDepth(350);
-      bg.fillStyle(0x1c2128, 0.9);
-      bg.fillRoundedRect(bx, rowY - 16, btnW, 32, 5);
-      bg.lineStyle(2, item.color, 0.9);
-      bg.strokeRoundedRect(bx, rowY - 16, btnW, 32, 5);
-
-      this.add.text(bx + btnW / 2, rowY, item.text, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
-        color: '#' + item.color.toString(16).padStart(6, '0'),
-      }).setOrigin(0.5).setDepth(351);
-
-      bounds.push({ x1: bx, y1: rowY - 16, x2: bx + btnW, y2: rowY + 16, idx: i });
-    });
-
-    // 调试信息：显示最近一次触点的游戏坐标 y（帮助诊断坐标映射）
-    const debugTxt = this.add.text(width / 2, rowY + 22, '点击任意处查看坐标', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#484f58',
-    }).setOrigin(0.5).setDepth(352);
-
-    // 场景级 pointerdown（与摇杆同机制，绕过 setInteractive 潜在问题）
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      debugTxt.setText(`tap y=${Math.round(pointer.y)}`);
-      for (const b of bounds) {
-        if (pointer.x >= b.x1 && pointer.x <= b.x2 &&
-            pointer.y >= b.y1 && pointer.y <= b.y2) {
-          if (b.idx === 0) {
-            this.toggleInfoPopup(labels[0].text, labels[0].desc, labels[0].color);
-          } else {
-            this.showPopupB(labels[1].text, labels[1].desc, labels[1].color);
-          }
-          break;
-        }
-      }
-    });
-  }
-
-  /** 测试方法B：每次 add / destroy 创建弹窗 */
-  private popupBContainer: Phaser.GameObjects.Container | null = null;
-  private showPopupB(title: string, description: string, color: number): void {
-    if (this.popupBContainer) {
-      this.popupBContainer.destroy();
-      this.popupBContainer = null;
-      return;
-    }
-    const { width } = this.cameras.main;
-    const popupW = Math.min(width * 0.7, 260);
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
-
-    const container = this.add.container(width / 2, -9999).setDepth(350);
-
-    const titleTxt = this.add.text(0, 10, title, {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '13px', color: colorHex,
-    }).setOrigin(0.5, 0);
-    container.add(titleTxt);
-
-    const descTxt = this.add.text(0, 30, description, {
-      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: '#c9d1d9',
-      wordWrap: { width: popupW - 20 }, align: 'center',
-    }).setOrigin(0.5, 0);
-    container.add(descTxt);
-
-    const totalH = Math.max(80, 30 + descTxt.height + 14);
-    const bg = this.add.graphics();
-    bg.fillStyle(0x1c2128, 0.97);
-    bg.fillRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
-    bg.lineStyle(1.5, color, 0.8);
-    bg.strokeRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
-    container.addAt(bg, 0);
-
-    const hit = this.add.rectangle(0, totalH / 2, popupW, totalH, 0xffffff, 0)
-      .setInteractive({ useHandCursor: true });
-    hit.on('pointerup', () => { container.destroy(); this.popupBContainer = null; });
-    container.add(hit);
-
-    container.setY(this.panelY - 8 - totalH);
-    this.popupBContainer = container;
-  }
-
+  /** 测试方法B（保留供内部调用，无入口） */
   private createPlayerHpBar(width: number, panelY: number): void {
     // HP 条宽度：左侧 60%，右侧留给赋能+灵囊按钮
     const barW = width * 0.50;
@@ -845,6 +749,5 @@ export class HUDScene extends Phaser.Scene {
     this.closeWuxingPicker();
     this.wuxingPickerObjects = [];
     this.popupKey = '';
-    this.popupBContainer = null;
   }
 }
