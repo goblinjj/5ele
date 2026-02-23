@@ -54,6 +54,8 @@ export class HUDScene extends Phaser.Scene {
   private popupHit!: Phaser.GameObjects.Rectangle;
   /** 当前展示的 pill key，用于 toggle 判断 */
   private popupKey: string = '';
+  /** 上一次 buff 数据（供合并弹框使用） */
+  private lastBuffs: { label: string; color: number; description?: string }[] = [];
   /** 游戏失败覆盖是否已显示（防止重复创建） */
   private gameOverShown: boolean = false;
 
@@ -133,6 +135,17 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.createPersistentInfoPopup();
+
+    // 技能/状态/Buff 区域单击 → 显示合并弹框（场景级监听，可靠触控）
+    const effectsX2 = width * 0.58;   // 右侧留给灵囊/赋能按钮
+    const effectsY1 = panelY + 22;
+    const effectsY2 = panelY + 100;
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.x <= effectsX2 &&
+          pointer.y >= effectsY1 && pointer.y <= effectsY2) {
+        this.toggleInfoPopup('当前效果', this.buildAllEffectsText(), 0xd4a853);
+      }
+    });
   }
 
   /** 测试方法B（保留供内部调用，无入口） */
@@ -554,18 +567,12 @@ export class HUDScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
     void pillH;
 
-    if (description) {
-      // 使用自定义 40px 高的点击区域，确保移动端可触控
-      txt.setInteractive(
-        new Phaser.Geom.Rectangle(-4, -20, txt.width + 8, 40),
-        Phaser.Geom.Rectangle.Contains
-      );
-      txt.on('pointerup', () => this.toggleInfoPopup(label, description, color));
-    }
+    void description; // 描述由区域级合并弹框统一展示
     return txt;
   }
 
   private renderBuffs(buffs: { label: string; color: number; description?: string }[]): void {
+    this.lastBuffs = buffs ? [...buffs] : [];
     this.buffArea.removeAll(true);
     if (!buffs || buffs.length === 0) return;
 
@@ -593,11 +600,6 @@ export class HUDScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.buffArea.add(lbl);
 
-      // 可点击弹窗：40px 高确保移动端触控
-      const hit = this.add.rectangle(x + pillW / 2, 0, pillW, 40, 0xffffff, 0).setInteractive({ useHandCursor: true });
-      this.buffArea.add(hit);
-      hit.on('pointerup', () => this.toggleInfoPopup(label, description ?? label, color));
-
       x += pillW + gap;
     });
   }
@@ -605,22 +607,22 @@ export class HUDScene extends Phaser.Scene {
   /** 创建持久弹窗（scene 级别，非 Container，避免 Phaser 3.80 Container.setVisible 不级联输入的问题） */
   private createPersistentInfoPopup(): void {
     const { width } = this.cameras.main;
-    const popupW = Math.min(width * 0.7, 260);
+    const popupW = Math.min(width * 0.82, 340);
 
     this.popupBg = this.add.graphics().setDepth(300).setVisible(false);
 
     this.popupTitle = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '13px',
+      fontSize: '15px',
       color: '#d4a853',
     }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
     this.popupDesc = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '11px',
+      fontSize: '13px',
       color: '#c9d1d9',
-      wordWrap: { width: popupW - 20 },
-      align: 'center',
+      wordWrap: { width: popupW - 24 },
+      align: 'left',
     }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
     // hit rect 初始时不可见且不可交互，显示后再激活
@@ -632,15 +634,15 @@ export class HUDScene extends Phaser.Scene {
   private showInfoPopup(title: string, description: string, color: number): void {
     const { width } = this.cameras.main;
     const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const popupW = Math.min(width * 0.7, 260);
+    const popupW = Math.min(width * 0.82, 340);
     const popupX = width / 2;
 
     // 先设置文字内容（以便测量高度）
     this.popupTitle.setText(title).setColor(colorHex).setX(popupX);
     this.popupDesc.setText(description).setX(popupX);
 
-    const totalH = Math.max(80, 30 + this.popupDesc.height + 14);
-    const topY = this.panelY - 8 - totalH;
+    const totalH = Math.max(80, 34 + this.popupDesc.height + 14);
+    const topY = Math.max(10, this.panelY - 8 - totalH);
 
     // 绘制背景
     this.popupBg.clear();
@@ -666,6 +668,41 @@ export class HUDScene extends Phaser.Scene {
     this.popupHit.setVisible(true);
 
     this.popupKey = title;
+  }
+
+  /** 构建"当前所有效果"合并文本 */
+  private buildAllEffectsText(): string {
+    const eq = {
+      weapon: gameState.getWeapon(),
+      armor: gameState.getArmor(),
+      treasures: gameState.getTreasures(),
+    };
+    const skills = getAllEquipmentSkills(eq);
+    const statuses = getWuxingPassiveStatuses(eq);
+    const parts: string[] = [];
+
+    if (skills.length > 0) {
+      parts.push('── 技能 ──');
+      for (const sk of skills) {
+        parts.push(`${sk.name} Lv${sk.level}\n  ${sk.description}`);
+      }
+    }
+    if (statuses.length > 0) {
+      if (parts.length) parts.push('');
+      parts.push('── 状态 ──');
+      for (const st of statuses) {
+        const def = STATUS_DEFINITIONS[st.type];
+        if (def) parts.push(`${def.name} Lv${st.level}\n  ${def.description ?? ''}`);
+      }
+    }
+    if (this.lastBuffs.length > 0) {
+      if (parts.length) parts.push('');
+      parts.push('── Buff ──');
+      for (const b of this.lastBuffs) {
+        parts.push(b.description ?? b.label);
+      }
+    }
+    return parts.length > 0 ? parts.join('\n') : '暂无技能、状态或 Buff';
   }
 
   private hideInfoPopup(): void {
@@ -741,6 +778,8 @@ export class HUDScene extends Phaser.Scene {
     } else {
       this.scene.launch('InventoryScene');
       this.scene.bringToTop('InventoryScene');
+      // HUDScene 始终保持最上层（弹框不被遮盖）
+      this.scene.bringToTop('HUDScene');
     }
   }
 
