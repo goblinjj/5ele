@@ -92,6 +92,10 @@ export class InventoryScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => {
       if (this.contextMenu) {
         this.closeContextMenu();
+      } else if (this.selectedSlot && this.topMessage) {
+        // 取消归元模式
+        this.selectedSlot = undefined;
+        this.closeTopMessage();
       } else {
         this.closeScene();
       }
@@ -512,8 +516,12 @@ export class InventoryScene extends Phaser.Scene {
           this.closeTopMessage();
           this.handleDevour(this.selectedSlot, src);
           this.selectedSlot = undefined;
+        } else if (!src.equipment) {
+          // 点击空格子 → 取消归元模式
+          this.selectedSlot = undefined;
+          this.closeTopMessage();
         }
-        // 点击非背包或空格子时忽略
+        // 点击非背包有装备格子时忽略（继续等待选择）
       } else {
         // 普通选中：更新详情面板
         this.refreshDetailPanel(src.equipment ? src : undefined);
@@ -781,8 +789,8 @@ export class InventoryScene extends Phaser.Scene {
     gameState.removeFromInventory(sacrificeSlot.index);
 
     const result = SynthesisSystem.devourEquipped(equipSlot.type, equipSlot.index, sacrifice);
+    eventBus.emit(GameEvent.STATS_CHANGED);  // always emit — inventory changed
     if (result.success && result.upgradedItem) {
-      eventBus.emit(GameEvent.STATS_CHANGED);
       this.showTopMessage(`归元成功！${result.upgradedItem.name} 变得更强了！`, '#3fb950');
     } else {
       this.showTopMessage(`归元失败... ${sacrifice.name} 消散了`, '#f85149');
@@ -817,7 +825,7 @@ export class InventoryScene extends Phaser.Scene {
 
     this.specialNotification = this.add.container(width / 2, height / 2);
 
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.9);
+    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.9).setInteractive();
     this.specialNotification.add(overlay);
 
     const glow = this.add.graphics();
@@ -941,7 +949,7 @@ export class InventoryScene extends Phaser.Scene {
     const msgWidth = Math.max(400, Math.min(650, width * 0.55));
     const msgHeight = Math.max(50, Math.min(60, height * 0.085));
 
-    this.topMessage = this.add.container(width / 2, height * 0.50);
+    this.topMessage = this.add.container(width / 2, height * 0.62);
 
     const bg = this.add.graphics();
     bg.fillStyle(this.colors.inkBlack, 0.98);
