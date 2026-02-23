@@ -66,6 +66,9 @@ export class HUDScene extends Phaser.Scene {
     panelBg.fillRect(0, panelY, width, panelH);
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
+    // 摇杆区分割线：将信息展示区与摇杆区分隔
+    panelBg.lineStyle(1, 0xd4a853, 0.18);
+    panelBg.lineBetween(0, panelY + panelH * 0.5, width, panelY + panelH * 0.5);
 
     // ── 左上：HP 条 + 属性/技能/状态 ──
     this.createPlayerHpBar(width, panelY);

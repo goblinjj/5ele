@@ -293,6 +293,8 @@ export class WorldScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.isGameOver) return;
+    // 灵囊界面开启时暂停世界更新（防止玩家死亡/倒计时归零）
+    if (this.scene.isActive('InventoryScene')) return;
 
     // ---- 轮次过渡倒计时（玩家可继续操作） ----
     if (this.roundTransitioning) {
@@ -735,19 +737,22 @@ export class WorldScene extends Phaser.Scene {
 
     this.channelingTimer -= delta;
 
-    // 绘制进度弧（金色圆弧，顺时针填充）
+    // 绘制进度弧（围绕器物，金色圆弧，顺时针填充）
     const g = this.channelingIndicator;
     g.clear();
     const progress = 1 - Math.max(0, this.channelingTimer) / CHANNEL_DURATION;
     if (progress > 0) {
+      const tx = this.channelingTarget.x;
+      const ty = this.channelingTarget.y;
       const endAngle = -Math.PI / 2 + Math.PI * 2 * progress;
-      g.lineStyle(3, 0xd4a853, 0.9);
-      g.beginPath();
-      g.arc(this.player.x, this.player.y, 42, -Math.PI / 2, endAngle, false, 0.02);
-      g.strokePath();
       // 背景圆（灰色）
-      g.lineStyle(3, 0x30363d, 0.5);
-      g.strokeCircle(this.player.x, this.player.y, 42);
+      g.lineStyle(4, 0x30363d, 0.6);
+      g.strokeCircle(tx, ty, 20);
+      // 进度弧（金色）
+      g.lineStyle(4, 0xd4a853, 1.0);
+      g.beginPath();
+      g.arc(tx, ty, 20, -Math.PI / 2, endAngle, false, 0.02);
+      g.strokePath();
     }
 
     if (this.channelingTimer <= 0) {
