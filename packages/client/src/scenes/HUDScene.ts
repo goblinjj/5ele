@@ -47,8 +47,14 @@ export class HUDScene extends Phaser.Scene {
   private wuxingBtnSub!: Phaser.GameObjects.Text;
   /** 当前五行选择器所有 scene 级别对象（scene 直属，非 Container 子节点） */
   private wuxingPickerObjects: Phaser.GameObjects.GameObject[] = [];
-  /** 当前弹窗（点击技能/状态/buff 时显示） */
-  private activePopup: Phaser.GameObjects.Container | null = null;
+  /** 持久化弹窗组件（不销毁，只 setVisible） */
+  private infoPopupContainer!: Phaser.GameObjects.Container;
+  private infoPopupBg!: Phaser.GameObjects.Graphics;
+  private infoPopupTitle!: Phaser.GameObjects.Text;
+  private infoPopupDesc!: Phaser.GameObjects.Text;
+  private infoPopupHit!: Phaser.GameObjects.Rectangle;
+  /** 当前展示的 pill key（title 文字），用于 toggle 判断 */
+  private infoPopupKey: string = '';
 
   constructor() {
     super({ key: 'HUDScene' });
@@ -121,6 +127,8 @@ export class HUDScene extends Phaser.Scene {
     eventBus.on(GameEvent.GAME_OVER, () => {
       this.showGameOverOverlay();
     });
+
+    this.createPersistentInfoPopup();
   }
 
   private createPlayerHpBar(width: number, panelY: number): void {
@@ -579,65 +587,75 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
-  /** 切换信息弹窗（点击技能/状态/buff pill 时调用） */
-  private toggleInfoPopup(title: string, description: string, color: number): void {
-    if (this.activePopup) {
-      this.activePopup.destroy();
-      this.activePopup = null;
-      return;
-    }
-
+  private createPersistentInfoPopup(): void {
     const { width } = this.cameras.main;
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
     const popupW = Math.min(width * 0.7, 260);
-    const popupX = width / 2;
+    const popupH = 80;
 
-    // 先在屏幕外构建内容，测量高度后再定位
-    const container = this.add.container(popupX, -999).setDepth(300);
+    this.infoPopupContainer = this.add.container(width / 2, 0).setDepth(300).setVisible(false);
 
-    const bg = this.add.graphics();
-    container.add(bg);
+    this.infoPopupBg = this.add.graphics();
+    this.infoPopupContainer.add(this.infoPopupBg);
 
-    const titleTxt = this.add.text(0, 6, title, {
+    this.infoPopupTitle = this.add.text(0, 10, '', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '13px',
-      color: colorHex,
+      color: '#d4a853',
     }).setOrigin(0.5, 0);
-    container.add(titleTxt);
+    this.infoPopupContainer.add(this.infoPopupTitle);
 
-    const descTxt = this.add.text(0, 28, description, {
+    this.infoPopupDesc = this.add.text(0, 30, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '11px',
       color: '#c9d1d9',
       wordWrap: { width: popupW - 20 },
       align: 'center',
     }).setOrigin(0.5, 0);
-    container.add(descTxt);
+    this.infoPopupContainer.add(this.infoPopupDesc);
 
-    // 根据内容高度绘制背景，将弹窗底部贴近控制面板顶部（游戏区域底部）
-    const totalH = 22 + descTxt.height + 14;
-    bg.fillStyle(0x1c2128, 0.97);
-    bg.fillRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
-    bg.lineStyle(1.5, color, 0.8);
-    bg.strokeRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
-
-    // 更新文字位置（相对于 bg 顶部）
-    titleTxt.setY(10);
-    descTxt.setY(30);
-
-    // 定位容器：底部对齐 panelY - 8
-    container.setY(this.panelY - 8 - totalH);
-
-    // 点击弹窗本身关闭
-    const hit = this.add.rectangle(0, totalH / 2, popupW, totalH, 0xffffff, 0)
+    this.infoPopupHit = this.add.rectangle(0, popupH / 2, popupW, popupH, 0xffffff, 0)
       .setInteractive({ useHandCursor: true });
-    container.add(hit);
-    hit.on('pointerup', () => {
-      container.destroy();
-      this.activePopup = null;
-    });
+    this.infoPopupHit.on('pointerup', () => this.hideInfoPopup());
+    this.infoPopupContainer.add(this.infoPopupHit);
+  }
 
-    this.activePopup = container;
+  private showInfoPopup(title: string, description: string, color: number): void {
+    const { width } = this.cameras.main;
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+    const popupW = Math.min(width * 0.7, 260);
+
+    this.infoPopupTitle.setText(title).setColor(colorHex);
+    this.infoPopupDesc.setText(description);
+
+    // 根据描述高度调整背景
+    const totalH = Math.max(80, 30 + this.infoPopupDesc.height + 14);
+    this.infoPopupBg.clear();
+    this.infoPopupBg.fillStyle(0x1c2128, 0.97);
+    this.infoPopupBg.fillRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
+    this.infoPopupBg.lineStyle(1.5, color, 0.8);
+    this.infoPopupBg.strokeRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
+
+    this.infoPopupHit.setSize(popupW, totalH).setY(totalH / 2);
+
+    // 底部对齐控制面板顶部 - 8px
+    this.infoPopupContainer.setY(this.panelY - 8 - totalH);
+    this.infoPopupContainer.setVisible(true);
+    this.infoPopupKey = title;
+  }
+
+  private hideInfoPopup(): void {
+    this.infoPopupContainer?.setVisible(false);
+    this.infoPopupKey = '';
+  }
+
+  /** 切换信息弹窗（点击技能/状态/buff pill 时调用） */
+  private toggleInfoPopup(title: string, description: string, color: number): void {
+    // 同一 pill 再次点击 → 关闭；不同 pill → 更新内容
+    if (this.infoPopupContainer?.visible && this.infoPopupKey === title) {
+      this.hideInfoPopup();
+    } else {
+      this.showInfoPopup(title, description, color);
+    }
   }
 
   /** 游戏失败全屏覆盖（遮盖操控区域） */
@@ -701,7 +719,6 @@ export class HUDScene extends Phaser.Scene {
     this.joystick?.destroy();
     this.closeWuxingPicker();
     this.wuxingPickerObjects = [];
-    this.activePopup?.destroy();
-    this.activePopup = null;
+    this.hideInfoPopup();
   }
 }
