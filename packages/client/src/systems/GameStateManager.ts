@@ -378,6 +378,22 @@ export class GameStateManager {
     return this.chosenWuxing;
   }
 
+  /**
+   * 直接替换装备槽中的装备（用于归元后原地升级）
+   */
+  replaceEquippedItem(slotType: 'weapon' | 'armor' | 'treasure', slotIndex: number, upgraded: Equipment): void {
+    if (slotType === 'weapon') {
+      this.playerState.equipment.weapon = upgraded;
+    } else if (slotType === 'armor') {
+      this.playerState.equipment.armor = upgraded;
+    } else if (slotType === 'treasure') {
+      if (slotIndex >= 0 && slotIndex < this.playerState.equipment.treasures.length) {
+        this.playerState.equipment.treasures[slotIndex] = upgraded;
+      }
+    }
+    this.recalculateMaxHp();
+  }
+
   /** 设置五行所属（undefined 表示清除） */
   setChosenWuxing(wuxing: Wuxing | undefined): void {
     this.chosenWuxing = wuxing;

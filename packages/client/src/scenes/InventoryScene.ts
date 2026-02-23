@@ -25,17 +25,14 @@ interface SlotInfo {
  * 灵囊管理场景
  *
  * 交互方式：
- *  - 单击格子     → 仅查看装备属性（只读弹窗）
- *  - 双击格子     → 直接穿戴/卸下
+ *  - 单击格子     → 右侧详情面板显示装备信息及操作按钮（穿戴/卸下/归元）
  *  - 拖动到同类装备格 → 穿戴（背包→装备栏）或卸下（装备栏→背包区）
  *  - 拖动到另一背包格上 → 弹出上下文菜单（重组/归元/碎片/取消）
  */
 export class InventoryScene extends Phaser.Scene {
-  private popup?: Phaser.GameObjects.Container;
   private topMessage?: Phaser.GameObjects.Container;
   private specialNotification?: Phaser.GameObjects.Container;
   private contextMenu?: Phaser.GameObjects.Container;
-  private currentSlot?: SlotInfo;
 
   // 拖拽状态
   private isDragging: boolean = false;
@@ -43,15 +40,21 @@ export class InventoryScene extends Phaser.Scene {
   private dragSourceSlot?: SlotInfo;
   private dragContainer?: Phaser.GameObjects.Container;
 
-  // 双击检测
-  private lastClickTime: number = 0;
-  private lastClickSlot?: SlotInfo;
-
   // 上下文菜单碎片开关
   private contextMenuUseFragments: boolean = false;
 
   // 槽位几何信息（用于拖拽释放时的碰撞检测）
   private slotGeometries: Array<{ x: number; y: number; size: number; slotInfo: SlotInfo }> = [];
+
+  /** 当前选中槽位（单击显示详情） */
+  private selectedSlot?: SlotInfo;
+  /** 详情面板容器（右栏，选中后更新） */
+  private detailPanel?: Phaser.GameObjects.Container;
+  /** 详情面板几何（createEquipmentAndDetailLayout 后固定） */
+  private detailPanelX: number = 0;
+  private detailPanelY: number = 0;
+  private detailPanelW: number = 0;
+  private detailPanelH: number = 0;
 
   // 颜色主题
   private readonly colors = {
@@ -71,44 +74,29 @@ export class InventoryScene extends Phaser.Scene {
 
   create(): void {
     const { width, height: fullH } = this.cameras.main;
-    // 只覆盖战斗视口（上 60%），操控面板仍可操作
     const vpH = Math.floor(fullH * LAYOUT.VIEWPORT_RATIO);
     this.cameras.main.setViewport(0, 0, width, vpH);
 
-    // 重置拖拽/双击状态
     this.slotGeometries = [];
     this.isDragging = false;
     this.dragSourceSlot = undefined;
-    this.lastClickTime = 0;
-    this.lastClickSlot = undefined;
+    this.selectedSlot = undefined;
 
-    // 背景仅覆盖视口区域
     this.add.rectangle(width / 2, vpH / 2, width, vpH, this.colors.bgDark, 0.98);
 
-    // 标题栏
     this.createHeader();
-
-    // 上半部分：装备栏（武器、铠甲、灵器）
-    this.createEquipmentSection();
-
-    // 下半部分：背包栏
+    this.createEquipmentAndDetailLayout();
     this.createInventorySection();
-
-    // 关闭按钮
     this.createCloseButton();
 
-    // ESC关闭
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (this.popup) {
-        this.closePopup();
-      } else if (this.contextMenu) {
+      if (this.contextMenu) {
         this.closeContextMenu();
       } else {
         this.closeScene();
       }
     });
 
-    // 场景级指针事件（处理拖拽移动和释放）
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       this.onGlobalPointerMove(pointer);
     });
@@ -136,144 +124,279 @@ export class InventoryScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 碎片数量（右侧）
-    const fragments = gameState.getFragmentCount();
-    this.add.text(width * 0.92, headerHeight / 2, `💎 碎片: ${fragments}`, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#a855f7',
-    }).setOrigin(1, 0.5);
-
     // 操作提示（左侧）
-    this.add.text(width * 0.08, headerHeight / 2, '双击穿戴 · 拖拽重组', {
+    this.add.text(width * 0.08, headerHeight / 2, '单击查看 · 拖拽重组', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: `${uiConfig.fontXS ?? 10}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
   }
 
-  private createEquipmentSection(): void {
+  private createEquipmentAndDetailLayout(): void {
     const { width, height } = this.cameras.main;
-    const headerHeight = height * 0.08;
-    const sectionY = headerHeight + height * 0.02;
-    const sectionHeight = height * 0.36;
+    const headerH = height * 0.08;
+    const sectionY = headerH + height * 0.01;
+    const sectionH = height * 0.50;
+    const leftW = width * 0.44;
+    const rightX = width * 0.46;
 
-    // 装备区域背景
-    const sectionBg = this.add.graphics();
-    sectionBg.fillStyle(this.colors.inkBlack, 0.5);
-    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
-    sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
-    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+    this.detailPanelX = rightX;
+    this.detailPanelY = sectionY;
+    this.detailPanelW = width * 0.52;
+    this.detailPanelH = sectionH;
 
-    // 槽位大小 - 更大以填充空间
-    const slotSize = Math.max(70, Math.min(90, height * 0.14));
+    // 左栏背景
+    const leftBg = this.add.graphics();
+    leftBg.fillStyle(this.colors.inkBlack, 0.5);
+    leftBg.fillRoundedRect(width * 0.01, sectionY, leftW, sectionH, 8);
+    leftBg.lineStyle(1, this.colors.inkGrey, 0.5);
+    leftBg.strokeRoundedRect(width * 0.01, sectionY, leftW, sectionH, 8);
 
-    // === 左侧：武器和铠甲 ===
-    const leftStartX = width * 0.08;
-    const equipY = sectionY + sectionHeight * 0.5;
+    // 右栏背景
+    const rightBg = this.add.graphics();
+    rightBg.fillStyle(this.colors.inkBlack, 0.3);
+    rightBg.fillRoundedRect(rightX, sectionY, this.detailPanelW, sectionH, 8);
+    rightBg.lineStyle(1, this.colors.inkGrey, 0.3);
+    rightBg.strokeRoundedRect(rightX, sectionY, this.detailPanelW, sectionH, 8);
 
-    // 武器
-    this.add.text(leftStartX, equipY - slotSize * 0.7, '武器', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
-      fontStyle: 'bold',
+    const slotSize = Math.min(54, (leftW - 16) / 3);
+    const midY = sectionY + sectionH * 0.5;
+
+    // 武器槽
+    const weaponX = width * 0.02 + slotSize * 0.5 + 4;
+    this.add.text(weaponX, sectionY + 16, '武器', {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
     }).setOrigin(0.5);
-    this.createSlot(leftStartX, equipY, {
-      type: 'weapon',
-      index: 0,
-      equipment: gameState.getWeapon(),
-    }, slotSize);
+    this.createSlot(weaponX, midY - slotSize * 0.1, { type: 'weapon', index: 0, equipment: gameState.getWeapon() }, slotSize);
 
-    // 铠甲
-    const armorX = leftStartX + slotSize * 1.4;
-    this.add.text(armorX, equipY - slotSize * 0.7, '铠甲', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
-      fontStyle: 'bold',
+    // 防具槽
+    const armorX = weaponX + slotSize + 8;
+    this.add.text(armorX, sectionY + 16, '防具', {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
     }).setOrigin(0.5);
-    this.createSlot(armorX, equipY, {
-      type: 'armor',
-      index: 0,
-      equipment: gameState.getArmor(),
-    }, slotSize);
+    this.createSlot(armorX, midY - slotSize * 0.1, { type: 'armor', index: 0, equipment: gameState.getArmor() }, slotSize);
 
-    // === 分隔线 ===
-    const dividerX = width * 0.32;
-    sectionBg.lineStyle(1, this.colors.inkGrey, 0.4);
-    sectionBg.lineBetween(dividerX, sectionY + 15, dividerX, sectionY + sectionHeight - 15);
-
-    // === 右侧：灵器 ===
-    const treasureStartX = width * 0.35;
+    // 灵器标题 + 5个槽位（3+2 两行布局）
+    const tSlotSize = Math.min(46, (leftW - 8) / 3 - 4);
+    const tGap = (leftW - 8) / 3;
+    const tStartX = width * 0.01 + 4 + tSlotSize * 0.5;
+    const tRow1Y = sectionY + sectionH * 0.32;
+    const tRow2Y = sectionY + sectionH * 0.68;
     const treasures = gameState.getTreasures();
 
-    // 灵器标题
-    this.add.text(treasureStartX, sectionY + 15, '灵器栏', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
-      fontStyle: 'bold',
-    });
-
-    // 6个灵器槽位，一行显示
-    const availableTreasureWidth = width * 0.62;
-    const treasureSpacing = availableTreasureWidth / MAX_TREASURES;
-    const treasureSlotSize = Math.min(treasureSpacing * 0.85, slotSize * 0.9);
+    this.add.text(tStartX + tGap, sectionY + 16, '灵器', {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
+    }).setOrigin(0.5);
 
     for (let i = 0; i < MAX_TREASURES; i++) {
-      const x = treasureStartX + treasureSpacing * 0.5 + i * treasureSpacing;
-      const y = equipY;
+      const row = Math.floor(i / 3);
+      const col = i % 3;
+      const tx = tStartX + col * tGap;
+      const ty = row === 0 ? tRow1Y : tRow2Y;
+      this.createSlot(tx, ty, { type: 'treasure', index: i, equipment: treasures[i] || null }, tSlotSize);
+    }
 
-      this.createSlot(x, y, {
-        type: 'treasure',
-        index: i,
-        equipment: treasures[i] || null,
-      }, treasureSlotSize);
+    // 初始详情面板（空状态）
+    this.refreshDetailPanel(undefined);
+  }
+
+  private refreshDetailPanel(slotInfo: SlotInfo | undefined): void {
+    if (this.detailPanel) {
+      this.detailPanel.destroy();
+      this.detailPanel = undefined;
+    }
+
+    const container = this.add.container(this.detailPanelX, this.detailPanelY).setDepth(50);
+    this.detailPanel = container;
+    const W = this.detailPanelW;
+    const H = this.detailPanelH;
+
+    if (!slotInfo?.equipment) {
+      container.add(
+        this.add.text(W / 2, H / 2, '点击装备\n查看详情', {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: '13px',
+          color: '#484f58',
+          align: 'center',
+        }).setOrigin(0.5)
+      );
+      return;
+    }
+
+    const equipment = slotInfo.equipment;
+    const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+    let y = 16;
+    const pad = 12;
+
+    // 名称
+    container.add(
+      this.add.text(pad, y, equipment.name, {
+        fontFamily: '"Noto Serif SC", serif',
+        fontSize: '14px',
+        color: '#f0e6d3',
+        fontStyle: 'bold',
+      })
+    );
+    y += 22;
+
+    // 类型 · 稀有度
+    container.add(
+      this.add.text(pad, y, `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '11px',
+        color: this.getRarityColor(equipment.rarity),
+      })
+    );
+    y += 18;
+
+    // 五行属性
+    if (equipment.wuxing !== undefined) {
+      const wuxName = WUXING_NAMES[equipment.wuxing];
+      container.add(
+        this.add.text(pad, y, `${wuxName}属 Lv.${equipment.wuxingLevel ?? 1}${equipment.upgradeLevel > 0 ? ` +${equipment.upgradeLevel}` : ''}`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: '11px',
+          color: colorHex,
+        })
+      );
+      y += 18;
+    }
+
+    // 属性数值
+    const stats: string[] = [];
+    if (equipment.attack)  stats.push(`攻+${equipment.attack}`);
+    if (equipment.defense) stats.push(`防+${equipment.defense}`);
+    if (equipment.speed)   stats.push(`速+${equipment.speed}`);
+    if (equipment.hp)      stats.push(`血+${equipment.hp}`);
+    if (stats.length > 0) {
+      container.add(
+        this.add.text(pad, y, stats.join('  '), {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: '#f0e6d3',
+        })
+      );
+      y += 18;
+    }
+
+    // 技能列表
+    const skills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
+    if (skills.length > 0) {
+      y += 4;
+      for (const skill of skills) {
+        const skillLine = this.add.text(pad, y, `✦ ${skill.name}: ${skill.description}`, {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: '10px',
+          color: colorHex,
+          wordWrap: { width: W - pad * 2 },
+        });
+        container.add(skillLine);
+        y += skillLine.height + 4;
+      }
+    }
+
+    // 操作按钮区（底部对齐）
+    const btnY = H - 44;
+    const btnH = 30;
+    const isEquipped = slotInfo.type !== 'inventory';
+    const btnW = isEquipped ? (W - pad * 3) / 2 : W - pad * 2;
+
+    // 穿戴/卸下按钮
+    const equipBtnLabel = isEquipped ? '卸下' : '穿戴';
+    const equipBtnColor = isEquipped ? 0x484f58 : 0x1a7f37;
+
+    const equipBg = this.add.graphics();
+    equipBg.fillStyle(equipBtnColor, 0.9);
+    equipBg.fillRoundedRect(pad, btnY, btnW, btnH, 6);
+    container.add(equipBg);
+
+    container.add(
+      this.add.text(pad + btnW / 2, btnY + btnH / 2, equipBtnLabel, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '13px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+      }).setOrigin(0.5)
+    );
+
+    const equipHit = this.add.rectangle(pad + btnW / 2, btnY + btnH / 2, btnW, btnH, 0xffffff, 0).setInteractive({ useHandCursor: true });
+    equipHit.on('pointerup', () => {
+      if (isEquipped) {
+        this.unequipItem(slotInfo);
+      } else {
+        this.equipItem(slotInfo);
+      }
+    });
+    container.add(equipHit);
+
+    // 归元按钮（仅对装备栏中已穿戴的装备显示）
+    if (isEquipped) {
+      const devourX = pad * 2 + btnW;
+      const devourBtnW = (W - pad * 3) / 2;
+
+      const devourBg = this.add.graphics();
+      devourBg.fillStyle(0x6e2c00, 0.9);
+      devourBg.fillRoundedRect(devourX, btnY, devourBtnW, btnH, 6);
+      container.add(devourBg);
+
+      container.add(
+        this.add.text(devourX + devourBtnW / 2, btnY + btnH / 2, '归元', {
+          fontFamily: '"Noto Sans SC", sans-serif',
+          fontSize: '13px',
+          color: '#f0a030',
+          fontStyle: 'bold',
+        }).setOrigin(0.5)
+      );
+
+      const devourHit = this.add.rectangle(devourX + devourBtnW / 2, btnY + btnH / 2, devourBtnW, btnH, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      devourHit.on('pointerup', () => {
+        this.selectedSlot = slotInfo;
+        this.showTopMessage('选择背包中的装备作为归元目标', '#d4a853', false);
+      });
+      container.add(devourHit);
     }
   }
 
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
-    const headerHeight = height * 0.08;
-    const topSectionHeight = height * 0.36;
-    const sectionY = headerHeight + topSectionHeight + height * 0.02;
-    const sectionHeight = height - sectionY - 8;
+    const headerH = height * 0.08;
+    const splitH = height * 0.50;
+    const sectionY = headerH + height * 0.01 + splitH + height * 0.01;
+    const sectionH = height - sectionY - 8;
 
-    // 背包区域背景
     const sectionBg = this.add.graphics();
     sectionBg.fillStyle(this.colors.inkBlack, 0.5);
-    sectionBg.fillRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+    sectionBg.fillRoundedRect(width * 0.01, sectionY, width * 0.98, sectionH, 8);
     sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
-    sectionBg.strokeRoundedRect(width * 0.02, sectionY, width * 0.96, sectionHeight, 8);
+    sectionBg.strokeRoundedRect(width * 0.01, sectionY, width * 0.98, sectionH, 8);
 
-    // 分区标题
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
-    this.add.text(width * 0.05, sectionY + 15, `灵囊 (${usedSlots}/${INVENTORY_SIZE})`, {
+    this.add.text(width * 0.04, sectionY + 12, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: '11px',
       color: '#d4a853',
       fontStyle: 'bold',
     });
 
-    // 槽位大小 - 计算以填满宽度
-    const availableWidth = width * 0.90;
-    const cols = 10; // 固定10列
-    const slotSpacing = availableWidth / cols;
-    const slotSize = Math.min(slotSpacing * 0.85, sectionHeight * 0.65);
+    const fragments = gameState.getFragmentCount();
+    this.add.text(width * 0.96, sectionY + 12, `💎×${fragments}`, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '11px',
+      color: '#a855f7',
+    }).setOrigin(1, 0);
+
+    const cols = INVENTORY_SIZE;
+    const availW = width * 0.96;
+    const spacing = availW / cols;
+    const slotSize = Math.min(spacing * 0.88, sectionH * 0.75);
+    const startX = width * 0.02 + spacing * 0.5;
+    const slotY = sectionY + sectionH * 0.55;
 
     const inventory = gameState.getInventory();
-    const startX = width * 0.05 + slotSpacing * 0.5;
-    const slotY = sectionY + sectionHeight * 0.55;
-
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-      const x = startX + i * slotSpacing;
-
-      this.createSlot(x, slotY, {
-        type: 'inventory',
-        index: i,
-        equipment: inventory[i],
-      }, slotSize);
+      const x = startX + i * spacing;
+      this.createSlot(x, slotY, { type: 'inventory', index: i, equipment: inventory[i] }, slotSize);
     }
   }
 
@@ -365,7 +488,6 @@ export class InventoryScene extends Phaser.Scene {
 
     if (!this.isDragging && dist > 12) {
       this.isDragging = true;
-      this.closePopup();
       this.closeContextMenu();
       this.createDragVisual(pointer);
     }
@@ -382,24 +504,19 @@ export class InventoryScene extends Phaser.Scene {
       const dropSlot = this.findSlotAtPosition(pointer.x, pointer.y);
       this.endDrag(pointer, dropSlot);
     } else {
-      // 单击 or 双击检测
-      const now = Date.now();
       const src = this.dragSourceSlot;
-      if (
-        this.lastClickSlot &&
-        this.lastClickSlot.type === src.type &&
-        this.lastClickSlot.index === src.index &&
-        now - this.lastClickTime < 500
-      ) {
-        // 双击 → 穿戴 / 卸下
-        this.handleDoubleClick(src);
-        this.lastClickTime = 0;
-        this.lastClickSlot = undefined;
+
+      // 归元模式：等待用户选择背包中的牺牲品
+      if (this.selectedSlot && this.topMessage) {
+        if (src.equipment && src.type === 'inventory') {
+          this.closeTopMessage();
+          this.handleDevour(this.selectedSlot, src);
+          this.selectedSlot = undefined;
+        }
+        // 点击非背包或空格子时忽略
       } else {
-        // 单击 → 查看只读弹窗
-        if (src.equipment) this.showViewPopup(src);
-        this.lastClickTime = now;
-        this.lastClickSlot = src;
+        // 普通选中：更新详情面板
+        this.refreshDetailPanel(src.equipment ? src : undefined);
       }
     }
 
@@ -476,15 +593,6 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     // 其他情况 → 不操作
-  }
-
-  private handleDoubleClick(slotInfo: SlotInfo): void {
-    this.closePopup();
-    if (slotInfo.type === 'inventory' && slotInfo.equipment) {
-      this.equipItem(slotInfo);
-    } else if (slotInfo.type !== 'inventory' && slotInfo.equipment) {
-      this.unequipItem(slotInfo);
-    }
   }
 
   // ---- 上下文菜单（重组/归元/碎片/取消） ----
@@ -596,174 +704,11 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
-  // ---- 只读弹窗（单击查看） ----
-
-  private showViewPopup(slotInfo: SlotInfo): void {
-    this.closePopup();
-    this.currentSlot = slotInfo;
-
-    const { width, height } = this.cameras.main;
-    const equipment = slotInfo.equipment!;
-
-    this.popup = this.add.container(width / 2, height / 2);
-
-    // 背景遮罩
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.6);
-    overlay.setInteractive();
-    overlay.on('pointerup', () => this.closePopup());
-    this.popup.add(overlay);
-
-    // 响应式尺寸
-    const panelWidth = Math.max(500, Math.min(700, width * 0.58));
-    const panelHeight = Math.max(320, Math.min(420, height * 0.60));
-    const borderColor = this.getRarityBorderColor(equipment.rarity);
-    const iconRadius = Math.max(50, Math.min(70, panelHeight * 0.16));
-
-    const panel = this.add.graphics();
-    panel.fillStyle(this.colors.inkBlack, 0.98);
-    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    panel.lineStyle(3, borderColor, 0.9);
-    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    this.popup.add(panel);
-
-    // 左右布局：35% 图标，65% 文字
-    const iconX = uiConfig.getIconCenterX(panelWidth);
-    const textX = uiConfig.getTextStartX(panelWidth);
-    const textWidth = uiConfig.getTextWidth(panelWidth);
-    const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
-
-    // 左侧：装备图标
-    const icon = this.add.circle(iconX, -panelHeight * 0.1, iconRadius, color);
-    icon.setStrokeStyle(4, 0xffffff, 0.6);
-    this.popup.add(icon);
-
-    const levelStr = equipment.wuxing !== undefined ? `${equipment.wuxingLevel ?? 1}` : '-';
-    this.popup.add(
-      this.add.text(iconX, -panelHeight * 0.1, levelStr, {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontXL}px`,
-        color: '#ffffff',
-        fontStyle: 'bold',
-      }).setOrigin(0.5)
-    );
-
-    // 类型图标
-    this.popup.add(
-      this.add.text(iconX, panelHeight * 0.07, this.getTypeIcon(equipment.type), {
-        fontSize: `${uiConfig.fontXL}px`,
-      }).setOrigin(0.5)
-    );
-
-    // 操作提示（图标下方）
-    const actionHint = slotInfo.type === 'inventory' ? '双击可穿戴' : '双击可卸下';
-    this.popup.add(
-      this.add.text(iconX, panelHeight * 0.23, actionHint, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
-        color: '#8b949e',
-      }).setOrigin(0.5)
-    );
-
-    // 右侧：文字信息
-    let yOffset = -panelHeight * 0.34;
-
-    // 名称
-    this.popup.add(
-      this.add.text(textX, yOffset, equipment.name, {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontXL}px`,
-        color: '#f0e6d3',
-        fontStyle: 'bold',
-      }).setOrigin(0, 0.5)
-    );
-    yOffset += uiConfig.fontXL + 12;
-
-    // 类型 + 稀有度
-    this.popup.add(
-      this.add.text(textX, yOffset, `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: this.getRarityColor(equipment.rarity),
-      }).setOrigin(0, 0.5)
-    );
-    yOffset += uiConfig.fontLG + 10;
-
-    // 五行属性
-    const wuxingName = equipment.wuxing !== undefined ? WUXING_NAMES[equipment.wuxing] : '无';
-    const wuxingLevelStr = equipment.wuxing !== undefined ? ` Lv.${equipment.wuxingLevel ?? 1}` : '';
-    this.popup.add(
-      this.add.text(textX, yOffset, `${wuxingName}属性${wuxingLevelStr}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: '#' + color.toString(16).padStart(6, '0'),
-      }).setOrigin(0, 0.5)
-    );
-    yOffset += uiConfig.fontLG + 10;
-
-    // 攻防速血
-    const stats: string[] = [];
-    if (equipment.attack) stats.push(`攻击 +${equipment.attack}`);
-    if (equipment.defense) stats.push(`防御 +${equipment.defense}`);
-    if (equipment.speed) stats.push(`速度 +${equipment.speed}`);
-    if (equipment.hp) stats.push(`血量 +${equipment.hp}`);
-    if (stats.length > 0) {
-      this.popup.add(
-        this.add.text(textX, yOffset, stats.join('   '), {
-          fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: `${uiConfig.fontMD}px`,
-          color: '#f0e6d3',
-          wordWrap: { width: textWidth },
-        }).setOrigin(0, 0.5)
-      );
-      yOffset += uiConfig.fontMD + 10;
-    }
-
-    // 技能图标
-    const skills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
-    if (skills.length > 0) {
-      yOffset += 10;
-      const iconSize = 28;
-      const iconSpacing = 10;
-      let ix = textX;
-
-      for (const skill of skills) {
-        const skillColor = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0xd4a853;
-        const iconBg = this.add.circle(ix + iconSize / 2, yOffset, iconSize / 2, skillColor, 0.9);
-        iconBg.setStrokeStyle(2, 0xffffff, 0.5);
-        this.popup.add(iconBg);
-
-        this.popup.add(
-          this.add.text(ix + iconSize / 2, yOffset, skill.name.charAt(0), {
-            fontFamily: '"Noto Sans SC", sans-serif',
-            fontSize: '14px',
-            color: '#ffffff',
-            fontStyle: 'bold',
-          }).setOrigin(0.5)
-        );
-
-        iconBg.setInteractive({ useHandCursor: true });
-        iconBg.on('pointerup', () => this.showSkillDetail(skill.name, skill.description));
-
-        ix += iconSize + iconSpacing;
-      }
-    }
-  }
-
-  private closePopup(): void {
-    if (this.popup) {
-      this.popup.destroy();
-      this.popup = undefined;
-    }
-    this.currentSlot = undefined;
-  }
-
   // ---- 装备/卸下 ----
 
   private equipItem(slotInfo: SlotInfo): void {
     const equipment = slotInfo.equipment;
     if (!equipment || slotInfo.type !== 'inventory') return;
-
-    this.closePopup();
 
     let success = false;
     switch (equipment.type) {
@@ -796,8 +741,6 @@ export class InventoryScene extends Phaser.Scene {
     const equipment = slotInfo.equipment;
     if (!equipment) return;
 
-    this.closePopup();
-
     if (gameState.isInventoryFull()) {
       this.showTopMessage('灵囊已满！', '#f85149');
       return;
@@ -825,7 +768,30 @@ export class InventoryScene extends Phaser.Scene {
     }
   }
 
-  // ---- 合成/归元（由上下文菜单直接调用） ----
+  // ---- 归元（装备槽中的装备归元，消耗背包中的牺牲品） ----
+
+  private handleDevour(equipSlot: SlotInfo, sacrificeSlot: SlotInfo): void {
+    const equipped = equipSlot.equipment;
+    const sacrifice = sacrificeSlot.equipment;
+    if (!equipped || !sacrifice) return;
+
+    // 归元只允许对已装备的槽位（非背包）
+    if (equipSlot.type === 'inventory') return;
+
+    gameState.removeFromInventory(sacrificeSlot.index);
+
+    const result = SynthesisSystem.devourEquipped(equipSlot.type, equipSlot.index, sacrifice);
+    if (result.success && result.upgradedItem) {
+      eventBus.emit(GameEvent.STATS_CHANGED);
+      this.showTopMessage(`归元成功！${result.upgradedItem.name} 变得更强了！`, '#3fb950');
+    } else {
+      this.showTopMessage(`归元失败... ${sacrifice.name} 消散了`, '#f85149');
+    }
+
+    this.time.delayedCall(1200, () => this.scene.restart());
+  }
+
+  // ---- 合成/归元（由上下文菜单直接调用，均为背包格之间） ----
 
   private performSynthesize(firstIndex: number, secondIndex: number, useFragments: boolean): void {
     const result = SynthesisSystem.synthesize(firstIndex, secondIndex, useFragments);
@@ -1047,50 +1013,6 @@ export class InventoryScene extends Phaser.Scene {
       case EquipmentType.TREASURE:return '灵器';
       default: return '器物';
     }
-  }
-
-  private showSkillDetail(skillName: string, skillDescription: string): void {
-    if (this.popup) this.closePopup();
-
-    const { width, height } = this.cameras.main;
-    this.popup = this.add.container(width / 2, height / 2).setDepth(100);
-
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
-    overlay.setInteractive();
-    overlay.on('pointerup', () => this.closePopup());
-    this.popup.add(overlay);
-
-    const panelWidth = Math.min(360, width * 0.85);
-    const panelHeight = 180;
-    const panel = this.add.graphics();
-    panel.fillStyle(0x1c2128, 0.98);
-    panel.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    panel.lineStyle(2, 0xd4a853, 0.9);
-    panel.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 12);
-    this.popup.add(panel);
-
-    this.popup.add(
-      this.add.text(0, -panelHeight * 0.28, `【${skillName}】`, {
-        fontFamily: '"Noto Serif SC", serif', fontSize: '18px', color: '#d4a853', fontStyle: 'bold',
-      }).setOrigin(0.5)
-    );
-    this.popup.add(
-      this.add.text(0, 10, skillDescription, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '14px', color: '#f0e6d3',
-        wordWrap: { width: panelWidth * 0.85 }, align: 'center',
-      }).setOrigin(0.5)
-    );
-
-    const closeBtn = this.add.rectangle(0, panelHeight / 2 - 28, 80, 30, 0x30363d);
-    closeBtn.setStrokeStyle(1.5, 0xd4a853, 0.5);
-    closeBtn.setInteractive({ useHandCursor: true });
-    closeBtn.on('pointerup', () => this.closePopup());
-    this.popup.add(closeBtn);
-    this.popup.add(
-      this.add.text(0, panelHeight / 2 - 28, '关闭', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '13px', color: '#f0e6d3',
-      }).setOrigin(0.5)
-    );
   }
 
   private createCloseButton(): void {

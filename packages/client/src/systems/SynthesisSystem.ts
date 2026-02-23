@@ -294,6 +294,53 @@ export class SynthesisSystem {
   }
 
   /**
+   * 归元（装备栏中的已穿戴装备归元，消耗背包中的祭品）
+   * 调用前调用方已将祭品从背包移除。
+   */
+  static devourEquipped(
+    slotType: 'weapon' | 'armor' | 'treasure',
+    slotIndex: number,
+    sacrifice: Equipment,
+  ): DevourResult {
+    let target: Equipment | null = null;
+    if (slotType === 'weapon') {
+      target = gameState.getWeapon();
+    } else if (slotType === 'armor') {
+      target = gameState.getArmor();
+    } else if (slotType === 'treasure') {
+      target = gameState.getTreasures()[slotIndex] ?? null;
+    }
+
+    if (!target) {
+      return { success: false, message: '找不到目标装备' };
+    }
+
+    const baseRate = (target.wuxing !== undefined && sacrifice.wuxing !== undefined)
+      ? this.getBaseRate(target.wuxing, sacrifice.wuxing)
+      : 0.5;
+    const devourRate = baseRate * DEVOUR_RATE_MULTIPLIER;
+    const displayRate = Math.round(devourRate * 100);
+
+    const roll = Math.random();
+    if (roll < devourRate) {
+      const upgraded = this.upgradeEquipment(target);
+      gameState.replaceEquippedItem(slotType, slotIndex, upgraded);
+      return {
+        success: true,
+        upgradedItem: upgraded,
+        message: `归元成功！${upgraded.name} 变得更强了！[成功率: ${displayRate}%]`,
+        successRate: displayRate,
+      };
+    } else {
+      return {
+        success: false,
+        message: `归元失败... ${sacrifice.name} 消散了 [成功率: ${displayRate}%]`,
+        successRate: displayRate,
+      };
+    }
+  }
+
+  /**
    * 获取五行重组关系
    * @param primary 主器物（最终升级的器物）
    * @param secondary 辅器物（作为材料的器物）
