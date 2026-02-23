@@ -676,6 +676,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private updateLootDrops(): void {
+    // 背包已满时不触发塑型
+    if (gameState.isInventoryFull()) return;
     if (this.isChanneling) return;
 
     // 移动中不触发塑型（停止后才重新开始）
