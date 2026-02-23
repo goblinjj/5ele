@@ -133,6 +133,88 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.createPersistentInfoPopup();
+    this.createPopupTestRow();
+  }
+
+  /** 临时测试行：验证弹窗在移动端是否可用（测完可删） */
+  private createPopupTestRow(): void {
+    const { width } = this.cameras.main;
+    const rowY = this.panelY - 22; // 面板上方22px，游戏区内
+
+    const labels = [
+      { text: 'setVisible弹窗', desc: '方法A：scene级别对象 setVisible 显示/隐藏，可行则弹窗正常', color: 0xd4a853 },
+      { text: '创建销毁弹窗', desc: '方法B：每次 add/destroy 弹窗容器，可行则弹窗正常', color: 0x58a6ff },
+    ];
+
+    const btnW = (width - 20) / labels.length - 4;
+    labels.forEach((item, i) => {
+      const bx = 10 + i * (btnW + 4);
+      const bg = this.add.graphics().setDepth(350);
+      bg.fillStyle(0x1c2128, 0.9);
+      bg.fillRoundedRect(bx, rowY - 16, btnW, 32, 5);
+      bg.lineStyle(1, item.color, 0.8);
+      bg.strokeRoundedRect(bx, rowY - 16, btnW, 32, 5);
+
+      this.add.text(bx + btnW / 2, rowY, item.text, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '11px',
+        color: '#' + item.color.toString(16).padStart(6, '0'),
+      }).setOrigin(0.5).setDepth(351);
+
+      if (i === 0) {
+        // 方法A：scene-level setVisible（当前实现）
+        const hit = this.add.rectangle(bx + btnW / 2, rowY, btnW, 32, 0xffffff, 0)
+          .setDepth(352).setInteractive({ useHandCursor: true });
+        hit.on('pointerup', () => this.toggleInfoPopup(item.text, item.desc, item.color));
+      } else {
+        // 方法B：每次创建/销毁
+        this.add.rectangle(bx + btnW / 2, rowY, btnW, 32, 0xffffff, 0)
+          .setDepth(352).setInteractive({ useHandCursor: true })
+          .on('pointerup', () => this.showPopupB(item.text, item.desc, item.color));
+      }
+    });
+  }
+
+  /** 测试方法B：每次 add / destroy 创建弹窗 */
+  private popupBContainer: Phaser.GameObjects.Container | null = null;
+  private showPopupB(title: string, description: string, color: number): void {
+    if (this.popupBContainer) {
+      this.popupBContainer.destroy();
+      this.popupBContainer = null;
+      return;
+    }
+    const { width } = this.cameras.main;
+    const popupW = Math.min(width * 0.7, 260);
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+
+    const container = this.add.container(width / 2, -9999).setDepth(350);
+
+    const titleTxt = this.add.text(0, 10, title, {
+      fontFamily: '"Noto Serif SC", serif', fontSize: '13px', color: colorHex,
+    }).setOrigin(0.5, 0);
+    container.add(titleTxt);
+
+    const descTxt = this.add.text(0, 30, description, {
+      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: '#c9d1d9',
+      wordWrap: { width: popupW - 20 }, align: 'center',
+    }).setOrigin(0.5, 0);
+    container.add(descTxt);
+
+    const totalH = Math.max(80, 30 + descTxt.height + 14);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1c2128, 0.97);
+    bg.fillRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
+    bg.lineStyle(1.5, color, 0.8);
+    bg.strokeRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
+    container.addAt(bg, 0);
+
+    const hit = this.add.rectangle(0, totalH / 2, popupW, totalH, 0xffffff, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerup', () => { container.destroy(); this.popupBContainer = null; });
+    container.add(hit);
+
+    container.setY(this.panelY - 8 - totalH);
+    this.popupBContainer = container;
   }
 
   private createPlayerHpBar(width: number, panelY: number): void {
@@ -205,15 +287,17 @@ export class HUDScene extends Phaser.Scene {
     activeSkills.forEach((skill, i) => {
       const meta = AOE_SKILL_META[skill.id] ?? { label: skill.name, color: 0x8b949e };
       const color = meta.color;
+      // 关键：用 const 捕获当前迭代的 x 值，避免闭包引用变量污染
+      const btnX = x;
 
       const bg = this.add.graphics();
       bg.fillStyle(color, 0.2);
-      bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+      bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
       bg.lineStyle(1.5, color, 0.8);
-      bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+      bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
       this.aoeSkillArea.add(bg);
 
-      const lbl = this.add.text(x + btnW / 2, 0, meta.label, {
+      const lbl = this.add.text(btnX + btnW / 2, 0, meta.label, {
         fontFamily: '"Noto Serif SC", serif',
         fontSize: '11px',
         color: '#ffffff',
@@ -224,7 +308,7 @@ export class HUDScene extends Phaser.Scene {
       this.aoeSkillArea.add(cdOverlay);
       this.aoeSkillCdOverlays.push(cdOverlay);
 
-      const cdText = this.add.text(x + btnW / 2, 0, '', {
+      const cdText = this.add.text(btnX + btnW / 2, 0, '', {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#ffff88',
@@ -232,24 +316,24 @@ export class HUDScene extends Phaser.Scene {
       this.aoeSkillArea.add(cdText);
       this.aoeSkillCdTexts.push(cdText);
 
-      const hit = this.add.rectangle(x + btnW / 2, 0, btnW, btnH, 0xffffff, 0).setInteractive();
+      const hit = this.add.rectangle(btnX + btnW / 2, 0, btnW, btnH, 0xffffff, 0).setInteractive();
       this.aoeSkillArea.add(hit);
 
       const idx = i;
       hit.on('pointerdown', () => {
         bg.clear();
         bg.fillStyle(color, 0.55);
-        bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
         bg.lineStyle(1.5, color, 1);
-        bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
         inputManager.pressSkill(idx);
       });
       hit.on('pointerup', () => {
         bg.clear();
         bg.fillStyle(color, 0.2);
-        bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
         bg.lineStyle(1.5, color, 0.8);
-        bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
         inputManager.releaseSkill(idx);
       });
       hit.on('pointerout', () => inputManager.releaseSkill(idx));
@@ -552,7 +636,11 @@ export class HUDScene extends Phaser.Scene {
     void pillH;
 
     if (description) {
-      txt.setInteractive({ useHandCursor: true });
+      // 使用自定义 40px 高的点击区域，确保移动端可触控
+      txt.setInteractive(
+        new Phaser.Geom.Rectangle(-4, -20, txt.width + 8, 40),
+        Phaser.Geom.Rectangle.Contains
+      );
       txt.on('pointerup', () => this.toggleInfoPopup(label, description, color));
     }
     return txt;
@@ -586,8 +674,8 @@ export class HUDScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.buffArea.add(lbl);
 
-      // 可点击弹窗
-      const hit = this.add.rectangle(x + pillW / 2, 0, pillW, pillH, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      // 可点击弹窗：40px 高确保移动端触控
+      const hit = this.add.rectangle(x + pillW / 2, 0, pillW, 40, 0xffffff, 0).setInteractive({ useHandCursor: true });
       this.buffArea.add(hit);
       hit.on('pointerup', () => this.toggleInfoPopup(label, description ?? label, color));
 
@@ -742,5 +830,6 @@ export class HUDScene extends Phaser.Scene {
     this.closeWuxingPicker();
     this.wuxingPickerObjects = [];
     this.popupKey = '';
+    this.popupBContainer = null;
   }
 }
