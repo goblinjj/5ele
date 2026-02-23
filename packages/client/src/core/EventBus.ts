@@ -23,6 +23,12 @@ export enum GameEvent {
   WUXING_CHOSEN     = 'player:wuxing_chosen',
   // 装备变化（刷新HUD中的属性/技能/状态）
   STATS_CHANGED     = 'player:stats_changed',
+  // 轮次计时器（remaining seconds）
+  ROUND_TIMER_UPDATE = 'ui:round_timer',
+  // 地图剩余妖异数量
+  ENEMY_COUNT_UPDATE = 'ui:enemy_count',
+  // 游戏失败
+  GAME_OVER          = 'player:game_over',
 }
 
 type EventHandler = (...args: unknown[]) => void;

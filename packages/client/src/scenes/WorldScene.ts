@@ -30,9 +30,9 @@ import { CombatSystem, AUTO_ATTACK_RANGE, ENEMY_ATTACK_RANGE } from '../systems/
 const WORLD_W = 2300;
 const WORLD_H = 2300;
 
-/** 每轮击杀目标公式：第 N 轮需击杀 5×N 只（与 5 波×N 只/波 对应） */
-function getKillTarget(round: number): number {
-  return 5 * round;
+/** 每轮游戏时间（秒）：第 N 轮 = 60 + (N-1) * 15 */
+function getRoundDuration(round: number): number {
+  return 60 + (round - 1) * 15;
 }
 
 /** 塑型基准时长（ms） */
@@ -110,10 +110,15 @@ export class WorldScene extends Phaser.Scene {
   private spawnSystem!: SpawnSystem;
   private combatSystem!: CombatSystem;
   private activeSkillIds: AttributeSkillId[] = [];
-  private killCount: number = 0;
-  private killTarget: number = 10;
   private currentRound: number = 1;
-  private roundCompleting: boolean = false;
+  /** 本轮剩余时间（ms） */
+  private roundTimer: number = 0;
+  /** 轮间过渡倒计时（ms），> 0 时进入过渡阶段 */
+  private roundTransitionTimer: number = 0;
+  /** 是否正在过渡（防止重复触发） */
+  private roundTransitioning: boolean = false;
+  /** 游戏是否已失败 */
+  private isGameOver: boolean = false;
   private enemyIndicator!: Phaser.GameObjects.Graphics;
   private attackRangeIndicator!: Phaser.GameObjects.Graphics;
   private lootDrops: LootDrop[] = [];
@@ -193,15 +198,23 @@ export class WorldScene extends Phaser.Scene {
     this.attackRangeIndicator = this.add.graphics().setDepth(14);
     this.channelingIndicator = this.add.graphics().setDepth(16);
 
-    // ---- 回合目标 ----
-    this.killTarget = getKillTarget(this.currentRound);
-    this.killCount = 0;
-    eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyKilled());
+    // ---- 轮次计时器 ----
+    this.roundTimer = getRoundDuration(this.currentRound) * 1000;
+    this.roundTransitionTimer = 0;
+    this.roundTransitioning = false;
+    this.isGameOver = false;
+
+    eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyDied());
     eventBus.on(GameEvent.LOOT_DROPPED, (data: unknown) => {
       const d = data as { x: number; y: number; wuxing: Wuxing; level: number };
       this.createLootDrop(d.x, d.y, d.wuxing, d.level);
     });
-    eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
+    eventBus.on(GameEvent.GAME_OVER, () => this.onGameOver());
+
+    // 发送初始剩余妖异数量
+    this.time.delayedCall(50, () => {
+      eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, this.entityManager.getAlive().length);
+    });
 
     // ---- 启动 HUDScene ----
     this.scene.launch('HUDScene');
@@ -225,6 +238,37 @@ export class WorldScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    if (this.isGameOver) return;
+
+    // ---- 轮次倒计时 / 过渡 ----
+    if (this.roundTransitioning) {
+      this.roundTransitionTimer -= delta;
+      if (this.roundTransitionTimer <= 0) {
+        this.startNextRound();
+      }
+      return; // 过渡期暂停一切
+    }
+
+    this.roundTimer -= delta;
+
+    // 广播计时器（每5帧一次）
+    this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
+    if (this._cdBroadcastTick === 0) {
+      const secsLeft = Math.max(0, Math.ceil(this.roundTimer / 1000));
+      eventBus.emit(GameEvent.ROUND_TIMER_UPDATE, secsLeft, this.currentRound);
+      eventBus.emit(
+        GameEvent.SKILL_CD_UPDATE,
+        this.combatSystem.getPlayerSkillTimers(),
+        this.combatSystem.getPlayerSkillMaxTimers()
+      );
+    }
+
+    // 超时 → 本轮结束
+    if (this.roundTimer <= 0) {
+      this.triggerRoundEnd();
+      return;
+    }
+
     this.movePlayer(delta);
     this.updateEnemies(delta);
     this.combatSystem.update(delta, this.player, this.playerCombatant);
@@ -232,16 +276,6 @@ export class WorldScene extends Phaser.Scene {
     this.updateAttackRangeIndicator();
     this.updateLootDrops();
     this.updateChanneling(delta);
-
-    // 广播技能 CD（每5帧一次）
-    this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
-    if (this._cdBroadcastTick === 0) {
-      eventBus.emit(
-        GameEvent.SKILL_CD_UPDATE,
-        this.combatSystem.getPlayerSkillTimers(),
-        this.combatSystem.getPlayerSkillMaxTimers()
-      );
-    }
   }
 
   // -----------------------------------------------
@@ -300,7 +334,7 @@ export class WorldScene extends Phaser.Scene {
     };
 
     const allSkills = getAllAttributeSkills(equipment);
-    this.activeSkillIds = allSkills.filter(id => AOE_SKILL_IDS.has(id)).slice(0, 2);
+    this.activeSkillIds = allSkills.filter(id => AOE_SKILL_IDS.has(id));
 
     if (this.textures.exists(PLAYER_ATLAS)) {
       this.player = this.physics.add.sprite(startX, startY, PLAYER_ATLAS, 'character_idle_0');
@@ -728,56 +762,80 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
-  private onEnemyKilled(): void {
-    if (this.roundCompleting) return;
-    this.killCount++;
-    eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
+  /** 妖异死亡时：更新剩余数量，若全部消灭则触发轮次结束 */
+  private onEnemyDied(): void {
+    if (this.roundTransitioning || this.isGameOver) return;
+    const remaining = this.entityManager.getAlive().length;
+    eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, remaining);
 
-    if (this.killCount >= this.killTarget) {
-      this.roundCompleting = true;
-      this.showRoundCompleteOverlay();
+    if (remaining === 0) {
+      this.triggerRoundEnd();
     }
   }
 
-  private showRoundCompleteOverlay(): void {
+  /** 触发本轮结束（超时或全灭均调用此方法） */
+  private triggerRoundEnd(): void {
+    if (this.roundTransitioning || this.isGameOver) return;
+    this.roundTransitioning = true;
+    this.roundTransitionTimer = 10000; // 10 秒过渡
+
     const cam = this.cameras.main;
     const cx = cam.worldView.x + cam.width / 2;
     const cy = cam.worldView.y + cam.height / 2;
 
     const bg = this.add.graphics().setDepth(200);
-    bg.fillStyle(0x000000, 0.65);
-    bg.fillRoundedRect(cx - 160, cy - 50, 320, 100, 16);
+    bg.fillStyle(0x000000, 0.7);
+    bg.fillRoundedRect(cx - 180, cy - 60, 360, 120, 16);
 
-    this.add.text(cx, cy - 14, `第 ${this.currentRound} 轮完成！`, {
+    this.add.text(cx, cy - 20, `第 ${this.currentRound} 轮结束`, {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '28px',
       color: '#d4a853',
     }).setOrigin(0.5).setDepth(201);
 
-    this.add.text(cx, cy + 22, `下一轮目标：击杀 ${getKillTarget(this.currentRound + 1)} 只`, {
+    const countdownTxt = this.add.text(cx, cy + 22, '10 秒后进入下一轮...', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '16px',
       color: '#8b949e',
     }).setOrigin(0.5).setDepth(201);
 
-    this.time.delayedCall(5000, () => {
-      this.currentRound++;
-      this.killCount = 0;
-      this.killTarget = getKillTarget(this.currentRound);
-      this.roundCompleting = false;
-
-      this.children.list
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter(c => (c as any).depth >= 200)
-        .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
-
-      // 清除残余怪物和能量掉落，生成新一波
-      this.spawnSystem.clearAll();
-      this.clearLootDrops();
-      this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
-
-      eventBus.emit(GameEvent.KILL_COUNT_UPDATE, this.killCount, this.killTarget);
+    // 每秒更新倒计时文字
+    const countdownEvent = this.time.addEvent({
+      delay: 1000,
+      repeat: 9,
+      callback: () => {
+        const secs = Math.ceil(this.roundTransitionTimer / 1000);
+        countdownTxt.setText(`${secs} 秒后进入下一轮...`);
+      },
     });
+    void countdownEvent;
+  }
+
+  /** 过渡完成后，清场并开始下一轮 */
+  private startNextRound(): void {
+    this.currentRound++;
+    this.roundTimer = getRoundDuration(this.currentRound) * 1000;
+    this.roundTransitioning = false;
+
+    // 清除轮次结束 UI（depth >= 200）
+    this.children.list
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter(c => (c as any).depth >= 200)
+      .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
+
+    // 清除残余怪物和能量掉落，生成新一波
+    this.spawnSystem.clearAll();
+    this.clearLootDrops();
+    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
+
+    const newCount = this.entityManager.getAlive().length;
+    eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, newCount);
+  }
+
+  /** 游戏失败：停止逻辑，显示失败提示（全屏覆盖由 HUDScene 处理） */
+  private onGameOver(): void {
+    if (this.isGameOver) return;
+    this.isGameOver = true;
   }
 
   // ---- 五行所属系统 ----

@@ -5,11 +5,11 @@ export class InputManager {
   moveX: number = 0;
   moveY: number = 0;
 
-  /** 技能按钮状态：[普攻持续按下, 技能1按下, 技能2按下] */
-  skillActive: boolean[] = [false, false, false];
+  /** 技能按钮状态：最多 5 个 AOE 技能 */
+  skillActive: boolean[] = [false, false, false, false, false];
 
   /** 技能触发脉冲（每次按下只触发一次） */
-  skillJustPressed: boolean[] = [false, false, false];
+  skillJustPressed: boolean[] = [false, false, false, false, false];
 
   static getInstance(): InputManager {
     if (!InputManager.instance) {
@@ -38,7 +38,7 @@ export class InputManager {
   /** 由 WorldScene 每帧调用，消费脉冲 */
   consumeJustPressed(): boolean[] {
     const copy = [...this.skillJustPressed];
-    this.skillJustPressed = [false, false, false];
+    this.skillJustPressed = new Array(this.skillJustPressed.length).fill(false);
     return copy;
   }
 }

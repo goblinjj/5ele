@@ -98,7 +98,8 @@ export class SpawnSystem {
         const combatant: Combatant = {
           ...base,
           id: `${base.id}_w${waveIdx}_${i}_r${round}`,
-          attackWuxing: { wuxing: waveDef.wuxing, level: round },
+          attackWuxing:  { wuxing: waveDef.wuxing, level: round },
+          defenseWuxing: { wuxing: waveDef.wuxing, level: round },
         };
 
         // 在波次中心周围均匀散布（环形排布）

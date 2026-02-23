@@ -8,7 +8,6 @@ import { SpawnSystem } from '../world/SpawnSystem.js';
 import { inputManager } from '../input/InputManager.js';
 import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
-import { gameState } from '../GameStateManager.js';
 
 /** 基准攻击间隔：1 秒（速度=1 时） */
 const BASE_ATTACK_INTERVAL = 1000;
@@ -20,7 +19,7 @@ export const AUTO_ATTACK_RANGE = 120;
 /** 妖异攻击范围：残魂的 2/3（残魂比妖异大 50%） */
 export const ENEMY_ATTACK_RANGE = 80;
 
-/** AOE 技能配置：颜色 + 范围 */
+/** AOE 技能配置：颜色 + 范围 + CD */
 const AOE_CONFIG: Record<string, { color: number; radius: number; label: string; cd: number }> = {
   [AttributeSkillId.LIEKONGZHAN]: { color: 0xd4a853, radius: 180, label: '裂空斩', cd: 5000 },
   [AttributeSkillId.HANCHAO]:     { color: 0x58a6ff, radius: 200, label: '寒潮',   cd: 6000 },
@@ -54,8 +53,8 @@ export class CombatSystem {
   private playerAttackAnimTimer: number = 0;
   /** 塑型中：暂停玩家自动普攻 */
   private playerChanneling: boolean = false;
-  private playerSkillTimers: number[] = [0, 0];
-  private playerSkillMaxTimers: number[] = [5000, 8000];
+  private playerSkillTimers: number[] = [];
+  private playerSkillMaxTimers: number[] = [];
   /** 延迟伤害队列：攻击动画播完后才结算 */
   private pendingDamages: PendingDamage[] = [];
 
@@ -67,6 +66,9 @@ export class CombatSystem {
   /** 敌人状态效果追踪（按 combatant.id 映射） */
   private enemyStatuses: Map<string, TimedStatus> = new Map();
 
+  /** 游戏是否已结束（失败后停止所有战斗逻辑） */
+  private gameOver: boolean = false;
+
   constructor(
     scene: Phaser.Scene,
     entityManager: EntityManager,
@@ -76,7 +78,8 @@ export class CombatSystem {
     this.scene = scene;
     this.entityManager = entityManager;
     this.spawnSystem = spawnSystem;
-    this.activeSkillIds = activeSkillIds.slice(0, 2);
+    // 支持全部 AOE 技能（最多 5 个）
+    this.activeSkillIds = activeSkillIds;
 
     this.playerSkillMaxTimers = this.activeSkillIds.map(id => AOE_CONFIG[id]?.cd ?? 5000);
     this.playerSkillTimers = this.playerSkillMaxTimers.map(() => 0);
@@ -87,11 +90,13 @@ export class CombatSystem {
     player: Phaser.Physics.Arcade.Sprite,
     playerCombatant: Combatant
   ): void {
+    if (this.gameOver) return;
+
     this.playerAttackTimer = Math.max(0, this.playerAttackTimer - delta);
     this.playerAttackAnimTimer = Math.max(0, this.playerAttackAnimTimer - delta);
     this.playerSkillTimers = this.playerSkillTimers.map(t => Math.max(0, t - delta));
 
-    // ── 生机被动回血（每 3 秒） ──
+    // ── 生机被动回血（每 3 秒，数值直接使用技能等级值，非百分比） ──
     this.passiveHealTimer -= delta;
     if (this.passiveHealTimer <= 0) {
       this.passiveHealTimer = 3000;
@@ -112,7 +117,7 @@ export class CombatSystem {
       if (pd.timer <= 0) {
         const target = this.getNearestEnemy(pd.playerSprite, this.entityManager.getAlive(), pd.range);
         if (target) {
-          this.attackEnemy(pd.attacker, target, player);
+          this.attackEnemy(pd.attacker, target, player, playerCombatant);
         } else {
           this.showMissText(pd.playerSprite.x, pd.playerSprite.y - 30);
         }
@@ -138,7 +143,6 @@ export class CombatSystem {
         const magicKey = 'player_spirit_magic';
         if (this.scene.anims.exists(magicKey)) {
           player.play(magicKey, true);
-          // timeScale = 基准/实际间隔：速度快则动画快
           player.anims.timeScale = BASE_ATTACK_INTERVAL / interval;
         }
 
@@ -152,7 +156,7 @@ export class CombatSystem {
       }
     }
 
-    // ---- 手动主动技能 ----
+    // ---- 手动主动技能（按钮触发） ----
     const justPressed = inputManager.consumeJustPressed();
     this.activeSkillIds.forEach((skillId, i) => {
       if (justPressed[i] && this.playerSkillTimers[i] <= 0) {
@@ -168,17 +172,14 @@ export class CombatSystem {
       );
 
       if (entity.attackPhase === 'ready') {
-        // 进入攻击范围且处于 attack 状态 → 开始攻击阶段
         if (dist <= ENEMY_ATTACK_RANGE && entity.state === 'attack') {
           const interval = this.getAttackInterval(entity.combatant.speed);
           entity.attackCurrentInterval = interval;
           entity.attackPhase = 'attacking';
           entity.attackPhaseTimer = interval * 0.6;
 
-          // 朝向玩家
           entity.sprite.setFlipX(player.x < entity.sprite.x);
 
-          // 播放攻击动画，速度随攻击速度缩放
           if (entity.atlasKey) {
             const atkKey = `${entity.atlasKey}_atk`;
             if (this.scene.anims.exists(atkKey)) {
@@ -191,15 +192,12 @@ export class CombatSystem {
         entity.attackPhaseTimer -= delta;
 
         if (dist > ENEMY_ATTACK_RANGE) {
-          // 目标移出攻击范围：中断攻击，重新待机
           entity.attackPhase = 'ready';
           entity.attackPhaseTimer = 0;
         } else if (entity.attackPhaseTimer <= 0) {
-          // 攻击阶段结束：触发伤害
-          this.attackPlayer(entity, playerCombatant);
+          this.attackPlayer(entity, playerCombatant, player);
           eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
 
-          // 进入冷却阶段（40%）
           entity.attackPhase = 'cooldown';
           entity.attackPhaseTimer = entity.attackCurrentInterval * 0.4;
         }
@@ -226,7 +224,7 @@ export class CombatSystem {
 
   // ───────────────────────── 被动技能 ─────────────────────────
 
-  /** 生机：每 3 秒恢复 X% 最大生命 */
+  /** 生机：每 3 秒恢复 X 点生命（直接使用技能等级数值，不再是百分比） */
   private applyShengjiHeal(
     player: Phaser.Physics.Arcade.Sprite,
     playerCombatant: Combatant
@@ -239,8 +237,8 @@ export class CombatSystem {
     const level = skillLevels.levels.get(AttributeSkillId.SHENGJI);
     if (!level) return;
 
-    const healPct = getSkillValue(AttributeSkillId.SHENGJI, level); // e.g. 2-12
-    const healAmount = Math.max(1, Math.floor(playerCombatant.maxHp * healPct / 100));
+    // 直接使用技能数值作为回复量（非百分比）
+    const healAmount = Math.max(1, getSkillValue(AttributeSkillId.SHENGJI, level));
     playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + healAmount);
     eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
     this.showHealText(player.x, player.y - 30, healAmount);
@@ -257,12 +255,12 @@ export class CombatSystem {
       this.playerStatus.burnTickTimer -= delta;
       if (this.playerStatus.burnTickTimer <= 0) {
         this.playerStatus.burnTickTimer = 2000;
-        const burnDmg = Math.max(1, Math.floor(playerCombatant.maxHp * 0.03));
+        // 灼烧：每 tick 固定 2 点伤害
+        const burnDmg = 2;
         playerCombatant.hp = Math.max(0, playerCombatant.hp - burnDmg);
         eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
         if (playerCombatant.hp <= 0) {
-          eventBus.emit(GameEvent.PLAYER_DEATH);
-          this.scene.scene.start('MenuScene');
+          this.triggerGameOver();
         }
       }
     }
@@ -284,7 +282,8 @@ export class CombatSystem {
         st.burnTickTimer -= delta;
         if (st.burnTickTimer <= 0) {
           st.burnTickTimer = 2000;
-          const burnDmg = Math.max(1, Math.floor(entity.combatant.maxHp * 0.04));
+          // 敌人灼烧：固定 2 点
+          const burnDmg = 2;
           entity.combatant.hp = Math.max(0, entity.combatant.hp - burnDmg);
           this.showDamageText(entity.sprite.x, entity.sprite.y - 30, burnDmg, 0xff6633);
           if (entity.hpBar) {
@@ -332,8 +331,15 @@ export class CombatSystem {
       const d = Phaser.Math.Distance.Between(player.x, player.y, e.sprite.x, e.sprite.y);
       if (d <= radius) {
         const result = resolveCombat(playerCombatant, e.combatant);
-        this.applyDamageToEnemy(e, result.damage, playerCombatant);
+        this.applyDamageToEnemy(e, result.damage, playerCombatant, result.healTarget);
         totalDamage += result.damage;
+
+        // 自身回血（被土生时）
+        if (result.healSelf > 0) {
+          playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + result.healSelf);
+          eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+          this.showHealText(player.x, player.y - 50, result.healSelf);
+        }
 
         // 焚天：施加灼烧
         if (skillId === AttributeSkillId.FENTIAN) {
@@ -378,10 +384,18 @@ export class CombatSystem {
   private attackEnemy(
     attacker: Combatant,
     target: WorldEntity,
-    playerSprite: Phaser.Physics.Arcade.Sprite
+    playerSprite: Phaser.Physics.Arcade.Sprite,
+    playerCombatant: Combatant
   ): void {
     const result = resolveCombat(attacker, target.combatant);
-    this.applyDamageToEnemy(target, result.damage, attacker);
+    this.applyDamageToEnemy(target, result.damage, attacker, result.healTarget);
+
+    // 被土生：自身回血
+    if (result.healSelf > 0) {
+      playerCombatant.hp = Math.min(playerCombatant.maxHp, playerCombatant.hp + result.healSelf);
+      eventBus.emit(GameEvent.PLAYER_HP_CHANGE, playerCombatant.hp, playerCombatant.maxHp);
+      this.showHealText(playerSprite.x, playerSprite.y - 30, result.healSelf);
+    }
 
     // 被动：攻击后触发效果
     this.processPlayerAfterAttackPassives(attacker, target, playerSprite);
@@ -429,12 +443,28 @@ export class CombatSystem {
     const st = this.enemyStatuses.get(id) ?? { burning: 0, slowed: 0, burnTickTimer: 0 };
     st.slowed = Math.max(st.slowed, durationMs);
     this.enemyStatuses.set(id, st);
-    // 减速：在 combatant.statusEffects 中标记，WorldScene 可据此调整移速
     if (!target.combatant.statusEffects) target.combatant.statusEffects = {};
-    target.combatant.statusEffects.slowed = { turnsLeft: 1 }; // 标记存在
+    target.combatant.statusEffects.slowed = { turnsLeft: 1 };
   }
 
-  private applyDamageToEnemy(target: WorldEntity, damage: number, _attacker: Combatant): void {
+  private applyDamageToEnemy(
+    target: WorldEntity,
+    damage: number,
+    _attacker: Combatant,
+    healTarget: number = 0
+  ): void {
+    // 五行相生：治疗敌人（0 伤害，+1 血）
+    if (healTarget > 0) {
+      target.combatant.hp = Math.min(target.combatant.maxHp, target.combatant.hp + healTarget);
+      if (target.hpBar) {
+        this.spawnSystem.updateEnemyHpBar(target.hpBar, target.combatant.hp, target.combatant.maxHp);
+      }
+      this.showHealText(target.sprite.x, target.sprite.y - 25, healTarget);
+      return;
+    }
+
+    if (damage <= 0) return;
+
     target.combatant.hp = Math.max(0, target.combatant.hp - damage);
     this.showDamageText(target.sprite.x, target.sprite.y - 25, damage, 0xffffff);
     if (target.hpBar) {
@@ -448,15 +478,38 @@ export class CombatSystem {
     if (target.combatant.hp <= 0) this.onEnemyDeath(target);
   }
 
-  private attackPlayer(entity: WorldEntity, player: Combatant): void {
+  private attackPlayer(
+    entity: WorldEntity,
+    player: Combatant,
+    playerSprite: Phaser.Physics.Arcade.Sprite
+  ): void {
     const result = resolveCombat(entity.combatant, player);
-    player.hp = Math.max(0, player.hp - result.damage);
-    this.showDamageText(
-      this.scene.cameras.main.worldView.x + this.scene.cameras.main.width / 2,
-      this.scene.cameras.main.worldView.y + 60,
-      result.damage,
-      0xf85149
-    );
+
+    // 五行生关系：治疗玩家
+    if (result.healTarget > 0) {
+      player.hp = Math.min(player.maxHp, player.hp + result.healTarget);
+      eventBus.emit(GameEvent.PLAYER_HP_CHANGE, player.hp, player.maxHp);
+      this.showHealText(playerSprite.x, playerSprite.y - 30, result.healTarget);
+      return;
+    }
+
+    // 妖异被自己五行生：回血
+    if (result.healSelf > 0) {
+      entity.combatant.hp = Math.min(entity.combatant.maxHp, entity.combatant.hp + result.healSelf);
+      if (entity.hpBar) {
+        this.spawnSystem.updateEnemyHpBar(entity.hpBar, entity.combatant.hp, entity.combatant.maxHp);
+      }
+    }
+
+    if (result.damage > 0) {
+      player.hp = Math.max(0, player.hp - result.damage);
+      this.showDamageText(
+        this.scene.cameras.main.worldView.x + this.scene.cameras.main.width / 2,
+        this.scene.cameras.main.worldView.y + 60,
+        result.damage,
+        0xf85149
+      );
+    }
 
     // 余烬：受击时 X% 概率使攻击者灼烧
     if (player.attributeSkills) {
@@ -472,9 +525,16 @@ export class CombatSystem {
     }
 
     if (player.hp <= 0) {
-      eventBus.emit(GameEvent.PLAYER_DEATH);
-      this.scene.scene.start('MenuScene');
+      this.triggerGameOver();
     }
+  }
+
+  /** 触发游戏失败（发出事件，不直接切换场景） */
+  private triggerGameOver(): void {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    eventBus.emit(GameEvent.PLAYER_DEATH);
+    eventBus.emit(GameEvent.GAME_OVER);
   }
 
   /** 查询敌人是否处于减速状态（供 WorldScene 调整移速） */
@@ -490,7 +550,6 @@ export class CombatSystem {
   }
 
   private onEnemyDeath(entity: WorldEntity): void {
-    // 清除状态追踪
     this.enemyStatuses.delete(entity.combatant.id);
 
     if (entity.atlasKey) {

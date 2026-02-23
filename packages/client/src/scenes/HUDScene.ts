@@ -28,15 +28,20 @@ const AOE_SKILL_META: Record<string, { label: string; color: number }> = {
 
 export class HUDScene extends Phaser.Scene {
   private joystick!: VirtualJoystick;
-  private skillButtons: Phaser.GameObjects.Container[] = [];
   private playerHpBar!: Phaser.GameObjects.Graphics;
   private playerHpText!: Phaser.GameObjects.Text;
   private playerMaxHp: number = 100;
   private playerHp: number = 100;
-  private cdOverlays: Phaser.GameObjects.Graphics[] = [];
-  private cdTexts: Phaser.GameObjects.Text[] = [];
-  private killCountText!: Phaser.GameObjects.Text;
+  /** AOE 技能按钮的 CD 覆盖层和文字 */
+  private aoeSkillCdOverlays: Phaser.GameObjects.Graphics[] = [];
+  private aoeSkillCdTexts: Phaser.GameObjects.Text[] = [];
+  /** 剩余妖异数量文字（视口顶部中央） */
+  private enemyCountText!: Phaser.GameObjects.Text;
+  /** 轮次计时器文字（视口顶部右侧） */
+  private roundTimerText!: Phaser.GameObjects.Text;
   private buffArea!: Phaser.GameObjects.Container;
+  /** AOE 技能按钮区（buff 栏下方） */
+  private aoeSkillArea!: Phaser.GameObjects.Container;
   /** 属性/技能/状态容器（装备变化时整体重建） */
   private infoArea!: Phaser.GameObjects.Container;
   private panelY: number = 0;
@@ -46,6 +51,8 @@ export class HUDScene extends Phaser.Scene {
   private wuxingBtnSub!: Phaser.GameObjects.Text;
   /** 当前五行选择器所有 scene 级别对象（scene 直属，非 Container 子节点） */
   private wuxingPickerObjects: Phaser.GameObjects.GameObject[] = [];
+  /** 当前弹窗（点击技能/状态/buff 时显示） */
+  private activePopup: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super({ key: 'HUDScene' });
@@ -64,13 +71,22 @@ export class HUDScene extends Phaser.Scene {
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
 
-    // 击杀进度（视口区域顶部居中）
-    this.killCountText = this.add.text(width / 2, 18, '击杀 0/10', {
+    // 剩余妖异数量（视口顶部中央）
+    this.enemyCountText = this.add.text(width / 2, 18, '剩余妖异 --', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: `${uiConfig.fontSM}px`,
       color: '#d4a853',
       stroke: '#000000',
       strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(50);
+
+    // 轮次计时器（视口顶部右侧）
+    this.roundTimerText = this.add.text(width * 0.85, 18, '', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#8b949e',
+      stroke: '#000000',
+      strokeThickness: 2,
     }).setOrigin(0.5).setDepth(50);
 
     // ── 左上：HP 条 + 属性/技能/状态 ──
@@ -83,6 +99,10 @@ export class HUDScene extends Phaser.Scene {
     // Buff 展示区（技能/状态条下方）
     this.buffArea = this.add.container(0, panelY + 90).setDepth(51);
 
+    // AOE 技能按钮区（buff 栏下方）
+    this.aoeSkillArea = this.add.container(0, panelY + 114).setDepth(51);
+    this.refreshAoeSkillButtons();
+
     // ── 右上：灵囊 + 赋能按钮 ──
     this.createInventoryButton(width, panelY);
     this.createWuxingButton(width, panelY);
@@ -92,15 +112,6 @@ export class HUDScene extends Phaser.Scene {
     const joystickY = panelY + panelH * 0.62;
     this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.12, 80));
 
-    // ── 右侧：主动技能按钮 ──
-    const playerState = gameState.getPlayerState();
-    const allSkills = getAllAttributeSkills(playerState.equipment);
-    const activeSkills = allSkills.filter(id => AOE_SKILL_IDS.has(id)).slice(0, 2);
-
-    if (activeSkills.length > 0) {
-      this.createSkillButtons(width, panelY, panelH, activeSkills);
-    }
-
     // ── 事件监听 ──
     eventBus.on(GameEvent.PLAYER_HP_CHANGE, (hp: unknown, maxHp: unknown) => {
       this.playerHp = hp as number;
@@ -109,11 +120,17 @@ export class HUDScene extends Phaser.Scene {
     });
 
     eventBus.on(GameEvent.SKILL_CD_UPDATE, (timers: unknown, maxTimers: unknown) => {
-      this.updateSkillCds(timers as number[], maxTimers as number[]);
+      this.updateAoeSkillCds(timers as number[], maxTimers as number[]);
     });
 
-    eventBus.on(GameEvent.KILL_COUNT_UPDATE, (count: unknown, target: unknown) => {
-      this.killCountText?.setText(`击杀 ${count}/${target}`);
+    eventBus.on(GameEvent.ENEMY_COUNT_UPDATE, (count: unknown) => {
+      this.enemyCountText?.setText(`剩余妖异 ${count}`);
+    });
+
+    eventBus.on(GameEvent.ROUND_TIMER_UPDATE, (secs: unknown, round: unknown) => {
+      const s = secs as number;
+      const color = s <= 10 ? '#f85149' : s <= 30 ? '#eab308' : '#8b949e';
+      this.roundTimerText?.setText(`第${round}轮 ${s}s`).setColor(color);
     });
 
     eventBus.on(GameEvent.BUFF_UPDATE, (buffs: unknown) => {
@@ -126,6 +143,11 @@ export class HUDScene extends Phaser.Scene {
 
     eventBus.on(GameEvent.STATS_CHANGED, () => {
       this.refreshInfoArea();
+      this.refreshAoeSkillButtons();
+    });
+
+    eventBus.on(GameEvent.GAME_OVER, () => {
+      this.showGameOverOverlay();
     });
   }
 
@@ -177,90 +199,94 @@ export class HUDScene extends Phaser.Scene {
     }
   }
 
-  private createSkillButtons(
-    width: number,
-    panelY: number,
-    panelH: number,
-    activeSkills: AttributeSkillId[]
-  ): void {
-    const btnSize = Math.min(width * 0.16, 90);
-    // 技能按钮放在右侧，摇杆右边
-    const btnY = panelY + panelH * 0.62;
-    const rightMargin = width * 0.05;
-    const gap = btnSize + width * 0.03;
-    // 从右向左排列
-    const startX = width - rightMargin - btnSize / 2;
+  /** 重建 AOE 技能按钮区（buff 栏下方，所有已拥有的范围技能） */
+  private refreshAoeSkillButtons(): void {
+    this.aoeSkillArea.removeAll(true);
+    this.aoeSkillCdOverlays = [];
+    this.aoeSkillCdTexts = [];
 
-    activeSkills.forEach((skillId, i) => {
-      const meta = AOE_SKILL_META[skillId] ?? { label: '技能', color: 0x8b949e };
-      const btnX = startX - i * gap;
-      const container = this.add.container(btnX, btnY);
+    const playerState = gameState.getPlayerState();
+    const allSkills = getAllEquipmentSkills(playerState.equipment);
+    const activeSkills = allSkills.filter(s => AOE_SKILL_IDS.has(s.id));
+    if (activeSkills.length === 0) return;
 
+    const { width } = this.cameras.main;
+    const btnW = 68;
+    const btnH = 22;
+    const gap = 6;
+    let x = width * 0.05;
+
+    activeSkills.forEach((skill, i) => {
+      const meta = AOE_SKILL_META[skill.id] ?? { label: skill.name, color: 0x8b949e };
       const color = meta.color;
+
       const bg = this.add.graphics();
       bg.fillStyle(color, 0.2);
-      bg.fillCircle(0, 0, btnSize / 2);
-      bg.lineStyle(2, color, 0.7);
-      bg.strokeCircle(0, 0, btnSize / 2);
+      bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+      bg.lineStyle(1.5, color, 0.8);
+      bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+      this.aoeSkillArea.add(bg);
 
-      const txt = this.add.text(0, 0, meta.label, {
+      const lbl = this.add.text(x + btnW / 2, 0, meta.label, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontXS}px`,
+        fontSize: '11px',
         color: '#ffffff',
-        align: 'center',
       }).setOrigin(0.5);
+      this.aoeSkillArea.add(lbl);
 
-      const cdOverlay = this.add.graphics().setDepth(102);
-      const cdText = this.add.text(0, 0, '', {
+      const cdOverlay = this.add.graphics();
+      this.aoeSkillArea.add(cdOverlay);
+      this.aoeSkillCdOverlays.push(cdOverlay);
+
+      const cdText = this.add.text(x + btnW / 2, 0, '', {
         fontFamily: 'monospace',
-        fontSize: `${uiConfig.fontXS}px`,
-        color: '#ffffff',
-      }).setOrigin(0.5).setDepth(103).setAlpha(0);
+        fontSize: '10px',
+        color: '#ffff88',
+      }).setOrigin(0.5).setAlpha(0);
+      this.aoeSkillArea.add(cdText);
+      this.aoeSkillCdTexts.push(cdText);
 
-      container.add([bg, txt, cdOverlay, cdText]);
-      container.setSize(btnSize, btnSize);
-      container.setInteractive();
-
-      this.cdOverlays.push(cdOverlay);
-      this.cdTexts.push(cdText);
+      const hit = this.add.rectangle(x + btnW / 2, 0, btnW, btnH, 0xffffff, 0).setInteractive();
+      this.aoeSkillArea.add(hit);
 
       const idx = i;
-
-      container.on('pointerdown', () => {
+      hit.on('pointerdown', () => {
         bg.clear();
         bg.fillStyle(color, 0.55);
-        bg.fillCircle(0, 0, btnSize / 2);
-        bg.lineStyle(2, color, 1);
-        bg.strokeCircle(0, 0, btnSize / 2);
+        bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.lineStyle(1.5, color, 1);
+        bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
         inputManager.pressSkill(idx);
       });
-
-      container.on('pointerup', () => {
+      hit.on('pointerup', () => {
         bg.clear();
         bg.fillStyle(color, 0.2);
-        bg.fillCircle(0, 0, btnSize / 2);
-        bg.lineStyle(2, color, 0.7);
-        bg.strokeCircle(0, 0, btnSize / 2);
+        bg.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
+        bg.lineStyle(1.5, color, 0.8);
+        bg.strokeRoundedRect(x, -btnH / 2, btnW, btnH, 4);
         inputManager.releaseSkill(idx);
       });
+      hit.on('pointerout', () => inputManager.releaseSkill(idx));
 
-      container.on('pointerout', () => inputManager.releaseSkill(idx));
-
-      this.skillButtons.push(container);
+      x += btnW + gap;
     });
   }
 
-  private updateSkillCds(timers: number[], maxTimers: number[]): void {
+  private updateAoeSkillCds(timers: number[], maxTimers: number[]): void {
     timers.forEach((t, i) => {
-      const overlay = this.cdOverlays[i];
-      const cdText = this.cdTexts[i];
+      const overlay = this.aoeSkillCdOverlays[i];
+      const cdText = this.aoeSkillCdTexts[i];
       if (!overlay || !cdText) return;
       overlay.clear();
       if (t > 0 && maxTimers[i] > 0) {
         const pct = t / maxTimers[i];
-        const btnSize = Math.min(this.cameras.main.width * 0.16, 90);
+        const { width } = this.cameras.main;
+        const btnW = 68;
+        const btnH = 22;
+        const gap = 6;
+        const x = width * 0.05 + i * (btnW + gap);
         overlay.fillStyle(0x000000, 0.6 * pct);
-        overlay.fillCircle(0, 0, btnSize / 2);
+        overlay.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
         cdText.setText(`${(t / 1000).toFixed(1)}s`).setAlpha(1);
       } else {
         cdText.setText('').setAlpha(0);
@@ -399,7 +425,13 @@ export class HUDScene extends Phaser.Scene {
     const pillH = 52;
     const gap = 8;
     const totalW = options.length * pillW + (options.length - 1) * gap;
-    const startX = anchorX - totalW / 2 + pillW / 2;
+    // 防止超出右边框
+    const screenW = this.cameras.main.width;
+    const margin = 8;
+    const naturalStartX = anchorX - totalW / 2 + pillW / 2;
+    const naturalEndX = naturalStartX + (options.length - 1) * (pillW + gap) + pillW / 2;
+    const overflow = Math.max(0, naturalEndX - (screenW - margin));
+    const startX = naturalStartX - overflow;
     // 向下展开：cy 是 pill 行中心，在 anchorY 下方
     const cy = anchorY + pillH / 2 + 4;
 
@@ -486,7 +518,8 @@ export class HUDScene extends Phaser.Scene {
       x += 26;
       for (const skill of skills) {
         const label = `${skill.name} Lv${skill.level}`;
-        const pill = this.createInfoPill(x, row2Y, label, 0xd4a853, pillH);
+        const desc = skill.description;
+        const pill = this.createInfoPill(x, row2Y, label, 0xd4a853, pillH, desc);
         this.infoArea.add(pill);
         x += pill.width + 5;
         if (x > width * 0.82) break;
@@ -507,7 +540,7 @@ export class HUDScene extends Phaser.Scene {
         if (!def2) continue;
         const label = `${def2.name} Lv${st.level}`;
         const color = parseInt(def2.color.replace('#', ''), 16);
-        const pill = this.createInfoPill(x, row3Y, label, color, pillH);
+        const pill = this.createInfoPill(x, row3Y, label, color, pillH, def2.description ?? '');
         this.infoArea.add(pill);
         x += pill.width + 5;
         if (x > width * 0.82) break;
@@ -515,7 +548,9 @@ export class HUDScene extends Phaser.Scene {
     }
   }
 
-  private createInfoPill(x: number, y: number, label: string, color: number, pillH: number): Phaser.GameObjects.Text {
+  private createInfoPill(
+    x: number, y: number, label: string, color: number, pillH: number, description: string = ''
+  ): Phaser.GameObjects.Text {
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const txt = this.add.text(x, y, label, {
       fontFamily: '"Noto Sans SC", sans-serif',
@@ -525,10 +560,15 @@ export class HUDScene extends Phaser.Scene {
       padding: { x: 5, y: 2 },
     }).setOrigin(0, 0.5);
     void pillH;
+
+    if (description) {
+      txt.setInteractive({ useHandCursor: true });
+      txt.on('pointerup', () => this.toggleInfoPopup(label, description, color));
+    }
     return txt;
   }
 
-  private renderBuffs(buffs: { label: string; color: number }[]): void {
+  private renderBuffs(buffs: { label: string; color: number; description?: string }[]): void {
     this.buffArea.removeAll(true);
     if (!buffs || buffs.length === 0) return;
 
@@ -536,15 +576,13 @@ export class HUDScene extends Phaser.Scene {
     const gap = 6;
     let x = this.cameras.main.width * 0.05;
 
-    buffs.forEach(({ label, color }) => {
+    buffs.forEach(({ label, color, description }) => {
       const colorHex = '#' + color.toString(16).padStart(6, '0');
-      const txt = this.add.text(0, 0, label, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
-        color: colorHex,
+      const tmp = this.add.text(0, -9999, label, {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: colorHex,
       });
-      const pillW = txt.width + 14;
-      txt.destroy();
+      const pillW = tmp.width + 14;
+      tmp.destroy();
 
       const bg = this.add.graphics();
       bg.fillStyle(color, 0.18);
@@ -553,14 +591,124 @@ export class HUDScene extends Phaser.Scene {
       bg.strokeRoundedRect(x, -pillH / 2, pillW, pillH, 4);
       this.buffArea.add(bg);
 
-      const label2 = this.add.text(x + pillW / 2, 0, label, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
-        color: colorHex,
+      const lbl = this.add.text(x + pillW / 2, 0, label, {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: colorHex,
       }).setOrigin(0.5);
-      this.buffArea.add(label2);
+      this.buffArea.add(lbl);
+
+      // 可点击弹窗
+      const hit = this.add.rectangle(x + pillW / 2, 0, pillW, pillH, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      this.buffArea.add(hit);
+      hit.on('pointerup', () => this.toggleInfoPopup(label, description ?? label, color));
 
       x += pillW + gap;
+    });
+  }
+
+  /** 切换信息弹窗（点击技能/状态/buff pill 时调用） */
+  private toggleInfoPopup(title: string, description: string, color: number): void {
+    if (this.activePopup) {
+      this.activePopup.destroy();
+      this.activePopup = null;
+      return;
+    }
+
+    const { width } = this.cameras.main;
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+    const popupW = Math.min(width * 0.7, 260);
+    const popupX = width / 2;
+    const popupY = this.panelY + 60;
+
+    const container = this.add.container(popupX, popupY).setDepth(300);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1c2128, 0.97);
+    bg.fillRoundedRect(-popupW / 2, -10, popupW, 70, 8);
+    bg.lineStyle(1.5, color, 0.8);
+    bg.strokeRoundedRect(-popupW / 2, -10, popupW, 70, 8);
+    container.add(bg);
+
+    const titleTxt = this.add.text(0, 6, title, {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '13px',
+      color: colorHex,
+    }).setOrigin(0.5, 0);
+    container.add(titleTxt);
+
+    const descTxt = this.add.text(0, 28, description, {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '11px',
+      color: '#c9d1d9',
+      wordWrap: { width: popupW - 20 },
+      align: 'center',
+    }).setOrigin(0.5, 0);
+    container.add(descTxt);
+
+    // 调整背景高度适应内容
+    const totalH = 22 + descTxt.height + 14;
+    bg.clear();
+    bg.fillStyle(0x1c2128, 0.97);
+    bg.fillRoundedRect(-popupW / 2, -10, popupW, totalH, 8);
+    bg.lineStyle(1.5, color, 0.8);
+    bg.strokeRoundedRect(-popupW / 2, -10, popupW, totalH, 8);
+
+    // 点击弹窗本身关闭
+    const hit = this.add.rectangle(0, totalH / 2 - 10, popupW, totalH, 0xffffff, 0)
+      .setInteractive({ useHandCursor: true });
+    container.add(hit);
+    hit.on('pointerup', () => {
+      container.destroy();
+      this.activePopup = null;
+    });
+
+    this.activePopup = container;
+  }
+
+  /** 游戏失败全屏覆盖（遮盖操控区域） */
+  private showGameOverOverlay(): void {
+    const { width, height } = this.cameras.main;
+
+    // 全屏半透明遮罩（阻止所有操控交互）
+    const overlay = this.add.graphics().setDepth(1000);
+    overlay.fillStyle(0x000000, 0.78);
+    overlay.fillRect(0, 0, width, height);
+    overlay.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, width, height),
+      Phaser.Geom.Rectangle.Contains
+    );
+
+    this.add.text(width / 2, height * 0.3, '游戏失败', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '38px',
+      color: '#f85149',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(1001);
+
+    this.add.text(width / 2, height * 0.3 + 52, '残魂已消散于天地之间', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '16px',
+      color: '#8b949e',
+    }).setOrigin(0.5).setDepth(1001);
+
+    const restartBtn = this.add.text(width / 2, height * 0.52, '【 点击重新开始 】', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '20px',
+      color: '#d4a853',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(1001).setInteractive({ useHandCursor: true });
+
+    restartBtn.on('pointerover', () => restartBtn.setColor('#ffe88a'));
+    restartBtn.on('pointerout',  () => restartBtn.setColor('#d4a853'));
+    restartBtn.on('pointerup', () => {
+      gameState.reset();
+      this.scene.stop('InventoryScene');
+      // 重启 WorldScene（会自动 stop/launch HUDScene）
+      const worldScene = this.scene.get('WorldScene');
+      if (worldScene) {
+        worldScene.scene.restart();
+      }
     });
   }
 
@@ -577,5 +725,7 @@ export class HUDScene extends Phaser.Scene {
     this.joystick?.destroy();
     this.closeWuxingPicker();
     this.wuxingPickerObjects = [];
+    this.activePopup?.destroy();
+    this.activePopup = null;
   }
 }
