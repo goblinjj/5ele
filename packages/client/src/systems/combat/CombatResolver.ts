@@ -84,7 +84,9 @@ export function resolveCombat(attacker: Combatant, defender: Combatant): CombatR
 
   const { multiplier, healSelf, healTarget } = getWuxingMultiplier(attackerWuxing, defenderWuxing);
 
-  const finalDamage = Math.max(0, Math.floor(baseDamage * multiplier));
+  // baseDamage > 0 且有伤害倍率时，保证至少造成 1 点伤害（避免 0.5 倍截断为 0）
+  const rawDamage = Math.floor(baseDamage * multiplier);
+  const finalDamage = (baseDamage > 0 && multiplier > 0) ? Math.max(1, rawDamage) : rawDamage;
 
   return {
     damage: finalDamage,

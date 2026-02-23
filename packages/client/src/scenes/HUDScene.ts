@@ -35,10 +35,6 @@ export class HUDScene extends Phaser.Scene {
   /** AOE 技能按钮的 CD 覆盖层和文字 */
   private aoeSkillCdOverlays: Phaser.GameObjects.Graphics[] = [];
   private aoeSkillCdTexts: Phaser.GameObjects.Text[] = [];
-  /** 剩余妖异数量文字（视口顶部中央） */
-  private enemyCountText!: Phaser.GameObjects.Text;
-  /** 轮次计时器文字（视口顶部右侧） */
-  private roundTimerText!: Phaser.GameObjects.Text;
   private buffArea!: Phaser.GameObjects.Container;
   /** AOE 技能按钮区（buff 栏下方） */
   private aoeSkillArea!: Phaser.GameObjects.Container;
@@ -70,24 +66,6 @@ export class HUDScene extends Phaser.Scene {
     panelBg.fillRect(0, panelY, width, panelH);
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
-
-    // 剩余妖异数量（视口顶部中央）
-    this.enemyCountText = this.add.text(width / 2, 18, '剩余妖异 --', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#d4a853',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(50);
-
-    // 轮次计时器（视口顶部右侧）
-    this.roundTimerText = this.add.text(width * 0.85, 18, '', {
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      color: '#8b949e',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(50);
 
     // ── 左上：HP 条 + 属性/技能/状态 ──
     this.createPlayerHpBar(width, panelY);
@@ -121,16 +99,6 @@ export class HUDScene extends Phaser.Scene {
 
     eventBus.on(GameEvent.SKILL_CD_UPDATE, (timers: unknown, maxTimers: unknown) => {
       this.updateAoeSkillCds(timers as number[], maxTimers as number[]);
-    });
-
-    eventBus.on(GameEvent.ENEMY_COUNT_UPDATE, (count: unknown) => {
-      this.enemyCountText?.setText(`剩余妖异 ${count}`);
-    });
-
-    eventBus.on(GameEvent.ROUND_TIMER_UPDATE, (secs: unknown, round: unknown) => {
-      const s = secs as number;
-      const color = s <= 10 ? '#f85149' : s <= 30 ? '#eab308' : '#8b949e';
-      this.roundTimerText?.setText(`第${round}轮 ${s}s`).setColor(color);
     });
 
     eventBus.on(GameEvent.BUFF_UPDATE, (buffs: unknown) => {
@@ -617,7 +585,8 @@ export class HUDScene extends Phaser.Scene {
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const popupW = Math.min(width * 0.7, 260);
     const popupX = width / 2;
-    const popupY = this.panelY + 60;
+    // 弹窗显示在游戏视口内（控制面板上方 80px 处）
+    const popupY = this.panelY - 80;
 
     const container = this.add.container(popupX, popupY).setDepth(300);
 

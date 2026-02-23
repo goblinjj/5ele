@@ -119,6 +119,12 @@ export class WorldScene extends Phaser.Scene {
   private roundTransitioning: boolean = false;
   /** 游戏是否已失败 */
   private isGameOver: boolean = false;
+  /** 视口固定：剩余妖异数量文字 */
+  private enemyCountText!: Phaser.GameObjects.Text;
+  /** 视口固定：轮次计时器文字 */
+  private roundTimerText!: Phaser.GameObjects.Text;
+  /** 轮次结束横幅（过渡期显示，non-blocking） */
+  private roundBannerObjects: Phaser.GameObjects.GameObject[] = [];
   private enemyIndicator!: Phaser.GameObjects.Graphics;
   private attackRangeIndicator!: Phaser.GameObjects.Graphics;
   private lootDrops: LootDrop[] = [];
@@ -203,6 +209,24 @@ export class WorldScene extends Phaser.Scene {
     this.roundTransitionTimer = 0;
     this.roundTransitioning = false;
     this.isGameOver = false;
+    this.roundBannerObjects = [];
+
+    // ---- 视口固定 UI：剩余妖异 + 计时器（用 setScrollFactor(0) 固定在视口） ----
+    this.enemyCountText = this.add.text(width / 2, 20, '剩余妖异 --', {
+      fontFamily: '"Noto Serif SC", serif',
+      fontSize: '14px',
+      color: '#d4a853',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
+
+    this.roundTimerText = this.add.text(width * 0.85, 20, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#8b949e',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
 
     eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyDied());
     eventBus.on(GameEvent.LOOT_DROPPED, (data: unknown) => {
@@ -211,9 +235,11 @@ export class WorldScene extends Phaser.Scene {
     });
     eventBus.on(GameEvent.GAME_OVER, () => this.onGameOver());
 
-    // 发送初始剩余妖异数量
-    this.time.delayedCall(50, () => {
-      eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, this.entityManager.getAlive().length);
+    // 初始妖异数量（delayedCall 确保 HUDScene 已启动）
+    this.time.delayedCall(100, () => {
+      const count = this.entityManager.getAlive().length;
+      this.enemyCountText?.setText(`剩余妖异 ${count}`);
+      eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, count);
     });
 
     // ---- 启动 HUDScene ----
@@ -240,21 +266,46 @@ export class WorldScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.isGameOver) return;
 
-    // ---- 轮次倒计时 / 过渡 ----
+    // ---- 轮次过渡倒计时（玩家可继续操作） ----
     if (this.roundTransitioning) {
       this.roundTransitionTimer -= delta;
       if (this.roundTransitionTimer <= 0) {
         this.startNextRound();
+        return;
       }
-      return; // 过渡期暂停一切
+      // 过渡中继续更新横幅倒计时文字
+      this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
+      if (this._cdBroadcastTick === 0) {
+        const secs = Math.max(1, Math.ceil(this.roundTransitionTimer / 1000));
+        const bannerCountdown = this.roundBannerObjects[2] as Phaser.GameObjects.Text | undefined;
+        if (bannerCountdown?.active) bannerCountdown.setText(`${secs} 秒后进入下一轮...`);
+        eventBus.emit(
+          GameEvent.SKILL_CD_UPDATE,
+          this.combatSystem.getPlayerSkillTimers(),
+          this.combatSystem.getPlayerSkillMaxTimers()
+        );
+      }
+      // 过渡期玩家仍可移动和战斗
+      this.movePlayer(delta);
+      this.updateEnemies(delta);
+      this.combatSystem.update(delta, this.player, this.playerCombatant);
+      this.updateEnemyIndicator();
+      this.updateAttackRangeIndicator();
+      this.updateLootDrops();
+      this.updateChanneling(delta);
+      return;
     }
 
-    this.roundTimer -= delta;
+    if (!this.roundTransitioning) {
+      this.roundTimer -= delta;
+    }
 
     // 广播计时器（每5帧一次）
     this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
     if (this._cdBroadcastTick === 0) {
       const secsLeft = Math.max(0, Math.ceil(this.roundTimer / 1000));
+      const color = secsLeft <= 10 ? '#f85149' : secsLeft <= 30 ? '#eab308' : '#8b949e';
+      this.roundTimerText?.setText(`第${this.currentRound}轮 ${secsLeft}s`).setColor(color);
       eventBus.emit(GameEvent.ROUND_TIMER_UPDATE, secsLeft, this.currentRound);
       eventBus.emit(
         GameEvent.SKILL_CD_UPDATE,
@@ -764,11 +815,12 @@ export class WorldScene extends Phaser.Scene {
 
   /** 妖异死亡时：更新剩余数量，若全部消灭则触发轮次结束 */
   private onEnemyDied(): void {
-    if (this.roundTransitioning || this.isGameOver) return;
+    if (this.isGameOver) return;
     const remaining = this.entityManager.getAlive().length;
+    this.enemyCountText?.setText(`剩余妖异 ${remaining}`);
     eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, remaining);
 
-    if (remaining === 0) {
+    if (remaining === 0 && !this.roundTransitioning) {
       this.triggerRoundEnd();
     }
   }
@@ -779,36 +831,32 @@ export class WorldScene extends Phaser.Scene {
     this.roundTransitioning = true;
     this.roundTransitionTimer = 10000; // 10 秒过渡
 
-    const cam = this.cameras.main;
-    const cx = cam.worldView.x + cam.width / 2;
-    const cy = cam.worldView.y + cam.height / 2;
+    // 非阻塞式顶部横幅（setScrollFactor(0) 固定在视口，不遮挡中央视野）
+    const { width } = this.cameras.main;
+    const bannerW = Math.min(width * 0.72, 320);
+    const bannerH = 44;
+    const bannerX = (width - bannerW) / 2;
+    const bannerY = 44;
 
-    const bg = this.add.graphics().setDepth(200);
-    bg.fillStyle(0x000000, 0.7);
-    bg.fillRoundedRect(cx - 180, cy - 60, 360, 120, 16);
+    const bg = this.add.graphics().setDepth(200).setScrollFactor(0);
+    bg.fillStyle(0x0d1117, 0.88);
+    bg.fillRoundedRect(bannerX, bannerY, bannerW, bannerH, 8);
+    bg.lineStyle(1.5, 0xd4a853, 0.7);
+    bg.strokeRoundedRect(bannerX, bannerY, bannerW, bannerH, 8);
 
-    this.add.text(cx, cy - 20, `第 ${this.currentRound} 轮结束`, {
+    const titleTxt = this.add.text(width / 2, bannerY + 8, `第 ${this.currentRound} 轮结束`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '28px',
+      fontSize: '14px',
       color: '#d4a853',
-    }).setOrigin(0.5).setDepth(201);
+    }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
 
-    const countdownTxt = this.add.text(cx, cy + 22, '10 秒后进入下一轮...', {
+    const countdownTxt = this.add.text(width / 2, bannerY + 26, '10 秒后进入下一轮...', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '16px',
+      fontSize: '11px',
       color: '#8b949e',
-    }).setOrigin(0.5).setDepth(201);
+    }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
 
-    // 每秒更新倒计时文字
-    const countdownEvent = this.time.addEvent({
-      delay: 1000,
-      repeat: 9,
-      callback: () => {
-        const secs = Math.ceil(this.roundTransitionTimer / 1000);
-        countdownTxt.setText(`${secs} 秒后进入下一轮...`);
-      },
-    });
-    void countdownEvent;
+    this.roundBannerObjects = [bg, titleTxt, countdownTxt];
   }
 
   /** 过渡完成后，清场并开始下一轮 */
@@ -817,11 +865,9 @@ export class WorldScene extends Phaser.Scene {
     this.roundTimer = getRoundDuration(this.currentRound) * 1000;
     this.roundTransitioning = false;
 
-    // 清除轮次结束 UI（depth >= 200）
-    this.children.list
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter(c => (c as any).depth >= 200)
-      .forEach(c => (c as Phaser.GameObjects.GameObject).destroy());
+    // 销毁横幅
+    this.roundBannerObjects.forEach(o => (o as Phaser.GameObjects.GameObject).destroy());
+    this.roundBannerObjects = [];
 
     // 清除残余怪物和能量掉落，生成新一波
     this.spawnSystem.clearAll();
@@ -829,6 +875,9 @@ export class WorldScene extends Phaser.Scene {
     this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
 
     const newCount = this.entityManager.getAlive().length;
+    this.enemyCountText?.setText(`剩余妖异 ${newCount}`);
+    const dur = getRoundDuration(this.currentRound);
+    this.roundTimerText?.setText(`第${this.currentRound}轮 ${dur}s`).setColor('#8b949e');
     eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, newCount);
   }
 

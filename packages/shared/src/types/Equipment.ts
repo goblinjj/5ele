@@ -116,11 +116,14 @@ export function getDefenseWuxing(equipment: PlayerEquipment): WuxingLevel | null
   };
 }
 
+/** 玩家基础攻击力（无武器时的底盘） */
+export const BASE_PLAYER_ATTACK = 1;
+
 /**
  * 计算玩家总攻击力
  */
 export function getTotalAttack(equipment: PlayerEquipment): number {
-  let attack = equipment.weapon?.attack ?? 0;
+  let attack = BASE_PLAYER_ATTACK + (equipment.weapon?.attack ?? 0);
 
   for (const treasure of equipment.treasures) {
     attack += treasure.attack ?? 0;
