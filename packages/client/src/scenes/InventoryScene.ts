@@ -48,6 +48,9 @@ export class InventoryScene extends Phaser.Scene {
 
   /** 当前选中槽位（单击显示详情） */
   private selectedSlot?: SlotInfo;
+  /** 双击检测 */
+  private lastClickTime: number = 0;
+  private lastClickSlot?: SlotInfo;
   /** 详情面板容器（右栏，选中后更新） */
   private detailPanel?: Phaser.GameObjects.Container;
   /** 详情面板几何（createEquipmentAndDetailLayout 后固定） */
@@ -81,6 +84,8 @@ export class InventoryScene extends Phaser.Scene {
     this.isDragging = false;
     this.dragSourceSlot = undefined;
     this.selectedSlot = undefined;
+    this.lastClickTime = 0;
+    this.lastClickSlot = undefined;
 
     this.add.rectangle(width / 2, vpH / 2, width, vpH, this.colors.bgDark, 0.98);
 
@@ -523,8 +528,27 @@ export class InventoryScene extends Phaser.Scene {
         }
         // 点击非背包有装备格子时忽略（继续等待选择）
       } else {
-        // 普通选中：更新详情面板
-        this.refreshDetailPanel(src.equipment ? src : undefined);
+        const now = Date.now();
+        const isDoubleClick =
+          this.lastClickSlot?.type === src.type &&
+          this.lastClickSlot?.index === src.index &&
+          now - this.lastClickTime < 500;
+
+        if (isDoubleClick && src.equipment) {
+          // 双击：穿戴（背包）或卸下（装备栏）
+          if (src.type === 'inventory') {
+            this.equipItem(src);
+          } else {
+            this.unequipItem(src);
+          }
+          this.lastClickTime = 0;
+          this.lastClickSlot = undefined;
+        } else {
+          // 单击：更新详情面板
+          this.refreshDetailPanel(src.equipment ? src : undefined);
+          this.lastClickTime = now;
+          this.lastClickSlot = src;
+        }
       }
     }
 

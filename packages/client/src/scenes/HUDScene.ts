@@ -47,14 +47,15 @@ export class HUDScene extends Phaser.Scene {
   private wuxingBtnSub!: Phaser.GameObjects.Text;
   /** 当前五行选择器所有 scene 级别对象（scene 直属，非 Container 子节点） */
   private wuxingPickerObjects: Phaser.GameObjects.GameObject[] = [];
-  /** 持久化弹窗组件（不销毁，只 setVisible） */
-  private infoPopupContainer!: Phaser.GameObjects.Container;
-  private infoPopupBg!: Phaser.GameObjects.Graphics;
-  private infoPopupTitle!: Phaser.GameObjects.Text;
-  private infoPopupDesc!: Phaser.GameObjects.Text;
-  private infoPopupHit!: Phaser.GameObjects.Rectangle;
-  /** 当前展示的 pill key（title 文字），用于 toggle 判断 */
-  private infoPopupKey: string = '';
+  /** 持久化弹窗（scene 级别对象，非 Container，避免 setVisible 不级联的问题） */
+  private popupBg!: Phaser.GameObjects.Graphics;
+  private popupTitle!: Phaser.GameObjects.Text;
+  private popupDesc!: Phaser.GameObjects.Text;
+  private popupHit!: Phaser.GameObjects.Rectangle;
+  /** 当前展示的 pill key，用于 toggle 判断 */
+  private popupKey: string = '';
+  /** 游戏失败覆盖是否已显示（防止重复创建） */
+  private gameOverShown: boolean = false;
 
   constructor() {
     super({ key: 'HUDScene' });
@@ -65,6 +66,7 @@ export class HUDScene extends Phaser.Scene {
     const panelH = height * LAYOUT.PANEL_RATIO;
     const panelY = height * LAYOUT.VIEWPORT_RATIO;
     this.panelY = panelY;
+    this.gameOverShown = false;
 
     // 操控面板背景
     const panelBg = this.add.graphics();
@@ -593,71 +595,83 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
+  /** 创建持久弹窗（scene 级别，非 Container，避免 Phaser 3.80 Container.setVisible 不级联输入的问题） */
   private createPersistentInfoPopup(): void {
     const { width } = this.cameras.main;
     const popupW = Math.min(width * 0.7, 260);
-    const popupH = 80;
 
-    this.infoPopupContainer = this.add.container(width / 2, 0).setDepth(300).setVisible(false);
+    this.popupBg = this.add.graphics().setDepth(300).setVisible(false);
 
-    this.infoPopupBg = this.add.graphics();
-    this.infoPopupContainer.add(this.infoPopupBg);
-
-    this.infoPopupTitle = this.add.text(0, 10, '', {
+    this.popupTitle = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '13px',
       color: '#d4a853',
-    }).setOrigin(0.5, 0);
-    this.infoPopupContainer.add(this.infoPopupTitle);
+    }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
-    this.infoPopupDesc = this.add.text(0, 30, '', {
+    this.popupDesc = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '11px',
       color: '#c9d1d9',
       wordWrap: { width: popupW - 20 },
       align: 'center',
-    }).setOrigin(0.5, 0);
-    this.infoPopupContainer.add(this.infoPopupDesc);
+    }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
-    this.infoPopupHit = this.add.rectangle(0, popupH / 2, popupW, popupH, 0xffffff, 0)
-      .setInteractive({ useHandCursor: true });
-    this.infoPopupHit.on('pointerup', () => this.hideInfoPopup());
-    this.infoPopupContainer.add(this.infoPopupHit);
+    // hit rect 初始时不可见且不可交互，显示后再激活
+    this.popupHit = this.add.rectangle(width / 2, 0, popupW, 80, 0xffffff, 0)
+      .setDepth(300).setVisible(false);
+    this.popupHit.on('pointerup', () => this.hideInfoPopup());
   }
 
   private showInfoPopup(title: string, description: string, color: number): void {
     const { width } = this.cameras.main;
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const popupW = Math.min(width * 0.7, 260);
+    const popupX = width / 2;
 
-    this.infoPopupTitle.setText(title).setColor(colorHex);
-    this.infoPopupDesc.setText(description);
+    // 先设置文字内容（以便测量高度）
+    this.popupTitle.setText(title).setColor(colorHex).setX(popupX);
+    this.popupDesc.setText(description).setX(popupX);
 
-    // 根据描述高度调整背景
-    const totalH = Math.max(80, 30 + this.infoPopupDesc.height + 14);
-    this.infoPopupBg.clear();
-    this.infoPopupBg.fillStyle(0x1c2128, 0.97);
-    this.infoPopupBg.fillRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
-    this.infoPopupBg.lineStyle(1.5, color, 0.8);
-    this.infoPopupBg.strokeRoundedRect(-popupW / 2, 0, popupW, totalH, 8);
+    const totalH = Math.max(80, 30 + this.popupDesc.height + 14);
+    const topY = this.panelY - 8 - totalH;
 
-    this.infoPopupHit.setSize(popupW, totalH).setY(totalH / 2);
+    // 绘制背景
+    this.popupBg.clear();
+    this.popupBg.fillStyle(0x1c2128, 0.97);
+    this.popupBg.fillRoundedRect(popupX - popupW / 2, topY, popupW, totalH, 8);
+    this.popupBg.lineStyle(1.5, color, 0.8);
+    this.popupBg.strokeRoundedRect(popupX - popupW / 2, topY, popupW, totalH, 8);
 
-    // 底部对齐控制面板顶部 - 8px
-    this.infoPopupContainer.setY(this.panelY - 8 - totalH);
-    this.infoPopupContainer.setVisible(true);
-    this.infoPopupKey = title;
+    // 定位文字
+    this.popupTitle.setY(topY + 10);
+    this.popupDesc.setY(topY + 30);
+
+    // 定位并激活 hit rect
+    this.popupHit.setPosition(popupX, topY + totalH / 2).setSize(popupW, totalH);
+    if (!this.popupHit.input) {
+      this.popupHit.setInteractive({ useHandCursor: true });
+    }
+
+    // 全部显示
+    this.popupBg.setVisible(true);
+    this.popupTitle.setVisible(true);
+    this.popupDesc.setVisible(true);
+    this.popupHit.setVisible(true);
+
+    this.popupKey = title;
   }
 
   private hideInfoPopup(): void {
-    this.infoPopupContainer?.setVisible(false);
-    this.infoPopupKey = '';
+    this.popupBg?.setVisible(false);
+    this.popupTitle?.setVisible(false);
+    this.popupDesc?.setVisible(false);
+    this.popupHit?.setVisible(false);
+    this.popupKey = '';
   }
 
   /** 切换信息弹窗（点击技能/状态/buff pill 时调用） */
   private toggleInfoPopup(title: string, description: string, color: number): void {
-    // 同一 pill 再次点击 → 关闭；不同 pill → 更新内容
-    if (this.infoPopupContainer?.visible && this.infoPopupKey === title) {
+    if (this.popupBg?.visible && this.popupKey === title) {
       this.hideInfoPopup();
     } else {
       this.showInfoPopup(title, description, color);
@@ -665,7 +679,9 @@ export class HUDScene extends Phaser.Scene {
   }
 
   /** 游戏失败全屏覆盖（遮盖操控区域） */
-  private showGameOverOverlay(): void {
+  showGameOverOverlay(): void {
+    if (this.gameOverShown) return;
+    this.gameOverShown = true;
     const { width, height } = this.cameras.main;
 
     // 全屏半透明遮罩（阻止所有操控交互）
@@ -725,6 +741,6 @@ export class HUDScene extends Phaser.Scene {
     this.joystick?.destroy();
     this.closeWuxingPicker();
     this.wuxingPickerObjects = [];
-    this.hideInfoPopup();
+    this.popupKey = '';
   }
 }

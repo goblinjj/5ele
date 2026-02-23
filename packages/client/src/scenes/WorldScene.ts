@@ -928,10 +928,14 @@ export class WorldScene extends Phaser.Scene {
     eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, newCount);
   }
 
-  /** 游戏失败：停止逻辑，显示失败提示（全屏覆盖由 HUDScene 处理） */
+  /** 游戏失败：停止逻辑，并直接触发 HUDScene 显示失败覆盖 */
   private onGameOver(): void {
     if (this.isGameOver) return;
     this.isGameOver = true;
+    // 直接调用 HUDScene（双路触发，防止 eventBus 时序问题）
+    if (this.scene.isActive('HUDScene')) {
+      (this.scene.get('HUDScene') as any)?.showGameOverOverlay?.();
+    }
   }
 
   // ---- 五行所属系统 ----
