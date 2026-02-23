@@ -136,41 +136,56 @@ export class HUDScene extends Phaser.Scene {
     this.createPopupTestRow();
   }
 
-  /** 临时测试行：验证弹窗在移动端是否可用（测完可删） */
+  /** 临时测试行：验证弹窗在移动端是否可用（测完可删）
+   *  改用场景级 pointerdown（与摇杆同机制）替代 setInteractive，确保触控可用 */
   private createPopupTestRow(): void {
     const { width } = this.cameras.main;
     const rowY = this.panelY + 110; // 面板内部，buff栏下方、AOE按钮上方
 
     const labels = [
-      { text: 'setVisible弹窗', desc: '方法A：scene级别对象 setVisible 显示/隐藏，可行则弹窗正常', color: 0xd4a853 },
-      { text: '创建销毁弹窗', desc: '方法B：每次 add/destroy 弹窗容器，可行则弹窗正常', color: 0x58a6ff },
+      { text: 'A: setVisible弹窗', desc: '方法A：scene级别对象 setVisible 显示/隐藏，可行则弹窗正常', color: 0xd4a853 },
+      { text: 'B: 创建销毁弹窗', desc: '方法B：每次 add/destroy 弹窗容器，可行则弹窗正常', color: 0x58a6ff },
     ];
 
     const btnW = (width - 20) / labels.length - 4;
+    // 存储按钮坐标范围，供场景级监听器判断点击目标
+    const bounds: Array<{ x1: number; y1: number; x2: number; y2: number; idx: number }> = [];
+
     labels.forEach((item, i) => {
       const bx = 10 + i * (btnW + 4);
       const bg = this.add.graphics().setDepth(350);
       bg.fillStyle(0x1c2128, 0.9);
       bg.fillRoundedRect(bx, rowY - 16, btnW, 32, 5);
-      bg.lineStyle(1, item.color, 0.8);
+      bg.lineStyle(2, item.color, 0.9);
       bg.strokeRoundedRect(bx, rowY - 16, btnW, 32, 5);
 
       this.add.text(bx + btnW / 2, rowY, item.text, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
+        fontSize: '12px',
         color: '#' + item.color.toString(16).padStart(6, '0'),
       }).setOrigin(0.5).setDepth(351);
 
-      if (i === 0) {
-        // 方法A：scene-level setVisible（当前实现）
-        const hit = this.add.rectangle(bx + btnW / 2, rowY, btnW, 32, 0xffffff, 0)
-          .setDepth(352).setInteractive({ useHandCursor: true });
-        hit.on('pointerup', () => this.toggleInfoPopup(item.text, item.desc, item.color));
-      } else {
-        // 方法B：每次创建/销毁
-        this.add.rectangle(bx + btnW / 2, rowY, btnW, 32, 0xffffff, 0)
-          .setDepth(352).setInteractive({ useHandCursor: true })
-          .on('pointerup', () => this.showPopupB(item.text, item.desc, item.color));
+      bounds.push({ x1: bx, y1: rowY - 16, x2: bx + btnW, y2: rowY + 16, idx: i });
+    });
+
+    // 调试信息：显示最近一次触点的游戏坐标 y（帮助诊断坐标映射）
+    const debugTxt = this.add.text(width / 2, rowY + 22, '点击任意处查看坐标', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#484f58',
+    }).setOrigin(0.5).setDepth(352);
+
+    // 场景级 pointerdown（与摇杆同机制，绕过 setInteractive 潜在问题）
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      debugTxt.setText(`tap y=${Math.round(pointer.y)}`);
+      for (const b of bounds) {
+        if (pointer.x >= b.x1 && pointer.x <= b.x2 &&
+            pointer.y >= b.y1 && pointer.y <= b.y2) {
+          if (b.idx === 0) {
+            this.toggleInfoPopup(labels[0].text, labels[0].desc, labels[0].color);
+          } else {
+            this.showPopupB(labels[1].text, labels[1].desc, labels[1].color);
+          }
+          break;
+        }
       }
     });
   }
