@@ -139,7 +139,7 @@ export class HUDScene extends Phaser.Scene {
   /** 临时测试行：验证弹窗在移动端是否可用（测完可删） */
   private createPopupTestRow(): void {
     const { width } = this.cameras.main;
-    const rowY = this.panelY - 22; // 面板上方22px，游戏区内
+    const rowY = this.panelY + 110; // 面板内部，buff栏下方、AOE按钮上方
 
     const labels = [
       { text: 'setVisible弹窗', desc: '方法A：scene级别对象 setVisible 显示/隐藏，可行则弹窗正常', color: 0xd4a853 },
