@@ -163,8 +163,8 @@ export class WorldScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const viewportH = Math.floor(height * LAYOUT.VIEWPORT_RATIO);
 
-    // ---- 相机视口：已关闭（测试用） ----
-    this.cameras.main.setVisible(false);
+    // ---- 相机视口：只占上 60%，地图外显示黑色 ----
+    this.cameras.main.setViewport(0, 0, width, viewportH);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBackgroundColor('#000000');
 
@@ -246,6 +246,8 @@ export class WorldScene extends Phaser.Scene {
       this.scene.stop('HUDScene');
     }
     this.scene.launch('HUDScene');
+    // HUDScene 必须渲染在 WorldScene 之上，否则弹框/控件被游戏画面遮盖
+    this.scene.bringToTop('HUDScene');
 
     // 发送初始 HP
     eventBus.emit(
