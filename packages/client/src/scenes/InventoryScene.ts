@@ -389,7 +389,7 @@ export class InventoryScene extends Phaser.Scene {
         this.lastClickSlot &&
         this.lastClickSlot.type === src.type &&
         this.lastClickSlot.index === src.index &&
-        now - this.lastClickTime < 400
+        now - this.lastClickTime < 500
       ) {
         // 双击 → 穿戴 / 卸下
         this.handleDoubleClick(src);

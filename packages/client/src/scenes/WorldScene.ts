@@ -241,7 +241,10 @@ export class WorldScene extends Phaser.Scene {
       eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, count);
     });
 
-    // ---- 启动 HUDScene ----
+    // ---- 启动 HUDScene（先停止确保 create() 重新执行，重注册所有事件监听） ----
+    if (this.scene.isActive('HUDScene')) {
+      this.scene.stop('HUDScene');
+    }
     this.scene.launch('HUDScene');
 
     // 发送初始 HP
@@ -679,21 +682,27 @@ export class WorldScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     if (Math.abs(body.velocity.x) > 10 || Math.abs(body.velocity.y) > 10) return;
 
-    for (let i = 0; i < this.lootDrops.length; i++) {
-      const drop = this.lootDrops[i];
-      if (drop.collected) continue;
-      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y);
-      if (dist < 35) {
-        // 能量附近有妖异时不触发塑型
-        const nearbyEnemy = this.entityManager.getAlive().some(e =>
-          Phaser.Math.Distance.Between(drop.x, drop.y, e.sprite.x, e.sprite.y) < 150
-        );
-        if (nearbyEnemy) continue;
+    // 收集范围内所有可塑型的能量，按距离从近到远排序
+    const candidates = this.lootDrops
+      .filter(d => !d.collected)
+      .map(d => ({
+        drop: d,
+        dist: Phaser.Math.Distance.Between(this.player.x, this.player.y, d.x, d.y),
+      }))
+      .filter(({ dist }) => dist < AUTO_ATTACK_RANGE)
+      .sort((a, b) => a.dist - b.dist);
 
-        this.lootDrops.splice(i, 1);
-        this.startChanneling(drop);
-        break;
-      }
+    for (const { drop } of candidates) {
+      // 能量附近有妖异时跳过
+      const nearbyEnemy = this.entityManager.getAlive().some(e =>
+        Phaser.Math.Distance.Between(drop.x, drop.y, e.sprite.x, e.sprite.y) < 150
+      );
+      if (nearbyEnemy) continue;
+
+      const idx = this.lootDrops.indexOf(drop);
+      if (idx !== -1) this.lootDrops.splice(idx, 1);
+      this.startChanneling(drop);
+      break;
     }
   }
 
@@ -703,26 +712,28 @@ export class WorldScene extends Phaser.Scene {
     this.channelingTarget = drop;
     this.combatSystem.setPlayerChanneling(true);
 
-    // 飘字：仅显示五行关系字符（生/助/泄/克/耗），颜色区分吉凶
+    // 飘字：仅显示五行关系字符（生/助/泄/克/耗），无属性时不显示
     const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
     const { rel, rate } = calcWuxingResult(defWuxing, drop.wuxing);
-    const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
-    const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
-    const floatTxt = this.add.text(drop.x, drop.y - 20, rel, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: '22px',
-      color: relColorHex,
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({
-      targets: floatTxt,
-      y: drop.y - 60,
-      alpha: 0,
-      duration: 900,
-      ease: 'Power2',
-      onComplete: () => floatTxt.destroy(),
-    });
+    if (rel !== '无属') {
+      const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
+      const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
+      const floatTxt = this.add.text(drop.x, drop.y - 20, rel, {
+        fontFamily: '"Noto Serif SC", serif',
+        fontSize: '22px',
+        color: relColorHex,
+        stroke: '#000000',
+        strokeThickness: 3,
+      }).setOrigin(0.5).setDepth(30);
+      this.tweens.add({
+        targets: floatTxt,
+        y: drop.y - 60,
+        alpha: 0,
+        duration: 900,
+        ease: 'Power2',
+        onComplete: () => floatTxt.destroy(),
+      });
+    }
   }
 
   private updateChanneling(delta: number): void {
