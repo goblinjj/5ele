@@ -9,6 +9,7 @@ import {
   StatusType,
   checkWuxingMastery,
   calculatePlayerMaxHp,
+  BASE_PLAYER_ATTACK,
   Wuxing,
 } from '@xiyou/shared';
 
@@ -304,7 +305,7 @@ export class GameStateManager {
    * 获取总攻击力
    */
   getTotalAttack(): number {
-    let attack = this.playerState.equipment.weapon?.attack ?? 1;
+    let attack = BASE_PLAYER_ATTACK + (this.playerState.equipment.weapon?.attack ?? 0);
     for (const treasure of this.playerState.equipment.treasures) {
       attack += treasure.attack ?? 0;
     }

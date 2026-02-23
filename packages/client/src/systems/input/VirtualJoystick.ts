@@ -12,13 +12,16 @@ export class VirtualJoystick {
   private thumb!: Phaser.GameObjects.Graphics;
 
   private pointerId: number = -1;
+  /** 触摸响应的最小 Y 坐标（屏幕坐标），低于此值的触摸不触发摇杆 */
+  private minY: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, baseRadius: number = 70) {
+  constructor(scene: Phaser.Scene, x: number, y: number, baseRadius: number = 70, minY: number = 0) {
     this.scene = scene;
     this.baseX = x;
     this.baseY = y;
     this.baseRadius = baseRadius;
     this.thumbRadius = baseRadius * 0.45;
+    this.minY = minY;
 
     this.createGraphics();
     this.bindInput();
@@ -44,8 +47,8 @@ export class VirtualJoystick {
 
   private bindInput(): void {
     this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // 只响应左半屏的触摸
-      if (pointer.x < this.scene.cameras.main.width / 2 && this.pointerId === -1) {
+      // 只响应左半屏 + minY 以下的触摸（避免误触技能/buff区域）
+      if (pointer.x < this.scene.cameras.main.width / 2 && pointer.y >= this.minY && this.pointerId === -1) {
         this.pointerId = pointer.id;
         this.update(pointer.x, pointer.y);
       }

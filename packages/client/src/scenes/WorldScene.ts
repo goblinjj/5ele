@@ -133,7 +133,6 @@ export class WorldScene extends Phaser.Scene {
   private channelingTimer: number = 0;
   private channelingTarget?: LootDrop;
   private channelingIndicator!: Phaser.GameObjects.Graphics;
-  private channelingRelTxt?: Phaser.GameObjects.Text;
   /** 塑型失败累计补偿概率：每次失败 +5%，成功后清零 */
   private channelingBonus: number = 0;
   /** 五行所属粒子发射器（跟随玩家） */
@@ -251,6 +250,35 @@ export class WorldScene extends Phaser.Scene {
       this.playerCombatant.hp,
       this.playerCombatant.maxHp
     );
+
+    // 装备变化时同步 playerCombatant 战斗属性（保证技能/属性实时生效）
+    eventBus.on(GameEvent.STATS_CHANGED, () => {
+      const eq = gameState.getPlayerState().equipment;
+      this.playerCombatant.attack = getTotalAttack(eq);
+      this.playerCombatant.defense = getTotalDefense(eq);
+      this.playerCombatant.speed = getTotalSpeed(eq);
+      this.playerCombatant.attributeSkills = getAllAttributeSkills(eq);
+      this.playerCombatant.allWuxingLevels = getAllWuxingLevels(eq);
+
+      // maxHp 可能随装备变化（按比例调整当前 HP）
+      const ps = gameState.getPlayerState();
+      if (ps.maxHp !== this.playerCombatant.maxHp) {
+        const ratio = this.playerCombatant.hp / this.playerCombatant.maxHp;
+        this.playerCombatant.maxHp = ps.maxHp;
+        this.playerCombatant.hp = Math.max(1, Math.round(ps.maxHp * ratio));
+        eventBus.emit(GameEvent.PLAYER_HP_CHANGE, this.playerCombatant.hp, this.playerCombatant.maxHp);
+      }
+
+      // 若有五行所属选择，重新应用覆盖
+      const chosen = gameState.getChosenWuxing();
+      if (chosen) {
+        this.playerCombatant.attackWuxing  = { wuxing: chosen, level: 1 };
+        this.playerCombatant.defenseWuxing = { wuxing: chosen, level: 1 };
+      } else {
+        this.playerCombatant.attackWuxing  = getAttackWuxing(eq);
+        this.playerCombatant.defenseWuxing = getDefenseWuxing(eq);
+      }
+    });
 
     // ---- 五行所属粒子 ----
     this.generateWuxingParticleTextures();
@@ -673,19 +701,26 @@ export class WorldScene extends Phaser.Scene {
     this.channelingTarget = drop;
     this.combatSystem.setPlayerChanneling(true);
 
-    // 在能量体上显示五行关系标签
+    // 飘字：仅显示五行关系字符（生/助/泄/克/耗），颜色区分吉凶
     const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
     const { rel, rate } = calcWuxingResult(defWuxing, drop.wuxing);
     const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
     const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
-    this.channelingRelTxt?.destroy();
-    this.channelingRelTxt = this.add.text(drop.x, drop.y - 32, `【${rel}】${Math.round(rate * 100)}%`, {
+    const floatTxt = this.add.text(drop.x, drop.y - 20, rel, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '13px',
+      fontSize: '22px',
       color: relColorHex,
       stroke: '#000000',
       strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(20);
+    }).setOrigin(0.5).setDepth(30);
+    this.tweens.add({
+      targets: floatTxt,
+      y: drop.y - 60,
+      alpha: 0,
+      duration: 900,
+      ease: 'Power2',
+      onComplete: () => floatTxt.destroy(),
+    });
   }
 
   private updateChanneling(delta: number): void {
@@ -725,8 +760,6 @@ export class WorldScene extends Phaser.Scene {
     this.isChanneling = false;
     this.channelingIndicator.clear();
     this.combatSystem.setPlayerChanneling(false);
-    this.channelingRelTxt?.destroy();
-    this.channelingRelTxt = undefined;
     // 将能量放回可拾取列表，停下后可重新触发
     const drop = this.channelingTarget;
     this.channelingTarget = undefined;
@@ -737,8 +770,6 @@ export class WorldScene extends Phaser.Scene {
     this.isChanneling = false;
     this.channelingIndicator.clear();
     this.combatSystem.setPlayerChanneling(false);
-    this.channelingRelTxt?.destroy();
-    this.channelingRelTxt = undefined;
 
     const target = this.channelingTarget;
     this.channelingTarget = undefined;
@@ -784,8 +815,6 @@ export class WorldScene extends Phaser.Scene {
       this.channelingTarget?.label.destroy();
       this.channelingTarget = undefined;
       this.combatSystem?.setPlayerChanneling(false);
-      this.channelingRelTxt?.destroy();
-      this.channelingRelTxt = undefined;
     }
     this.lootDrops.forEach(drop => {
       drop.graphics.destroy();

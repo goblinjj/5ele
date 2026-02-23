@@ -85,10 +85,12 @@ export class HUDScene extends Phaser.Scene {
     this.createInventoryButton(width, panelY);
     this.createWuxingButton(width, panelY);
 
-    // ── 中央：虚拟摇杆 ──
+    // ── 中央：虚拟摇杆（minY = AOE技能区底部，避免误触技能/buff/状态pill） ──
     const joystickX = width * 0.5;
     const joystickY = panelY + panelH * 0.62;
-    this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.12, 80));
+    // AOE技能区 container 在 panelY+114，按钮高22，底部约 panelY+125，留10px余量
+    const joystickMinY = panelY + 138;
+    this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.12, 80), joystickMinY);
 
     // ── 事件监听 ──
     eventBus.on(GameEvent.PLAYER_HP_CHANGE, (hp: unknown, maxHp: unknown) => {
