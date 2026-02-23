@@ -163,8 +163,8 @@ export class WorldScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const viewportH = Math.floor(height * LAYOUT.VIEWPORT_RATIO);
 
-    // ---- 相机视口：全屏（测试用） ----
-    this.cameras.main.setViewport(0, 0, width, height);
+    // ---- 相机视口：已关闭（测试用） ----
+    this.cameras.main.setVisible(false);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBackgroundColor('#000000');
 
