@@ -79,12 +79,12 @@ export class HUDScene extends Phaser.Scene {
     // ── 左上：HP 条 + 属性/技能/状态 ──
     this.createPlayerHpBar(width, panelY);
 
-    // 属性/技能/状态展示区（HP条正下方，紧凑排列）
-    this.infoArea = this.add.container(0, panelY + 38).setDepth(51);
+    // 属性/技能/状态展示区（HP条正下方，留出足够间距）
+    this.infoArea = this.add.container(0, panelY + 62).setDepth(51);
     this.refreshInfoArea();
 
     // Buff 展示区（技能/状态条下方）
-    this.buffArea = this.add.container(0, panelY + 120).setDepth(51);
+    this.buffArea = this.add.container(0, panelY + 144).setDepth(51);
 
     // AOE 技能按钮区：位于分割线（上方45%区域最底部）正上方
     const dividerY = panelY + panelH * 0.45;
@@ -142,7 +142,7 @@ export class HUDScene extends Phaser.Scene {
     // 留出灵囊 + 最多5个五行按钮的空间
     const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (wuxingBtnSize + wuxingGap);
     const effectsY1 = panelY + 22;
-    const effectsY2 = panelY + 155;
+    const effectsY2 = panelY + 178;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.x <= effectsX2 &&
           pointer.y >= effectsY1 && pointer.y <= effectsY2) {
