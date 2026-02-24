@@ -519,13 +519,14 @@ export class HUDScene extends Phaser.Scene {
       color: '#d4a853',
     }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
-    this.popupDesc = this.add.text(width / 2, 0, '', {
+    const popupLeft = width / 2 - popupW / 2 + 12;
+    this.popupDesc = this.add.text(popupLeft, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '13px',
       color: '#c9d1d9',
       wordWrap: { width: popupW - 24 },
       align: 'left',
-    }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
+    }).setOrigin(0, 0).setDepth(300).setVisible(false);
 
     // hit rect 初始时不可见且不可交互，显示后再激活
     this.popupHit = this.add.rectangle(width / 2, 0, popupW, 80, 0xffffff, 0)
@@ -541,7 +542,7 @@ export class HUDScene extends Phaser.Scene {
 
     // 先设置文字内容（以便测量高度）
     this.popupTitle.setText(title).setColor(colorHex).setX(popupX);
-    this.popupDesc.setText(description).setX(popupX);
+    this.popupDesc.setText(description).setX(popupX - popupW / 2 + 12);
 
     const totalH = Math.max(80, 34 + this.popupDesc.height + 14);
     const topY = Math.max(10, this.panelY - 8 - totalH);
