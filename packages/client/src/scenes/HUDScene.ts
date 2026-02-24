@@ -392,17 +392,39 @@ export class HUDScene extends Phaser.Scene {
       treasures: gameState.getTreasures(),
     };
 
-    // ── 第一行：ATK / DEF / SPD ──
+    // ── 第一行：ATK / DEF / SPD 彩色徽章 ──
     const atk = gameState.getTotalAttack();
     const def = gameState.getTotalDefense();
     const spd = gameState.getTotalSpeed();
-    const statsStr = `攻 ${atk}  防 ${def}  速 ${spd}`;
-    const statsLabel = this.add.text(width * 0.05, 0, statsStr, {
-      fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
-    this.infoArea.add(statsLabel);
+    const statDefs = [
+      { label: '攻', value: atk, color: 0xe56040 },
+      { label: '防', value: def, color: 0x58a6ff },
+      { label: '速', value: spd, color: 0x3fb950 },
+    ];
+    const badgeH = Math.round(uiConfig.fontLG * 1.5);
+    const badgePadX = 12;
+    let bx = width * 0.05;
+    for (const stat of statDefs) {
+      const colorHex = '#' + stat.color.toString(16).padStart(6, '0');
+      const tmp = this.add.text(0, -9999, `${stat.label} ${stat.value}`, {
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontLG}px`,
+      });
+      const badgeW = tmp.width + badgePadX * 2;
+      tmp.destroy();
+      const bg = this.add.graphics();
+      bg.fillStyle(stat.color, 0.12);
+      bg.fillRoundedRect(bx, -badgeH / 2, badgeW, badgeH, 6);
+      bg.lineStyle(1.5, stat.color, 0.65);
+      bg.strokeRoundedRect(bx, -badgeH / 2, badgeW, badgeH, 6);
+      this.infoArea.add(bg);
+      this.infoArea.add(this.add.text(bx + badgeW / 2, 0, `${stat.label} ${stat.value}`, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: `${uiConfig.fontLG}px`,
+        color: colorHex,
+        fontStyle: 'bold',
+      }).setOrigin(0.5));
+      bx += badgeW + 8;
+    }
 
     // ── 第二行（+30px）：技能 pills ──
     const skills = getAllEquipmentSkills(eq);
@@ -517,7 +539,7 @@ export class HUDScene extends Phaser.Scene {
     const popupLeft = width / 2 - popupW / 2 + 12;
     this.popupDesc = this.add.text(popupLeft, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#c9d1d9',
       wordWrap: { width: popupW - 24 },
       align: 'left',
