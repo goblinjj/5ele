@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { LAYOUT } from '../config/uiConfig.js';
+import { LAYOUT, uiConfig } from '../config/uiConfig.js';
 import { inputManager } from '../systems/input/InputManager.js';
 import { eventBus, GameEvent } from '../core/EventBus.js';
 import { gameState } from '../systems/GameStateManager.js';
@@ -211,17 +211,17 @@ export class WorldScene extends Phaser.Scene {
     this.roundBannerObjects = [];
 
     // ---- 视口固定 UI：剩余妖异 + 计时器（用 setScrollFactor(0) 固定在视口） ----
-    this.enemyCountText = this.add.text(width / 2, 20, '剩余妖异 --', {
+    this.enemyCountText = this.add.text(width / 2, 22, '剩余妖异 --', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '14px',
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#d4a853',
       stroke: '#000000',
       strokeThickness: 3,
     }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
 
-    this.roundTimerText = this.add.text(width * 0.85, 20, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
+    this.roundTimerText = this.add.text(width * 0.85, 22, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
       stroke: '#000000',
       strokeThickness: 2,
@@ -668,7 +668,7 @@ export class WorldScene extends Phaser.Scene {
 
     const label = this.add.text(x, y - 18, `${wuxingName}能 Lv${level}`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '10px',
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#' + color.toString(16).padStart(6, '0'),
       stroke: '#000000',
       strokeThickness: 2,
@@ -847,7 +847,7 @@ export class WorldScene extends Phaser.Scene {
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const text = this.add.text(x, y - 20, msg, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '12px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: colorHex,
       stroke: '#000000',
       strokeThickness: 2,
@@ -882,8 +882,8 @@ export class WorldScene extends Phaser.Scene {
 
     // 非阻塞式顶部横幅（setScrollFactor(0) 固定在视口，不遮挡中央视野）
     const { width } = this.cameras.main;
-    const bannerW = Math.min(width * 0.72, 320);
-    const bannerH = 44;
+    const bannerW = Math.min(width * 0.80, 380);
+    const bannerH = uiConfig.fontLG + uiConfig.fontSM + 24;
     const bannerX = (width - bannerW) / 2;
     const bannerY = 44;
 
@@ -895,13 +895,13 @@ export class WorldScene extends Phaser.Scene {
 
     const titleTxt = this.add.text(width / 2, bannerY + 8, `第 ${this.currentRound} 轮结束`, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '14px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
 
-    const countdownTxt = this.add.text(width / 2, bannerY + 26, '10 秒后进入下一轮...', {
+    const countdownTxt = this.add.text(width / 2, bannerY + 8 + uiConfig.fontLG + 6, '10 秒后进入下一轮...', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '11px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
 

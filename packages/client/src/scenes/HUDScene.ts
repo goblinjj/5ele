@@ -80,11 +80,11 @@ export class HUDScene extends Phaser.Scene {
     this.createPlayerHpBar(width, panelY);
 
     // 属性/技能/状态展示区（HP条正下方，紧凑排列）
-    this.infoArea = this.add.container(0, panelY + 28).setDepth(51);
+    this.infoArea = this.add.container(0, panelY + 38).setDepth(51);
     this.refreshInfoArea();
 
     // Buff 展示区（技能/状态条下方）
-    this.buffArea = this.add.container(0, panelY + 70).setDepth(51);
+    this.buffArea = this.add.container(0, panelY + 90).setDepth(51);
 
     // AOE 技能按钮区：位于分割线（上方35%区域最底部）正上方
     const dividerY = panelY + panelH * 0.35;
@@ -141,7 +141,7 @@ export class HUDScene extends Phaser.Scene {
     // 留出灵囊 + 最多5个五行按钮的空间
     const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (invBtnSize + wuxingGap);
     const effectsY1 = panelY + 22;
-    const effectsY2 = panelY + 100;
+    const effectsY2 = panelY + 130;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.x <= effectsX2 &&
           pointer.y >= effectsY1 && pointer.y <= effectsY2) {
@@ -154,7 +154,7 @@ export class HUDScene extends Phaser.Scene {
   private createPlayerHpBar(width: number, panelY: number): void {
     // HP 条宽度：左侧 60%，右侧留给赋能+灵囊按钮
     const barW = width * 0.50;
-    const barH = 12;
+    const barH = 16;
     const barX = width * 0.05;
     const barY = panelY + 10;
 
@@ -167,15 +167,10 @@ export class HUDScene extends Phaser.Scene {
 
     this.playerHpText = this.add.text(barX + barW / 2, barY + barH / 2, '', {
       fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#ffffff',
     }).setOrigin(0.5).setDepth(10);
 
-    this.add.text(barX, barY - 12, '残魂', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: '#d4a853',
-    });
   }
 
   private updateHpBar(): void {
@@ -183,7 +178,7 @@ export class HUDScene extends Phaser.Scene {
     const { width, height } = this.cameras.main;
     const panelY = height * LAYOUT.VIEWPORT_RATIO;
     const barW = width * 0.50;
-    const barH = 12;
+    const barH = 16;
     const barX = width * 0.05;
     const barY = panelY + 10;
 
@@ -233,7 +228,7 @@ export class HUDScene extends Phaser.Scene {
 
       const lbl = this.add.text(btnX + btnW / 2, 0, meta.label, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '11px',
+        fontSize: `${uiConfig.fontSM}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
       this.aoeSkillArea.add(lbl);
@@ -244,7 +239,7 @@ export class HUDScene extends Phaser.Scene {
 
       const cdText = this.add.text(btnX + btnW / 2, 0, '', {
         fontFamily: 'monospace',
-        fontSize: '10px',
+        fontSize: `${uiConfig.fontXS}px`,
         color: '#ffff88',
       }).setOrigin(0.5).setAlpha(0);
       this.aoeSkillArea.add(cdText);
@@ -318,10 +313,10 @@ export class HUDScene extends Phaser.Scene {
     };
     drawBg(false);
     const icon = this.add.text(0, -4, '灵', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '16px', color: '#d4a853',
+      fontFamily: '"Noto Serif SC", serif', fontSize: `${uiConfig.fontLG}px`, color: '#d4a853',
     }).setOrigin(0.5);
-    const sub = this.add.text(0, 12, '囊', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: '10px', color: '#8b949e',
+    const sub = this.add.text(0, uiConfig.fontLG * 0.7, '囊', {
+      fontFamily: '"Noto Serif SC", serif', fontSize: `${uiConfig.fontSM}px`, color: '#8b949e',
     }).setOrigin(0.5);
     container.add([bg, icon, sub]);
     container.setSize(btnSize, btnSize).setInteractive();
@@ -403,27 +398,26 @@ export class HUDScene extends Phaser.Scene {
     const statsStr = `攻 ${atk}  防 ${def}  速 ${spd}`;
     const statsLabel = this.add.text(width * 0.05, 0, statsStr, {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
     this.infoArea.add(statsLabel);
 
-    // ── 第二行（+14px）：技能 pills ──
+    // ── 第二行（+20px）：技能 pills ──
     const skills = getAllEquipmentSkills(eq);
     let x = width * 0.05;
-    const row2Y = 14;
-    const pillH = 14;
-    // 右侧留出两个按钮的宽度（40*2 + gap + margin ≈ width*0.55 右侧）
+    const row2Y = 20;
+    const pillH = 18;
     const pillMaxX = width * 0.58;
     if (skills.length === 0) {
       this.infoArea.add(this.add.text(x, row2Y, '技能: 暂无', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
       }).setOrigin(0, 0.5));
     } else {
       this.infoArea.add(this.add.text(x, row2Y, '技能', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
       }).setOrigin(0, 0.5));
-      x += 26;
+      x += 30;
       for (const skill of skills) {
         const label = `${skill.name} Lv${skill.level}`;
         const desc = skill.description;
@@ -434,15 +428,15 @@ export class HUDScene extends Phaser.Scene {
       }
     }
 
-    // ── 第三行（+28px）：五行被动状态 pills ──
+    // ── 第三行（+40px）：五行被动状态 pills ──
     const statuses = getWuxingPassiveStatuses(eq);
     x = width * 0.05;
-    const row3Y = 28;
+    const row3Y = 40;
     if (statuses.length > 0) {
       this.infoArea.add(this.add.text(x, row3Y, '状态', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#484f58',
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
       }).setOrigin(0, 0.5));
-      x += 26;
+      x += 30;
       for (const st of statuses) {
         const def2 = STATUS_DEFINITIONS[st.type];
         if (!def2) continue;
@@ -462,10 +456,10 @@ export class HUDScene extends Phaser.Scene {
     const colorHex = '#' + color.toString(16).padStart(6, '0');
     const txt = this.add.text(x, y, label, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '10px',
+      fontSize: `${uiConfig.fontXS}px`,
       color: colorHex,
       backgroundColor: colorHex + '22',
-      padding: { x: 5, y: 2 },
+      padding: { x: 5, y: 3 },
     }).setOrigin(0, 0.5);
     void pillH;
 
@@ -478,16 +472,16 @@ export class HUDScene extends Phaser.Scene {
     this.buffArea.removeAll(true);
     if (!buffs || buffs.length === 0) return;
 
-    const pillH = 18;
+    const pillH = 22;
     const gap = 6;
     let x = this.cameras.main.width * 0.05;
 
     buffs.forEach(({ label, color, description }) => {
       const colorHex = '#' + color.toString(16).padStart(6, '0');
       const tmp = this.add.text(0, -9999, label, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: colorHex,
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: colorHex,
       });
-      const pillW = tmp.width + 14;
+      const pillW = tmp.width + 16;
       tmp.destroy();
 
       const bg = this.add.graphics();
@@ -498,7 +492,7 @@ export class HUDScene extends Phaser.Scene {
       this.buffArea.add(bg);
 
       const lbl = this.add.text(x + pillW / 2, 0, label, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: '11px', color: colorHex,
+        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: colorHex,
       }).setOrigin(0.5);
       this.buffArea.add(lbl);
 
@@ -515,14 +509,14 @@ export class HUDScene extends Phaser.Scene {
 
     this.popupTitle = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '15px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
     const popupLeft = width / 2 - popupW / 2 + 12;
     this.popupDesc = this.add.text(popupLeft, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '13px',
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#c9d1d9',
       wordWrap: { width: popupW - 24 },
       align: 'left',
@@ -642,21 +636,21 @@ export class HUDScene extends Phaser.Scene {
 
     this.add.text(width / 2, height * 0.3, '游戏失败', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '38px',
+      fontSize: `${uiConfig.font3XL}px`,
       color: '#f85149',
       stroke: '#000000',
       strokeThickness: 4,
     }).setOrigin(0.5).setDepth(1001);
 
-    this.add.text(width / 2, height * 0.3 + 52, '残魂已消散于天地之间', {
+    this.add.text(width / 2, height * 0.3 + uiConfig.font3XL + 16, '残魂已消散于天地之间', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '16px',
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
     }).setOrigin(0.5).setDepth(1001);
 
     const restartBtn = this.add.text(width / 2, height * 0.52, '【 点击重新开始 】', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '20px',
+      fontSize: `${uiConfig.fontXL}px`,
       color: '#d4a853',
       stroke: '#000000',
       strokeThickness: 2,
