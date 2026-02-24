@@ -144,68 +144,81 @@ export class InventoryScene extends Phaser.Scene {
   private createEquipmentAndDetailLayout(): void {
     const { width, height } = this.cameras.main;
     const headerH = height * 0.08;
-    const sectionY = headerH + height * 0.01;
-    const sectionH = height * 0.50;
-    const leftW = width * 0.44;
-    const rightX = width * 0.46;
+    const pad = 8;
 
-    this.detailPanelX = rightX;
-    this.detailPanelY = sectionY;
-    this.detailPanelW = width * 0.52;
-    this.detailPanelH = sectionH;
+    // ── 装备行背景 ──
+    const equipRowH = 90;
+    const equipRowY = headerH + pad;
+    const equipBg = this.add.graphics();
+    equipBg.fillStyle(this.colors.inkBlack, 0.5);
+    equipBg.fillRoundedRect(pad, equipRowY, width - pad * 2, equipRowH, 8);
+    equipBg.lineStyle(1, this.colors.inkGrey, 0.5);
+    equipBg.strokeRoundedRect(pad, equipRowY, width - pad * 2, equipRowH, 8);
 
-    // 左栏背景
-    const leftBg = this.add.graphics();
-    leftBg.fillStyle(this.colors.inkBlack, 0.5);
-    leftBg.fillRoundedRect(width * 0.01, sectionY, leftW, sectionH, 8);
-    leftBg.lineStyle(1, this.colors.inkGrey, 0.5);
-    leftBg.strokeRoundedRect(width * 0.01, sectionY, leftW, sectionH, 8);
-
-    // 右栏背景
-    const rightBg = this.add.graphics();
-    rightBg.fillStyle(this.colors.inkBlack, 0.3);
-    rightBg.fillRoundedRect(rightX, sectionY, this.detailPanelW, sectionH, 8);
-    rightBg.lineStyle(1, this.colors.inkGrey, 0.3);
-    rightBg.strokeRoundedRect(rightX, sectionY, this.detailPanelW, sectionH, 8);
-
-    const slotSize = Math.min(54, (leftW - 16) / 3);
-    const midY = sectionY + sectionH * 0.5;
+    // 武器/防具槽尺寸
+    const wepSlotSize = Math.min(uiConfig.slotSizeLarge, Math.floor((width * 0.3 - pad * 3) / 2));
+    const equipCenterY = equipRowY + equipRowH / 2 + 6;
 
     // 武器槽
-    const weaponX = width * 0.02 + slotSize * 0.5 + 4;
-    this.add.text(weaponX, sectionY + 16, '武器', {
-      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
-    }).setOrigin(0.5);
-    this.createSlot(weaponX, midY - slotSize * 0.1, { type: 'weapon', index: 0, equipment: gameState.getWeapon() }, slotSize);
+    const weaponX = pad * 2 + wepSlotSize / 2;
+    this.add.text(weaponX, equipRowY + 6, '武器', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontXS}px`,
+      color: '#d4a853',
+    }).setOrigin(0.5, 0);
+    this.createSlot(weaponX, equipCenterY, { type: 'weapon', index: 0, equipment: gameState.getWeapon() }, wepSlotSize);
 
     // 防具槽
-    const armorX = weaponX + slotSize + 8;
-    this.add.text(armorX, sectionY + 16, '防具', {
-      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
-    }).setOrigin(0.5);
-    this.createSlot(armorX, midY - slotSize * 0.1, { type: 'armor', index: 0, equipment: gameState.getArmor() }, slotSize);
+    const armorX = weaponX + wepSlotSize + pad;
+    this.add.text(armorX, equipRowY + 6, '防具', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontXS}px`,
+      color: '#d4a853',
+    }).setOrigin(0.5, 0);
+    this.createSlot(armorX, equipCenterY, { type: 'armor', index: 0, equipment: gameState.getArmor() }, wepSlotSize);
 
-    // 灵器标题 + 5个槽位（3+2 两行布局）
-    const tSlotSize = Math.min(46, (leftW - 8) / 3 - 4);
-    const tGap = (leftW - 8) / 3;
-    const tStartX = width * 0.01 + 4 + tSlotSize * 0.5;
-    const tRow1Y = sectionY + sectionH * 0.32;
-    const tRow2Y = sectionY + sectionH * 0.68;
+    // 分隔线
+    const divX = armorX + wepSlotSize / 2 + pad;
+    const divGfx = this.add.graphics();
+    divGfx.lineStyle(1, this.colors.inkGrey, 0.6);
+    divGfx.lineBetween(divX, equipRowY + 8, divX, equipRowY + equipRowH - 8);
+
+    // 灵器槽（最多5个，均分右侧区域）
+    const treasureAreaX = divX + pad;
+    const treasureAreaW = width - treasureAreaX - pad * 2;
+    const tCount = MAX_TREASURES; // 5
+    const tSlotSize = Math.min(uiConfig.slotSizeSmall, Math.floor((treasureAreaW - (tCount - 1) * 4) / tCount));
+    const tGap = tCount > 1 ? Math.floor((treasureAreaW - tCount * tSlotSize) / (tCount - 1)) : 0;
+    const tSlotY = equipCenterY;
     const treasures = gameState.getTreasures();
 
-    this.add.text(tStartX + tGap, sectionY + 16, '灵器', {
-      fontFamily: '"Noto Sans SC", sans-serif', fontSize: '10px', color: '#d4a853',
-    }).setOrigin(0.5);
+    // 灵器标签（在第一个上方）
+    this.add.text(treasureAreaX + tSlotSize / 2, equipRowY + 6, '灵器', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: `${uiConfig.fontXS}px`,
+      color: '#d4a853',
+    }).setOrigin(0.5, 0);
 
-    for (let i = 0; i < MAX_TREASURES; i++) {
-      const row = Math.floor(i / 3);
-      const col = i % 3;
-      const tx = tStartX + col * tGap;
-      const ty = row === 0 ? tRow1Y : tRow2Y;
-      this.createSlot(tx, ty, { type: 'treasure', index: i, equipment: treasures[i] || null }, tSlotSize);
+    for (let i = 0; i < tCount; i++) {
+      const tx = treasureAreaX + i * (tSlotSize + tGap) + tSlotSize / 2;
+      this.createSlot(tx, tSlotY, { type: 'treasure', index: i, equipment: treasures[i] || null }, tSlotSize);
     }
 
-    // 初始详情面板（空状态）
+    // ── 详情面板 ──
+    const detailY = equipRowY + equipRowH + pad;
+    const detailH = Math.max(150, Math.floor(height * 0.22));
+
+    this.detailPanelX = pad;
+    this.detailPanelY = detailY;
+    this.detailPanelW = width - pad * 2;
+    this.detailPanelH = detailH;
+
+    const detailBg = this.add.graphics();
+    detailBg.fillStyle(this.colors.inkBlack, 0.4);
+    detailBg.fillRoundedRect(pad, detailY, width - pad * 2, detailH, 8);
+    detailBg.lineStyle(1, this.colors.inkGrey, 0.4);
+    detailBg.strokeRoundedRect(pad, detailY, width - pad * 2, detailH, 8);
+
     this.refreshDetailPanel(undefined);
   }
 
@@ -306,7 +319,7 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     // 操作按钮区（底部对齐）
-    const btnY = H - 44;
+    const btnY = H - 50;
     const btnH = 30;
     const isEquipped = slotInfo.type !== 'inventory';
     const btnW = isEquipped ? (W - pad * 3) / 2 : W - pad * 2;
@@ -370,45 +383,59 @@ export class InventoryScene extends Phaser.Scene {
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
     const headerH = height * 0.08;
-    const splitH = height * 0.50;
-    const sectionY = headerH + height * 0.01 + splitH + height * 0.01;
-    const sectionH = height - sectionY - 8;
+    const pad = 8;
+    const equipRowH = 90;
+    const detailH = Math.max(150, Math.floor(height * 0.22));
+    const sectionY = headerH + pad + equipRowH + pad + detailH + pad;
+    const sectionH = height - sectionY - pad;
 
     const sectionBg = this.add.graphics();
     sectionBg.fillStyle(this.colors.inkBlack, 0.5);
-    sectionBg.fillRoundedRect(width * 0.01, sectionY, width * 0.98, sectionH, 8);
+    sectionBg.fillRoundedRect(pad, sectionY, width - pad * 2, sectionH, 8);
     sectionBg.lineStyle(1, this.colors.inkGrey, 0.5);
-    sectionBg.strokeRoundedRect(width * 0.01, sectionY, width * 0.98, sectionH, 8);
+    sectionBg.strokeRoundedRect(pad, sectionY, width - pad * 2, sectionH, 8);
 
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
-    this.add.text(width * 0.04, sectionY + 12, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
+    this.add.text(width * 0.04, sectionY + 10, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '11px',
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     });
 
     const fragments = gameState.getFragmentCount();
-    this.add.text(width * 0.96, sectionY + 12, `💎×${fragments}`, {
+    this.add.text(width * 0.96, sectionY + 10, `💎×${fragments}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: '11px',
+      fontSize: `${uiConfig.fontXS}px`,
       color: '#a855f7',
     }).setOrigin(1, 0);
 
-    const cols = INVENTORY_SIZE;
-    const availW = width * 0.96;
-    const spacing = availW / cols;
-    const slotSize = Math.min(spacing * 0.88, sectionH * 0.75);
-    const startX = width * 0.02 + spacing * 0.5;
-    const slotY = sectionY + sectionH * 0.55;
+    // 2行×5列网格
+    const cols = 5;
+    const rows = Math.ceil(INVENTORY_SIZE / cols);
+    const gridPadX = pad * 2;
+    const gridPadY = 32; // 标题下方
+    const slotGap = 6;
+    const availW = width - pad * 2 - gridPadX * 2;
+    const availH = sectionH - gridPadY - pad;
+    const slotSize = Math.min(
+      Math.floor((availW - slotGap * (cols - 1)) / cols),
+      Math.floor((availH - slotGap * (rows - 1)) / rows),
+      90  // 最大90px
+    );
+    const gridTotalW = cols * slotSize + (cols - 1) * slotGap;
+    const startX = pad + gridPadX + slotSize / 2 + (availW - gridTotalW) / 2;
+    const startY = sectionY + gridPadY + slotSize / 2;
 
     const inventory = gameState.getInventory();
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-      const x = startX + i * spacing;
-      this.createSlot(x, slotY, { type: 'inventory', index: i, equipment: inventory[i] }, slotSize);
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * (slotSize + slotGap);
+      const y = startY + row * (slotSize + slotGap);
+      this.createSlot(x, y, { type: 'inventory', index: i, equipment: inventory[i] }, slotSize);
     }
   }
-
   private createSlot(x: number, y: number, slotInfo: SlotInfo, slotSize: number = 55): void {
     const container = this.add.container(x, y);
     const equipment = slotInfo.equipment;
