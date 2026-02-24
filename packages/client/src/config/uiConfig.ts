@@ -19,7 +19,7 @@ export class UIConfig {
   private static instance: UIConfig;
 
   // 字体基准大小（可调整此值测试不同大小）
-  private _baseFontSize: number = 16;
+  private _baseFontSize: number = 106;
 
   // 屏幕尺寸
   private _width: number = 720;
@@ -142,6 +142,37 @@ export class UIConfig {
    */
   get font3XL(): number {
     return Math.round(this._baseFontSize * 2.5);
+  }
+
+  // ============ 按钮/槽位尺寸（调整 baseFontSize 倍数可全局缩放）============
+
+  /**
+   * 主要交互按钮尺寸（灵囊、五行赋能等方形按钮）
+   * 调整倍数 2.5 → 例如 3.0 可全局放大
+   */
+  get btnSizePrimary(): number {
+    return Math.round(this._baseFontSize * 2.5);
+  }
+
+  /**
+   * 技能按钮尺寸（主动技能方形按钮）
+   */
+  get btnSizeSkill(): number {
+    return Math.round(this._baseFontSize * 2.5);
+  }
+
+  /**
+   * 大型装备槽尺寸（武器/防具槽）
+   */
+  get slotSizeLarge(): number {
+    return Math.round(this._baseFontSize * 3.375);
+  }
+
+  /**
+   * 小型装备槽尺寸（灵器槽）
+   */
+  get slotSizeSmall(): number {
+    return Math.round(this._baseFontSize * 2.875);
   }
 
   // ============ 布局计算方法 ============
