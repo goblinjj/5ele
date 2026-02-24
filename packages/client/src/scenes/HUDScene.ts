@@ -134,7 +134,12 @@ export class HUDScene extends Phaser.Scene {
     this.createPersistentInfoPopup();
 
     // 技能/状态/Buff 区域单击 → 显示合并弹框（场景级监听，可靠触控）
-    const effectsX2 = width * 0.58;   // 右侧留给灵囊/赋能按钮
+    const maxWuxing = 5;
+    const invBtnSize = uiConfig.btnSizePrimary;
+    const wuxingGap = 8;
+    const wuxingRightMargin = 12;
+    // 留出灵囊 + 最多5个五行按钮的空间
+    const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (invBtnSize + wuxingGap);
     const effectsY1 = panelY + 22;
     const effectsY2 = panelY + 100;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -345,35 +350,32 @@ export class HUDScene extends Phaser.Scene {
 
     const currentWuxing = gameState.getChosenWuxing();
     const rightMargin = 12;
-    const invBtnSize = 40; // 灵囊按钮宽度
-    const gap = 6;
-    const pillW = 40;
-    const pillH = 26;
-    const pillGap = 4;
-    // 列中心 x：灵囊按钮左侧（与原赋能按钮同位置）
-    const cx = width - rightMargin - invBtnSize - gap - pillW / 2;
-    const startY = this.panelY + 8;
-
+    const invBtnSize = uiConfig.btnSizePrimary; // 灵囊按钮宽度
+    const gap = 8;
+    const pillW = uiConfig.btnSizePrimary;
+    const pillH = uiConfig.btnSizePrimary;
+    // 基准 Y：与灵囊按钮同行（panelY + 10 + btnSize/2）
+    const cy = this.panelY + 10 + pillH / 2;
+    // 从右向左排列：灵囊在最右，五行按钮依次向左
     available.forEach((wx, i) => {
       const isSelected = wx === currentWuxing;
       const color = WUXING_COLORS[wx];
-      const cy = startY + i * (pillH + pillGap) + pillH / 2;
+      const cx = width - rightMargin - invBtnSize - gap - i * (pillW + gap) - pillW / 2;
 
       const bg = this.add.graphics();
       bg.fillStyle(color, isSelected ? 0.35 : 0.08);
-      bg.fillRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 6);
+      bg.fillRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 8);
       bg.lineStyle(isSelected ? 2 : 1, color, isSelected ? 0.9 : 0.35);
-      bg.strokeRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 6);
+      bg.strokeRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 8);
       this.wuxingDirectContainer.add(bg);
 
       const lbl = this.add.text(cx, cy, WUXING_NAMES[wx], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: isSelected ? '15px' : '13px',
+        fontSize: `${isSelected ? uiConfig.fontMD : uiConfig.fontSM}px`,
         color: '#' + color.toString(16).padStart(6, '0'),
       }).setOrigin(0.5);
       this.wuxingDirectContainer.add(lbl);
 
-      // 点击选择/取消选择（再次点击已选中的则取消）
       const hit = this.add.rectangle(cx, cy, pillW, pillH, 0, 0).setInteractive();
       hit.on('pointerup', () => {
         const next = isSelected ? undefined : wx;
