@@ -382,11 +382,9 @@ export class InventoryScene extends Phaser.Scene {
 
   private createInventorySection(): void {
     const { width, height } = this.cameras.main;
-    const headerH = height * 0.08;
     const pad = 8;
-    const equipRowH = 90;
-    const detailH = Math.max(150, Math.floor(height * 0.22));
-    const sectionY = headerH + pad + equipRowH + pad + detailH + pad;
+    // 使用实例变量（由 createEquipmentAndDetailLayout 设置），避免重复计算
+    const sectionY = this.detailPanelY + this.detailPanelH + pad;
     const sectionH = height - sectionY - pad;
 
     const sectionBg = this.add.graphics();

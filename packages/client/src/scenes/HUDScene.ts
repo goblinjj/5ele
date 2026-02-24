@@ -302,7 +302,7 @@ export class HUDScene extends Phaser.Scene {
 
   /** 灵囊按钮：右上角 */
   private createInventoryButton(width: number, panelY: number): void {
-    const btnSize = 40;
+    const btnSize = uiConfig.btnSizePrimary;
     const rightMargin = 12;
     const btnX = width - rightMargin - btnSize / 2;
     const btnY = panelY + 10 + btnSize / 2; // 顶部对齐 HP 条
