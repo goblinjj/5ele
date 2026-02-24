@@ -72,9 +72,9 @@ export class HUDScene extends Phaser.Scene {
     panelBg.fillRect(0, panelY, width, panelH);
     panelBg.lineStyle(1, 0xd4a853, 0.3);
     panelBg.lineBetween(0, panelY, width, panelY);
-    // 摇杆区分割线：上方 35% 为内容展示区，下方 65% 为摇杆区
+    // 摇杆区分割线：上方 45% 为内容展示区，下方 55% 为摇杆区
     panelBg.lineStyle(1, 0xd4a853, 0.18);
-    panelBg.lineBetween(0, panelY + panelH * 0.35, width, panelY + panelH * 0.35);
+    panelBg.lineBetween(0, panelY + panelH * 0.45, width, panelY + panelH * 0.45);
 
     // ── 左上：HP 条 + 属性/技能/状态 ──
     this.createPlayerHpBar(width, panelY);
@@ -84,11 +84,11 @@ export class HUDScene extends Phaser.Scene {
     this.refreshInfoArea();
 
     // Buff 展示区（技能/状态条下方）
-    this.buffArea = this.add.container(0, panelY + 90).setDepth(51);
+    this.buffArea = this.add.container(0, panelY + 120).setDepth(51);
 
-    // AOE 技能按钮区：位于分割线（上方35%区域最底部）正上方
-    const dividerY = panelY + panelH * 0.35;
-    const aoeSkillH = 32;
+    // AOE 技能按钮区：位于分割线（上方45%区域最底部）正上方
+    const dividerY = panelY + panelH * 0.45;
+    const aoeSkillH = Math.ceil(uiConfig.btnSizeLarge / 2);
     this.aoeSkillArea = this.add.container(0, dividerY - aoeSkillH).setDepth(51);
     this.refreshAoeSkillButtons();
 
@@ -96,10 +96,10 @@ export class HUDScene extends Phaser.Scene {
     this.createInventoryButton(width, panelY);
     this.createWuxingDirectButtons(width, panelY);
 
-    // ── 虚拟摇杆：面板下方 65% 全宽可用 ──
-    const joystickMinY = panelY + panelH * 0.35; // 分割线以下全给摇杆
+    // ── 虚拟摇杆：面板下方 55% 全宽可用 ──
+    const joystickMinY = panelY + panelH * 0.45; // 分割线以下全给摇杆
     const joystickX = width * 0.5;
-    const joystickY = panelY + panelH * 0.675;   // 摇杆基点在摇杆区中央
+    const joystickY = panelY + panelH * 0.725;   // 摇杆基点在摇杆区中央
     this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.14, 90), joystickMinY);
 
     // ── 事件监听 ──
@@ -135,13 +135,14 @@ export class HUDScene extends Phaser.Scene {
 
     // 技能/状态/Buff 区域单击 → 显示合并弹框（场景级监听，可靠触控）
     const maxWuxing = 5;
-    const invBtnSize = uiConfig.btnSizePrimary;
+    const invBtnSize = uiConfig.btnSizeLarge;         // 灵囊 80px
+    const wuxingBtnSize = uiConfig.btnSizePrimary;    // 五行 40px
     const wuxingGap = 8;
     const wuxingRightMargin = 12;
     // 留出灵囊 + 最多5个五行按钮的空间
-    const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (invBtnSize + wuxingGap);
+    const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (wuxingBtnSize + wuxingGap);
     const effectsY1 = panelY + 22;
-    const effectsY2 = panelY + 130;
+    const effectsY2 = panelY + 155;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.x <= effectsX2 &&
           pointer.y >= effectsY1 && pointer.y <= effectsY2) {
@@ -207,8 +208,8 @@ export class HUDScene extends Phaser.Scene {
 
     const { width } = this.cameras.main;
     const totalSkills = activeSkills.length;
-    const btnW = uiConfig.btnSizeSkill;
-    const btnH = uiConfig.btnSizeSkill;
+    const btnW = uiConfig.btnSizeLarge;
+    const btnH = uiConfig.btnSizeLarge;
     const gap = 8;
     const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
     let x = (width - totalRowW) / 2;
@@ -281,8 +282,8 @@ export class HUDScene extends Phaser.Scene {
         const pct = t / maxTimers[i];
         const { width } = this.cameras.main;
         const totalSkills = this.aoeSkillCdOverlays.length;
-        const btnW = uiConfig.btnSizeSkill;
-        const btnH = uiConfig.btnSizeSkill;
+        const btnW = uiConfig.btnSizeLarge;
+        const btnH = uiConfig.btnSizeLarge;
         const gap = 8;
         const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
         const x = (width - totalRowW) / 2 + i * (btnW + gap);
@@ -297,7 +298,7 @@ export class HUDScene extends Phaser.Scene {
 
   /** 灵囊按钮：右上角 */
   private createInventoryButton(width: number, panelY: number): void {
-    const btnSize = uiConfig.btnSizePrimary;
+    const btnSize = uiConfig.btnSizeLarge;
     const rightMargin = 12;
     const btnX = width - rightMargin - btnSize / 2;
     const btnY = panelY + 10 + btnSize / 2; // 顶部对齐 HP 条
@@ -345,12 +346,12 @@ export class HUDScene extends Phaser.Scene {
 
     const currentWuxing = gameState.getChosenWuxing();
     const rightMargin = 12;
-    const invBtnSize = uiConfig.btnSizePrimary; // 灵囊按钮宽度
+    const invBtnSize = uiConfig.btnSizeLarge; // 灵囊按钮宽度
     const gap = 8;
     const pillW = uiConfig.btnSizePrimary;
     const pillH = uiConfig.btnSizePrimary;
-    // 基准 Y：与灵囊按钮同行（panelY + 10 + btnSize/2）
-    const cy = this.panelY + 10 + pillH / 2;
+    // 基准 Y：与灵囊按钮同行（panelY + 10 + invBtnSize/2）
+    const cy = this.panelY + 10 + invBtnSize / 2;
     // 从右向左排列：灵囊在最右，五行按钮依次向左
     available.forEach((wx, i) => {
       const isSelected = wx === currentWuxing;
@@ -398,15 +399,15 @@ export class HUDScene extends Phaser.Scene {
     const statsStr = `攻 ${atk}  防 ${def}  速 ${spd}`;
     const statsLabel = this.add.text(width * 0.05, 0, statsStr, {
       fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
     }).setOrigin(0, 0.5);
     this.infoArea.add(statsLabel);
 
-    // ── 第二行（+20px）：技能 pills ──
+    // ── 第二行（+30px）：技能 pills ──
     const skills = getAllEquipmentSkills(eq);
     let x = width * 0.05;
-    const row2Y = 20;
+    const row2Y = 30;
     const pillH = 18;
     const pillMaxX = width * 0.58;
     if (skills.length === 0) {
@@ -428,10 +429,10 @@ export class HUDScene extends Phaser.Scene {
       }
     }
 
-    // ── 第三行（+40px）：五行被动状态 pills ──
+    // ── 第三行（+56px）：五行被动状态 pills ──
     const statuses = getWuxingPassiveStatuses(eq);
     x = width * 0.05;
-    const row3Y = 40;
+    const row3Y = 56;
     if (statuses.length > 0) {
       this.infoArea.add(this.add.text(x, row3Y, '状态', {
         fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
@@ -503,20 +504,20 @@ export class HUDScene extends Phaser.Scene {
   /** 创建持久弹窗（scene 级别，非 Container，避免 Phaser 3.80 Container.setVisible 不级联输入的问题） */
   private createPersistentInfoPopup(): void {
     const { width } = this.cameras.main;
-    const popupW = Math.min(width * 0.82, 340);
+    const popupW = width * 0.90;
 
     this.popupBg = this.add.graphics().setDepth(300).setVisible(false);
 
     this.popupTitle = this.add.text(width / 2, 0, '', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontLG}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
 
     const popupLeft = width / 2 - popupW / 2 + 12;
     this.popupDesc = this.add.text(popupLeft, 0, '', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: '#c9d1d9',
       wordWrap: { width: popupW - 24 },
       align: 'left',
@@ -531,14 +532,15 @@ export class HUDScene extends Phaser.Scene {
   private showInfoPopup(title: string, description: string, color: number): void {
     const { width } = this.cameras.main;
     const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const popupW = Math.min(width * 0.82, 340);
+    const popupW = width * 0.90;
     const popupX = width / 2;
 
     // 先设置文字内容（以便测量高度）
     this.popupTitle.setText(title).setColor(colorHex).setX(popupX);
+    this.popupDesc.setWordWrapWidth(popupW - 24);
     this.popupDesc.setText(description).setX(popupX - popupW / 2 + 12);
 
-    const totalH = Math.max(80, 34 + this.popupDesc.height + 14);
+    const totalH = Math.max(100, 44 + this.popupDesc.height + 20);
     const topY = Math.max(10, this.panelY - 8 - totalH);
 
     // 绘制背景
@@ -550,7 +552,7 @@ export class HUDScene extends Phaser.Scene {
 
     // 定位文字
     this.popupTitle.setY(topY + 10);
-    this.popupDesc.setY(topY + 30);
+    this.popupDesc.setY(topY + uiConfig.font2XL + 16);
 
     // 定位并激活 hit rect
     this.popupHit.setPosition(popupX, topY + totalH / 2).setSize(popupW, totalH);

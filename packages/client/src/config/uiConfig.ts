@@ -120,7 +120,7 @@ export class UIConfig {
    * 大字体（如标题）
    */
   get fontLG(): number {
-    return Math.round(this._baseFontSize * 1.25);
+    return Math.round(this._baseFontSize * 1.65);
   }
 
   /**
@@ -141,7 +141,7 @@ export class UIConfig {
    * 特大字体（如重要数字）
    */
   get font3XL(): number {
-    return Math.round(this._baseFontSize * 2.5);
+    return Math.round(this._baseFontSize * 4);
   }
 
   // ============ 按钮/槽位尺寸（调整 baseFontSize 倍数可全局缩放）============
@@ -173,6 +173,13 @@ export class UIConfig {
    */
   get slotSizeSmall(): number {
     return Math.round(this._baseFontSize * 2.875);
+  }
+
+  /**
+   * 大型交互按钮尺寸（灵囊按钮、AOE技能按钮等，约为 btnSizePrimary 的两倍）
+   */
+  get btnSizeLarge(): number {
+    return Math.round(this._baseFontSize * 5.0);
   }
 
   // ============ 布局计算方法 ============

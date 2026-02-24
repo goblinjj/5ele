@@ -211,17 +211,17 @@ export class WorldScene extends Phaser.Scene {
     this.roundBannerObjects = [];
 
     // ---- 视口固定 UI：剩余妖异 + 计时器（用 setScrollFactor(0) 固定在视口） ----
-    this.enemyCountText = this.add.text(width / 2, 22, '剩余妖异 --', {
+    this.enemyCountText = this.add.text(width / 2, 30, '剩余妖异 --', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontMD}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#d4a853',
       stroke: '#000000',
       strokeThickness: 3,
     }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
 
-    this.roundTimerText = this.add.text(width * 0.85, 22, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
+    this.roundTimerText = this.add.text(width * 0.85, 30, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
       fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
       stroke: '#000000',
       strokeThickness: 2,
