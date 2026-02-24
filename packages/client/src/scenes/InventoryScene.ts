@@ -12,7 +12,7 @@ import {
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { SynthesisSystem } from '../systems/SynthesisSystem.js';
-import { uiConfig, LAYOUT } from '../config/uiConfig.js';
+import { uiConfig, LAYOUT, UIConfig } from '../config/uiConfig.js';
 import { eventBus, GameEvent } from '../core/EventBus.js';
 
 interface SlotInfo {
@@ -128,17 +128,11 @@ export class InventoryScene extends Phaser.Scene {
     // 标题
     this.add.text(width / 2, headerHeight / 2, '灵囊管理', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontXL}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    // 操作提示（左侧）
-    this.add.text(width * 0.08, headerHeight / 2, '单击查看 · 拖拽重组', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS ?? 10}px`,
-      color: '#8b949e',
-    }).setOrigin(0, 0.5);
   }
 
   private createEquipmentAndDetailLayout(): void {
@@ -146,8 +140,9 @@ export class InventoryScene extends Phaser.Scene {
     const headerH = height * 0.08;
     const pad = 8;
 
-    // ── 装备行背景 ──
-    const equipRowH = 90;
+    // ── 统一槽位尺寸（与背包格子一致）──
+    const SLOT_SIZE = 90;
+    const equipRowH = SLOT_SIZE + 30; // 槽位 + 标签行高
     const equipRowY = headerH + pad;
     const equipBg = this.add.graphics();
     equipBg.fillStyle(this.colors.inkBlack, 0.5);
@@ -155,15 +150,17 @@ export class InventoryScene extends Phaser.Scene {
     equipBg.lineStyle(1, this.colors.inkGrey, 0.5);
     equipBg.strokeRoundedRect(pad, equipRowY, width - pad * 2, equipRowH, 8);
 
-    // 武器/防具槽尺寸
-    const wepSlotSize = Math.min(uiConfig.slotSizeLarge, Math.floor((width * 0.3 - pad * 3) / 2));
-    const equipCenterY = equipRowY + equipRowH / 2 + 6;
+    // 槽位中心 Y（标签22px 后居中）
+    const equipCenterY = equipRowY + 35 + SLOT_SIZE / 2;
+
+    // 武器/防具槽（固定 SLOT_SIZE）
+    const wepSlotSize = SLOT_SIZE;
 
     // 武器槽
     const weaponX = pad * 2 + wepSlotSize / 2;
     this.add.text(weaponX, equipRowY + 6, '武器', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0);
     this.createSlot(weaponX, equipCenterY, { type: 'weapon', index: 0, equipment: gameState.getWeapon() }, wepSlotSize);
@@ -172,7 +169,7 @@ export class InventoryScene extends Phaser.Scene {
     const armorX = weaponX + wepSlotSize + pad;
     this.add.text(armorX, equipRowY + 6, '防具', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0);
     this.createSlot(armorX, equipCenterY, { type: 'armor', index: 0, equipment: gameState.getArmor() }, wepSlotSize);
@@ -183,11 +180,11 @@ export class InventoryScene extends Phaser.Scene {
     divGfx.lineStyle(1, this.colors.inkGrey, 0.6);
     divGfx.lineBetween(divX, equipRowY + 8, divX, equipRowY + equipRowH - 8);
 
-    // 灵器槽（最多5个，均分右侧区域）
+    // 灵器槽（SLOT_SIZE，均分右侧区域）
     const treasureAreaX = divX + pad;
     const treasureAreaW = width - treasureAreaX - pad * 2;
     const tCount = MAX_TREASURES; // 5
-    const tSlotSize = Math.min(uiConfig.slotSizeSmall, Math.floor((treasureAreaW - (tCount - 1) * 4) / tCount));
+    const tSlotSize = SLOT_SIZE;
     const tGap = tCount > 1 ? Math.floor((treasureAreaW - tCount * tSlotSize) / (tCount - 1)) : 0;
     const tSlotY = equipCenterY;
     const treasures = gameState.getTreasures();
@@ -195,7 +192,7 @@ export class InventoryScene extends Phaser.Scene {
     // 灵器标签（在第一个上方）
     this.add.text(treasureAreaX + tSlotSize / 2, equipRowY + 6, '灵器', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
     }).setOrigin(0.5, 0);
 
@@ -204,9 +201,17 @@ export class InventoryScene extends Phaser.Scene {
       this.createSlot(tx, tSlotY, { type: 'treasure', index: i, equipment: treasures[i] || null }, tSlotSize);
     }
 
-    // ── 详情面板 ──
+    // ── 背包区域（固定在底部，pin to bottom）──
+    const cols = 5;
+    const rows = Math.ceil(INVENTORY_SIZE / cols);
+    const gridPadY = 32;
+    const slotGap = 6;
+    const invSectionH = gridPadY + rows * SLOT_SIZE + (rows - 1) * slotGap + pad;
+    const invSectionY = height - invSectionH - pad;
+
+    // ── 详情面板（填充装备行与背包之间的空间）──
     const detailY = equipRowY + equipRowH + pad;
-    const detailH = Math.max(150, Math.floor(height * 0.22));
+    const detailH = Math.max(100, invSectionY - detailY - pad);
 
     this.detailPanelX = pad;
     this.detailPanelY = detailY;
@@ -235,9 +240,9 @@ export class InventoryScene extends Phaser.Scene {
 
     if (!slotInfo?.equipment) {
       container.add(
-        this.add.text(W / 2, H / 2, '点击装备\n查看详情', {
+        this.add.text(W / 2, H / 2, "单击查看\n拖拽重组", {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: '13px',
+          fontSize: '52px',
           color: '#484f58',
           align: 'center',
         }).setOrigin(0.5)
@@ -248,29 +253,29 @@ export class InventoryScene extends Phaser.Scene {
     const equipment = slotInfo.equipment;
     const color = equipment.wuxing !== undefined ? WUXING_COLORS[equipment.wuxing] : 0x8b949e;
     const colorHex = '#' + color.toString(16).padStart(6, '0');
-    let y = 16;
-    const pad = 12;
+    let y = 64;
+    const pad = 48;
 
     // 名称
     container.add(
       this.add.text(pad, y, equipment.name, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: '14px',
+        fontSize: `${uiConfig.font2XL}px`,
         color: '#f0e6d3',
         fontStyle: 'bold',
       })
     );
-    y += 22;
+    y += 88;
 
     // 类型 · 稀有度
     container.add(
       this.add.text(pad, y, `${this.getEquipmentTypeName(equipment.type)} · ${this.getRarityName(equipment.rarity)}`, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '11px',
+        fontSize: `${uiConfig.fontLG}px`,
         color: this.getRarityColor(equipment.rarity),
       })
     );
-    y += 18;
+    y += 72;
 
     // 五行属性
     if (equipment.wuxing !== undefined) {
@@ -278,11 +283,11 @@ export class InventoryScene extends Phaser.Scene {
       container.add(
         this.add.text(pad, y, `${wuxName}属 Lv.${equipment.wuxingLevel ?? 1}${equipment.upgradeLevel > 0 ? ` +${equipment.upgradeLevel}` : ''}`, {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: '11px',
+          fontSize: `${uiConfig.fontLG}px`,
           color: colorHex,
         })
       );
-      y += 18;
+      y += 72;
     }
 
     // 属性数值
@@ -295,32 +300,32 @@ export class InventoryScene extends Phaser.Scene {
       container.add(
         this.add.text(pad, y, stats.join('  '), {
           fontFamily: 'monospace',
-          fontSize: '11px',
+          fontSize: `${uiConfig.fontLG}px`,
           color: '#f0e6d3',
         })
       );
-      y += 18;
+      y += 72;
     }
 
     // 技能列表
     const skills = getEquipmentSkillsDisplay(equipment, equipment.wuxingLevel ?? 1);
     if (skills.length > 0) {
-      y += 4;
+      y += 16;
       for (const skill of skills) {
         const skillLine = this.add.text(pad, y, `✦ ${skill.name}: ${skill.description}`, {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: '10px',
+          fontSize: '40px',
           color: colorHex,
           wordWrap: { width: W - pad * 2 },
         });
         container.add(skillLine);
-        y += skillLine.height + 4;
+        y += skillLine.height + 16;
       }
     }
 
     // 操作按钮区（底部对齐）
-    const btnY = H - 50;
-    const btnH = 30;
+    const btnH = 60;
+    const btnY = H - btnH - 20;
     const isEquipped = slotInfo.type !== 'inventory';
     const btnW = isEquipped ? (W - pad * 3) / 2 : W - pad * 2;
 
@@ -336,7 +341,7 @@ export class InventoryScene extends Phaser.Scene {
     container.add(
       this.add.text(pad + btnW / 2, btnY + btnH / 2, equipBtnLabel, {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '13px',
+        fontSize: `${uiConfig.fontLG}px`,
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5)
@@ -365,7 +370,7 @@ export class InventoryScene extends Phaser.Scene {
       container.add(
         this.add.text(devourX + devourBtnW / 2, btnY + btnH / 2, '归元', {
           fontFamily: '"Noto Sans SC", sans-serif',
-          fontSize: '13px',
+          fontSize: `${uiConfig.fontLG}px`,
           color: '#f0a030',
           fontStyle: 'bold',
         }).setOrigin(0.5)
@@ -396,7 +401,7 @@ export class InventoryScene extends Phaser.Scene {
     const usedSlots = INVENTORY_SIZE - gameState.getEmptySlotCount();
     this.add.text(width * 0.04, sectionY + 10, `背包 (${usedSlots}/${INVENTORY_SIZE})`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#d4a853',
       fontStyle: 'bold',
     });
