@@ -68,15 +68,15 @@ export class PrologueScene extends Phaser.Scene {
   private createSkipButton(): void {
     const { width, height } = this.cameras.main;
 
-    this.skipButton = this.add.container(width * 0.92, height * 0.06);
+    this.skipButton = this.add.container(width * 0.88, height * 0.05);
 
-    const btnBg = this.add.rectangle(0, 0, 80, 32, this.colors.inkBlack, 0.8);
+    const btnBg = this.add.rectangle(0, 0, 110, 44, this.colors.inkBlack, 0.8);
     btnBg.setStrokeStyle(1, this.colors.goldAccent, 0.5);
     btnBg.setInteractive({ useHandCursor: true });
 
     const btnText = this.add.text(0, 0, '跳过', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
 
@@ -106,8 +106,8 @@ export class PrologueScene extends Phaser.Scene {
 
     // 计算文字位置 - 居中显示
     const totalLines = this.textLines.length;
-    const lineHeight = uiConfig.fontLG + 16;
-    const startY = height * 0.5 - (totalLines * lineHeight) / 2;
+    const lineHeight = uiConfig.fontXL + 18;
+    const startY = height * 0.48 - (totalLines * lineHeight) / 2;
 
     // 同时创建所有文字，立即显示（1秒内全部淡入完成）
     this.textLines.forEach((line, index) => {
@@ -116,7 +116,7 @@ export class PrologueScene extends Phaser.Scene {
 
       const text = this.add.text(width / 2, y, line, {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${isEmphasis ? uiConfig.fontXL : uiConfig.fontLG}px`,
+        fontSize: `${isEmphasis ? uiConfig.font2XL : uiConfig.fontXL}px`,
         color: isEmphasis ? '#d4a853' : '#f0e6d3',
         fontStyle: isEmphasis ? 'bold' : 'normal',
       }).setOrigin(0.5).setAlpha(0);
@@ -142,9 +142,9 @@ export class PrologueScene extends Phaser.Scene {
   private showContinueHint(): void {
     const { width, height } = this.cameras.main;
 
-    const hint = this.add.text(width / 2, height * 0.88, '— 点击继续 —', {
+    const hint = this.add.text(width / 2, height * 0.90, '— 点击继续 —', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#6e7681',
     }).setOrigin(0.5).setAlpha(0);
 
