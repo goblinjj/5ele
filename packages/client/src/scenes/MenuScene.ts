@@ -51,17 +51,17 @@ export class MenuScene extends Phaser.Scene {
       bgGraphics.fillCircle(x, y, radius);
     }
 
-    // 装饰线 - 上方 15%，下方 85%
+    // 装饰线 - 上方 18%，下方 80%
     bgGraphics.lineStyle(1, this.colors.goldAccent, 0.3);
-    bgGraphics.lineBetween(width * 0.03, height * 0.15, width * 0.97, height * 0.15);
-    bgGraphics.lineBetween(width * 0.03, height * 0.85, width * 0.97, height * 0.85);
+    bgGraphics.lineBetween(width * 0.03, height * 0.18, width * 0.97, height * 0.18);
+    bgGraphics.lineBetween(width * 0.03, height * 0.80, width * 0.97, height * 0.80);
   }
 
   private createTitle(): void {
     const { width, height } = this.cameras.main;
 
-    // 主标题 - 顶部 12%
-    const title = this.add.text(width / 2, height * 0.12, '无极', {
+    // 主标题 - 顶部 9%
+    const title = this.add.text(width / 2, height * 0.09, '无极', {
       fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
       fontSize: `${uiConfig.font3XL}px`,
       color: '#f0e6d3',
@@ -80,10 +80,10 @@ export class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    // 副标题 - 顶部 20%
-    this.add.text(width / 2, height * 0.20, '五行轮转 · 意志之争', {
+    // 副标题 - 顶部 15%
+    this.add.text(width / 2, height * 0.15, '五行轮转 · 意志之争', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
   }
@@ -94,11 +94,11 @@ export class MenuScene extends Phaser.Scene {
     const wuxingOrder = [Wuxing.METAL, Wuxing.WOOD, Wuxing.WATER, Wuxing.FIRE, Wuxing.EARTH];
     const wuxingSymbols = ['金', '木', '水', '火', '土'];
 
-    // 响应式大小
-    const circleRadius = Math.max(15, Math.min(22, width * 0.018));
-    const spacing = Math.max(45, Math.min(70, width * 0.055));
+    // 响应式大小 - 放大图标
+    const circleRadius = Math.max(22, Math.min(34, width * 0.028));
+    const spacing = Math.max(60, Math.min(90, width * 0.08));
     const startX = width / 2 - (wuxingOrder.length - 1) * spacing / 2;
-    const y = height * 0.32; // 32% 从顶部
+    const y = height * 0.27; // 27% 从顶部
 
     wuxingOrder.forEach((wuxing, index) => {
       const x = startX + index * spacing;
@@ -110,7 +110,7 @@ export class MenuScene extends Phaser.Scene {
 
       const symbol = this.add.text(x, y, wuxingSymbols[index], {
         fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontMD}px`,
+        fontSize: `${uiConfig.fontLG}px`,
         color: '#ffffff',
       }).setOrigin(0.5);
 
@@ -127,9 +127,9 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // 相克说明 - 五行下方
-    this.add.text(width / 2, y + circleRadius + 25, '相克：金→木→土→水→火→金', {
+    this.add.text(width / 2, y + circleRadius + 32, '相克：金→木→土→水→火→金', {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
+      fontSize: `${uiConfig.fontSM}px`,
       color: '#6e7681',
     }).setOrigin(0.5);
   }
@@ -137,20 +137,20 @@ export class MenuScene extends Phaser.Scene {
   private createButtons(): void {
     const { width, height } = this.cameras.main;
 
-    // 开始游戏按钮 - 纵向排列 62%
-    this.createButton(width / 2, height * 0.62, '开始游戏', '单人模式', () => this.startSinglePlayer());
+    // 开始游戏按钮 - 纵向排列 48%
+    this.createButton(width / 2, height * 0.48, '开始游戏', '单人模式', () => this.startSinglePlayer());
 
-    // 多人模式按钮 - 纵向排列 70%
-    this.createButton(width / 2, height * 0.70, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
+    // 多人模式按钮 - 纵向排列 58%
+    this.createButton(width / 2, height * 0.58, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
 
-    // 游戏介绍链接
-    this.createLinkButton(width / 2, height * 0.78, '游戏介绍', () => this.openLanding());
+    // 游戏介绍链接 67%
+    this.createLinkButton(width / 2, height * 0.67, '游戏介绍', () => this.openLanding());
   }
 
   private createLinkButton(x: number, y: number, text: string, onClick: () => void): void {
     const linkText = this.add.text(x, y, `📜 ${text}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
+      fontSize: `${uiConfig.fontLG}px`,
       color: '#8b949e',
     }).setOrigin(0.5);
 
@@ -183,9 +183,9 @@ export class MenuScene extends Phaser.Scene {
   ): void {
     const { width, height } = this.cameras.main;
 
-    // 响应式按钮尺寸
-    const buttonWidth = Math.max(200, Math.min(460, width * 0.60));
-    const buttonHeight = Math.max(50, Math.min(70, height * 0.055));
+    // 响应式按钮尺寸（放大）
+    const buttonWidth = Math.max(260, Math.min(520, width * 0.75));
+    const buttonHeight = Math.max(64, Math.min(90, height * 0.07));
 
     const container = this.add.container(x, y);
 
@@ -195,16 +195,16 @@ export class MenuScene extends Phaser.Scene {
     bg.lineStyle(2, disabled ? this.colors.inkGrey : this.colors.goldAccent, disabled ? 0.3 : 0.6);
     bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
 
-    const buttonText = this.add.text(0, -buttonHeight * 0.12, text, {
+    const buttonText = this.add.text(0, -buttonHeight * 0.14, text, {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontLG}px`,
+      fontSize: `${uiConfig.font2XL}px`,
       color: disabled ? '#484f58' : '#f0e6d3',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const buttonSubText = this.add.text(0, buttonHeight * 0.2, subText, {
+    const buttonSubText = this.add.text(0, buttonHeight * 0.22, subText, {
       fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
+      fontSize: `${uiConfig.fontMD}px`,
       color: disabled ? '#30363d' : '#8b949e',
     }).setOrigin(0.5);
 
