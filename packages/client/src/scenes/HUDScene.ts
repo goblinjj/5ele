@@ -207,11 +207,11 @@ export class HUDScene extends Phaser.Scene {
 
     const { width } = this.cameras.main;
     const totalSkills = activeSkills.length;
-    const availW = width * 0.90;
-    const gap = 4;
-    const btnW = Math.floor((availW - gap * (totalSkills - 1)) / totalSkills);
-    const btnH = 28;
-    let x = width * 0.05;
+    const btnW = uiConfig.btnSizeSkill;
+    const btnH = uiConfig.btnSizeSkill;
+    const gap = 8;
+    const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
+    let x = (width - totalRowW) / 2;
 
     activeSkills.forEach((skill, i) => {
       const meta = AOE_SKILL_META[skill.id] ?? { label: skill.name, color: 0x8b949e };
@@ -281,11 +281,11 @@ export class HUDScene extends Phaser.Scene {
         const pct = t / maxTimers[i];
         const { width } = this.cameras.main;
         const totalSkills = this.aoeSkillCdOverlays.length;
-        const availW = width * 0.90;
-        const gap = 4;
-        const btnW = Math.floor((availW - gap * (totalSkills - 1)) / totalSkills);
-        const btnH = 28;
-        const x = width * 0.05 + i * (btnW + gap);
+        const btnW = uiConfig.btnSizeSkill;
+        const btnH = uiConfig.btnSizeSkill;
+        const gap = 8;
+        const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
+        const x = (width - totalRowW) / 2 + i * (btnW + gap);
         overlay.fillStyle(0x000000, 0.6 * pct);
         overlay.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
         cdText.setText(`${(t / 1000).toFixed(1)}s`).setAlpha(1);
