@@ -288,7 +288,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private onShutdown(): void {
-    this.fx.resetTimeScale();
+    // 这里任何一步抛错都会打断场景重启（表现为结算按钮点了没反应），所以清理必须稳妥
+    this.fx?.resetTimeScale();
     this.scene.stop('HUDScene');
     this.scene.stop('InventoryScene');
     inputManager.reset();

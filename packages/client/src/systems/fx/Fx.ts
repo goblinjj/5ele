@@ -207,13 +207,17 @@ export class Fx {
     return k;
   }
 
-  /** 场景结束时恢复正常流速（动画管理器是全局共享的） */
+  /**
+   * 场景结束时恢复正常流速（动画管理器是全局共享的，必须还原）。
+   * 关闭过程中各插件的销毁顺序不固定，物理世界等可能已经不在了，逐项判空。
+   */
   resetTimeScale(): void {
     this.stopTimer = 0;
-    this.scene.tweens.timeScale = 1;
-    this.scene.anims.globalTimeScale = 1;
-    this.scene.time.timeScale = 1;
-    this.scene.physics.world.timeScale = 1;
+    const s = this.scene;
+    if (s.anims) s.anims.globalTimeScale = 1;
+    if (s.tweens) s.tweens.timeScale = 1;
+    if (s.time) s.time.timeScale = 1;
+    if (s.physics?.world) s.physics.world.timeScale = 1;
   }
 
   // ───────────────────────── 挤压与拉伸 ─────────────────────────
