@@ -3,6 +3,7 @@ import { WUXING_NAMES } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
 import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
 import { WX_ORDER, WX_TINT, SPIRIT_TINT } from '../config/worldConfig.js';
+import { sfx } from '../systems/audio/Sfx.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", "STSong", serif';
 const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
@@ -217,7 +218,7 @@ export class MenuScene extends Phaser.Scene {
     const hit = this.add.rectangle(bx, by, bw, bh, 0xffffff, 0).setDepth(63).setInteractive({ useHandCursor: true });
     hit.on('pointerdown', () => draw(true));
     hit.on('pointerout', () => draw(false));
-    hit.on('pointerup', () => { draw(false); this.startSinglePlayer(); });
+    hit.on('pointerup', () => { draw(false); sfx.unlock(); sfx.click(); this.startSinglePlayer(); });
 
     this.add.text(bx, by + bh / 2 + 34, '夺回五行之力，让世界归于平衡', {
       fontFamily: SERIF, fontSize: '22px', color: '#8b949e',
@@ -225,23 +226,34 @@ export class MenuScene extends Phaser.Scene {
 
     // 次级入口
     const rowY = height * 0.875;
-    this.createLink(width / 2 - 130, rowY, '游戏介绍', true, () => window.open('/landing/', '_blank'));
-    this.createLink(width / 2 + 130, rowY, '多人 · 敬请期待', false, () => undefined);
+    this.createLink(width / 2 - 150, rowY, '游戏介绍', true, () => window.open('/landing/index.html', '_blank'));
+    // 音效开关（记在本机）
+    const soundLabel = () => `音效：${sfx.isMuted() ? '关' : '开'}`;
+    const soundLink = this.createLink(width / 2 + 150, rowY, soundLabel(), true, () => {
+      sfx.unlock();
+      sfx.setMuted(!sfx.isMuted());
+      soundLink.setText(soundLabel());
+      sfx.click();
+    });
     const sep = this.add.graphics().setDepth(60);
     sep.lineStyle(1.5, 0x30363d, 1);
     sep.lineBetween(width / 2, rowY - 16, width / 2, rowY + 16);
+    this.add.text(width / 2, rowY + 62, '多人模式 · 敬请期待', {
+      fontFamily: SANS, fontSize: '18px', color: '#484f58',
+    }).setOrigin(0.5).setDepth(60);
   }
 
-  private createLink(x: number, y: number, label: string, enabled: boolean, onClick: () => void): void {
+  private createLink(x: number, y: number, label: string, enabled: boolean, onClick: () => void): Phaser.GameObjects.Text {
     const t = this.add.text(x, y, label, {
       fontFamily: SERIF, fontSize: '26px', color: enabled ? '#c9d1d9' : '#484f58',
       padding: { x: 18, y: 14 },
     }).setOrigin(0.5).setDepth(60);
-    if (!enabled) return;
+    if (!enabled) return t;
     t.setInteractive({ useHandCursor: true });
     t.on('pointerover', () => t.setColor(hex(GOLD)));
     t.on('pointerout', () => t.setColor('#c9d1d9'));
     t.on('pointerup', onClick);
+    return t;
   }
 
   private startSinglePlayer(): void {

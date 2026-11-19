@@ -1,995 +1,379 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>无极 - 五行之力，归于平衡</title>
-  <meta name="description" content="无极，一款基于五行世界观的Roguelike游戏。作为本源的意志残魂，夺回五行之力，让世界归于平衡。">
-
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>无极 · 五行轮转，意志之争</title>
+  <meta name="description" content="无极：竖屏动作肉鸽。化身本源残魂，在五行阵眼间快速切换兵甲，以生克之道净化妖异。" />
+  <meta name="theme-color" content="#070b0f" />
   <style>
     :root {
-      /* Void colors */
-      --void-black: #050508;
-      --void-deep: #0a0a12;
-      --void-surface: #12121f;
-      --mist-grey: #3a3a4f;
-      --spirit-white: #e8e6f0;
-      --spirit-dim: #9896a8;
-
-      /* Five element colors */
-      --metal-gold: #d4a853;
-      --metal-glow: #f5d99a;
-      --wood-green: #3fb950;
-      --wood-glow: #7ce38f;
-      --water-blue: #58a6ff;
-      --water-glow: #a5d4ff;
-      --fire-red: #f85149;
-      --fire-glow: #ff8a84;
-      --earth-yellow: #d29922;
-      --earth-glow: #f0c75e;
-
-      /* Typography */
-      --font-display: 'Ma Shan Zheng', cursive;
-      --font-heading: 'ZCOOL XiaoWei', serif;
-      --font-body: 'Noto Serif SC', serif;
+      --bg: #070b0f;
+      --ink: #101c21;
+      --panel: rgba(16, 24, 30, 0.78);
+      --line: rgba(212, 168, 83, 0.28);
+      --gold: #d4a853;
+      --gold-hi: #ffe9a8;
+      --paper: #f0e6d3;
+      --muted: #8b949e;
+      --wood: #4ade80;
+      --fire: #ff5a3c;
+      --earth: #e3b23c;
+      --metal: #f2e6c2;
+      --water: #4f9dff;
+      --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+      --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
     body {
-      font-family: var(--font-body);
-      background: var(--void-black);
-      color: var(--spirit-white);
+      background: var(--bg);
+      color: var(--paper);
+      font-family: var(--sans);
+      line-height: 1.8;
+      -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
-      line-height: 1.8;
     }
+    body::before {
+      /* 墨色晕染底 */
+      content: "";
+      position: fixed; inset: 0; z-index: -1;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(79, 157, 255, 0.10), transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 35%, rgba(255, 90, 60, 0.07), transparent 70%),
+        radial-gradient(ellipse 60% 50% at 30% 80%, rgba(74, 222, 128, 0.07), transparent 70%),
+        radial-gradient(ellipse at 50% 40%, #14222a 0%, var(--bg) 75%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: min(1040px, 100% - 40px); margin: 0 auto; }
 
-    /* Scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: var(--void-deep);
-    }
-    ::-webkit-scrollbar-thumb {
-      background: var(--mist-grey);
-      border-radius: 3px;
-    }
-
-    /* ==================== HERO SECTION ==================== */
+    /* ── 首屏 ── */
     .hero {
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      overflow: hidden;
+      min-height: 100svh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 72px 20px 96px; position: relative;
     }
-
-    /* Cosmic void background */
-    .void-bg {
-      position: absolute;
-      inset: 0;
+    .diagram { position: relative; width: min(74vw, 340px); aspect-ratio: 1; margin-bottom: 44px; }
+    .diagram .ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid var(--line);
+      box-shadow: 0 0 80px rgba(159, 216, 255, 0.14), inset 0 0 60px rgba(159, 216, 255, 0.06);
+    }
+    .diagram .ring::after {
+      content: ""; position: absolute; inset: 9%; border-radius: 50%; border: 1px solid rgba(212, 168, 83, 0.18);
+    }
+    .taiji {
+      position: absolute; inset: 31%; border-radius: 50%;
+      border: 2px solid rgba(212, 168, 83, 0.85);
+      /* 左阳右阴：白鱼头在上，黑鱼头在下 */
       background:
-        radial-gradient(ellipse 80% 60% at 50% 40%, rgba(88, 166, 255, 0.03) 0%, transparent 50%),
-        radial-gradient(ellipse 60% 80% at 30% 60%, rgba(248, 81, 73, 0.02) 0%, transparent 40%),
-        radial-gradient(ellipse 70% 50% at 70% 70%, rgba(63, 185, 80, 0.02) 0%, transparent 40%),
-        var(--void-black);
-    }
-
-    /* Particle canvas */
-    #particles {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-
-    /* Hero content */
-    .hero-content {
-      position: relative;
-      z-index: 10;
-      text-align: center;
-      padding: 2rem;
-      max-width: 900px;
-    }
-
-    .hero-title {
-      font-family: var(--font-display);
-      font-size: clamp(5rem, 15vw, 12rem);
-      letter-spacing: 0.2em;
-      margin-bottom: 0.5rem;
-      background: linear-gradient(
-        180deg,
-        var(--spirit-white) 0%,
-        var(--spirit-dim) 50%,
-        var(--metal-gold) 100%
-      );
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      text-shadow: 0 0 80px rgba(212, 168, 83, 0.3);
-      animation: titleReveal 2s ease-out;
-    }
-
-    @keyframes titleReveal {
-      from {
-        opacity: 0;
-        transform: translateY(30px) scale(0.95);
-        filter: blur(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-        filter: blur(0);
-      }
-    }
-
-    .hero-subtitle {
-      font-family: var(--font-heading);
-      font-size: clamp(1rem, 2.5vw, 1.4rem);
-      color: var(--spirit-dim);
-      letter-spacing: 0.3em;
-      margin-bottom: 3rem;
-      animation: fadeIn 1.5s ease-out 0.5s both;
-    }
-
-    .hero-quote {
-      font-size: clamp(1rem, 2vw, 1.25rem);
-      line-height: 2.2;
-      color: var(--spirit-dim);
-      max-width: 600px;
-      margin: 0 auto 3rem;
-      animation: fadeIn 1.5s ease-out 0.8s both;
-    }
-
-    .hero-quote .highlight {
-      color: var(--spirit-white);
-      font-weight: 600;
-    }
-
-    .hero-mission {
-      font-family: var(--font-heading);
-      font-size: clamp(1.2rem, 3vw, 1.6rem);
-      color: var(--metal-gold);
-      letter-spacing: 0.1em;
-      padding: 1rem 2rem;
-      border: 1px solid rgba(212, 168, 83, 0.3);
-      background: rgba(212, 168, 83, 0.05);
-      animation: missionPulse 3s ease-in-out infinite, fadeIn 1.5s ease-out 1.2s both;
-    }
-
-    @keyframes missionPulse {
-      0%, 100% { box-shadow: 0 0 30px rgba(212, 168, 83, 0.1); }
-      50% { box-shadow: 0 0 50px rgba(212, 168, 83, 0.2); }
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Scroll indicator */
-    .scroll-indicator {
-      position: absolute;
-      bottom: 3rem;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.5rem;
-      color: var(--spirit-dim);
-      font-size: 0.85rem;
-      letter-spacing: 0.2em;
-      animation: bounce 2s ease-in-out infinite;
-    }
-
-    .scroll-indicator::after {
-      content: '';
-      width: 1px;
-      height: 40px;
-      background: linear-gradient(to bottom, var(--spirit-dim), transparent);
-    }
-
-    @keyframes bounce {
-      0%, 100% { transform: translateX(-50%) translateY(0); }
-      50% { transform: translateX(-50%) translateY(10px); }
-    }
-
-    /* ==================== WUXING SECTION ==================== */
-    .wuxing-section {
-      position: relative;
-      padding: 8rem 2rem;
-      background: var(--void-deep);
-      overflow: hidden;
-    }
-
-    .wuxing-section::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 200px;
-      background: linear-gradient(to bottom, var(--void-black), transparent);
-      pointer-events: none;
-    }
-
-    .section-title {
-      font-family: var(--font-display);
-      font-size: clamp(2.5rem, 6vw, 4rem);
-      text-align: center;
-      margin-bottom: 1rem;
-      letter-spacing: 0.15em;
-    }
-
-    .section-subtitle {
-      font-family: var(--font-heading);
-      font-size: 1.1rem;
-      text-align: center;
-      color: var(--spirit-dim);
-      margin-bottom: 4rem;
-      letter-spacing: 0.2em;
-    }
-
-    /* Wuxing cycle diagram */
-    .wuxing-container {
-      position: relative;
-      max-width: 800px;
-      margin: 0 auto;
-      aspect-ratio: 1;
-    }
-
-    .wuxing-circle {
-      position: absolute;
-      inset: 10%;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 50%;
-    }
-
-    .wuxing-circle::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      border-radius: 50%;
-      background: conic-gradient(
-        from 0deg,
-        var(--metal-gold) 0deg 72deg,
-        var(--water-blue) 72deg 144deg,
-        var(--wood-green) 144deg 216deg,
-        var(--fire-red) 216deg 288deg,
-        var(--earth-yellow) 288deg 360deg
-      );
-      opacity: 0.15;
-      animation: slowRotate 60s linear infinite;
-    }
-
-    @keyframes slowRotate {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    /* Element nodes */
-    .element-node {
-      position: absolute;
-      width: 100px;
-      height: 100px;
-      transform: translate(-50%, -50%);
-      cursor: pointer;
-      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .element-node:hover {
-      transform: translate(-50%, -50%) scale(1.15);
-    }
-
-    .element-node::before {
-      content: '';
-      position: absolute;
-      inset: -20px;
-      border-radius: 50%;
-      background: radial-gradient(circle, var(--element-color) 0%, transparent 70%);
-      opacity: 0.2;
-      transition: opacity 0.3s;
-    }
-
-    .element-node:hover::before {
-      opacity: 0.4;
-    }
-
-    .element-icon {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--font-display);
-      font-size: 2.5rem;
-      color: var(--element-color);
-      border: 2px solid var(--element-color);
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.6);
-      box-shadow:
-        0 0 30px color-mix(in srgb, var(--element-color) 30%, transparent),
-        inset 0 0 20px color-mix(in srgb, var(--element-color) 10%, transparent);
-    }
-
-    /* Position elements in pentagon */
-    .element-node.metal { top: 10%; left: 50%; --element-color: var(--metal-gold); }
-    .element-node.water { top: 40%; left: 95%; --element-color: var(--water-blue); }
-    .element-node.wood { top: 85%; left: 75%; --element-color: var(--wood-green); }
-    .element-node.fire { top: 85%; left: 25%; --element-color: var(--fire-red); }
-    .element-node.earth { top: 40%; left: 5%; --element-color: var(--earth-yellow); }
-
-    /* Element info panel */
-    .element-info {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 280px;
-      text-align: center;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-
-    .element-info.active {
-      opacity: 1;
-    }
-
-    .element-info h3 {
-      font-family: var(--font-display);
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      color: var(--active-color, var(--spirit-white));
-    }
-
-    .element-info .element-desc {
-      font-size: 0.95rem;
-      color: var(--spirit-dim);
-      margin-bottom: 1rem;
-    }
-
-    .element-info .element-skills {
-      font-size: 0.85rem;
-      color: var(--spirit-dim);
-      line-height: 1.8;
-    }
-
-    .element-info .element-skills span {
-      display: inline-block;
-      padding: 0.2rem 0.6rem;
-      margin: 0.2rem;
-      border: 1px solid var(--active-color, var(--mist-grey));
-      border-radius: 3px;
-      color: var(--active-color, var(--spirit-white));
-    }
-
-    /* Cycle lines */
-    .cycle-lines {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-
-    .cycle-lines svg {
-      width: 100%;
-      height: 100%;
-    }
-
-    .generate-line {
-      fill: none;
-      stroke: rgba(255, 255, 255, 0.1);
-      stroke-width: 1;
-      stroke-dasharray: 5, 5;
-    }
-
-    /* ==================== STORY SECTION ==================== */
-    .story-section {
-      position: relative;
-      padding: 8rem 2rem;
-      background: var(--void-black);
-    }
-
-    .story-container {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .story-chapter {
-      margin-bottom: 5rem;
-      opacity: 0;
-      transform: translateY(40px);
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .story-chapter.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .chapter-number {
-      font-family: var(--font-display);
-      font-size: 4rem;
-      color: var(--mist-grey);
-      opacity: 0.3;
-      line-height: 1;
-      margin-bottom: -1rem;
-    }
-
-    .chapter-title {
-      font-family: var(--font-heading);
-      font-size: clamp(1.5rem, 4vw, 2rem);
-      color: var(--spirit-white);
-      margin-bottom: 1.5rem;
-      letter-spacing: 0.1em;
-    }
-
-    .chapter-content {
-      font-size: 1.05rem;
-      color: var(--spirit-dim);
-      text-align: justify;
-    }
-
-    .chapter-content strong {
-      color: var(--metal-gold);
-      font-weight: 600;
-    }
-
-    /* Decorative divider */
-    .story-divider {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-      margin: 4rem 0;
-    }
-
-    .story-divider span {
-      width: 8px;
-      height: 8px;
-      background: var(--mist-grey);
-      border-radius: 50%;
-      opacity: 0.5;
-    }
-
-    .story-divider span:nth-child(2) {
-      width: 12px;
-      height: 12px;
-      background: var(--metal-gold);
-      opacity: 0.8;
-    }
-
-    /* ==================== FEATURES SECTION ==================== */
-    .features-section {
-      position: relative;
-      padding: 8rem 2rem;
-      background:
-        radial-gradient(ellipse 100% 50% at 50% 100%, rgba(212, 168, 83, 0.05) 0%, transparent 50%),
-        var(--void-deep);
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 2rem;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .feature-card {
-      position: relative;
-      padding: 2rem;
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      transition: all 0.4s;
-    }
-
-    .feature-card:hover {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(212, 168, 83, 0.3);
-      transform: translateY(-5px);
-    }
-
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 3px;
-      height: 0;
-      background: var(--metal-gold);
-      transition: height 0.4s;
-    }
-
-    .feature-card:hover::before {
-      height: 100%;
-    }
-
-    .feature-icon {
-      font-size: 2rem;
-      margin-bottom: 1rem;
-    }
-
-    .feature-title {
-      font-family: var(--font-heading);
-      font-size: 1.3rem;
-      color: var(--spirit-white);
-      margin-bottom: 0.8rem;
-      letter-spacing: 0.05em;
-    }
-
-    .feature-desc {
-      font-size: 0.95rem;
-      color: var(--spirit-dim);
-      line-height: 1.7;
-    }
-
-    /* ==================== CTA SECTION ==================== */
-    .cta-section {
-      position: relative;
-      padding: 10rem 2rem;
-      text-align: center;
-      background: var(--void-black);
-      overflow: hidden;
-    }
-
-    .cta-section::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(212, 168, 83, 0.08) 0%, transparent 60%);
-      pointer-events: none;
-    }
-
-    .cta-title {
-      font-family: var(--font-display);
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      margin-bottom: 1rem;
-      letter-spacing: 0.1em;
-    }
-
-    .cta-subtitle {
-      font-size: 1.1rem;
-      color: var(--spirit-dim);
-      margin-bottom: 3rem;
-      max-width: 500px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .cta-button {
-      display: inline-block;
-      font-family: var(--font-heading);
-      font-size: 1.1rem;
-      padding: 1rem 3rem;
-      color: var(--void-black);
-      background: linear-gradient(135deg, var(--metal-gold), var(--earth-yellow));
-      border: none;
-      letter-spacing: 0.15em;
-      cursor: pointer;
-      transition: all 0.3s;
-      text-decoration: none;
-    }
-
-    .cta-button:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 40px rgba(212, 168, 83, 0.3);
-    }
-
-    /* ==================== FOOTER ==================== */
-    .footer {
-      padding: 4rem 2rem;
-      background: var(--void-surface);
-      text-align: center;
-    }
-
-    .footer-logo {
-      font-family: var(--font-display);
-      font-size: 2rem;
-      color: var(--spirit-dim);
-      letter-spacing: 0.2em;
-      margin-bottom: 1.5rem;
-    }
-
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      margin-bottom: 2rem;
-    }
-
-    .footer-links a {
-      color: var(--spirit-dim);
-      text-decoration: none;
-      font-size: 0.9rem;
-      letter-spacing: 0.1em;
-      transition: color 0.3s;
-    }
-
-    .footer-links a:hover {
-      color: var(--metal-gold);
-    }
-
-    .footer-copyright {
-      font-size: 0.8rem;
-      color: var(--mist-grey);
-    }
-
-    /* ==================== RESPONSIVE ==================== */
-    @media (max-width: 768px) {
-      .wuxing-container {
-        max-width: 350px;
-      }
-
-      .element-node {
-        width: 70px;
-        height: 70px;
-      }
-
-      .element-icon {
-        font-size: 1.8rem;
-      }
-
-      .element-info {
-        width: 200px;
-      }
-
-      .element-info h3 {
-        font-size: 1.5rem;
-      }
-
-      .footer-links {
-        flex-direction: column;
-        gap: 1rem;
-      }
-    }
-
-    /* ==================== NOISE OVERLAY ==================== */
-    .noise-overlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 9999;
-      opacity: 0.03;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        radial-gradient(circle at 50% 25%, #0e141a 0 7%, transparent 7.5%),
+        radial-gradient(circle at 50% 75%, #d6e2e0 0 7%, transparent 7.5%),
+        radial-gradient(circle at 50% 25%, #d6e2e0 0 25%, transparent 25.5%),
+        radial-gradient(circle at 50% 75%, #0e141a 0 25%, transparent 25.5%),
+        linear-gradient(90deg, #d6e2e0 50%, #0e141a 50%);
+      box-shadow: 0 0 44px rgba(159, 216, 255, 0.3);
+      animation: spin 14s linear infinite;
+    }
+    .orbit { position: absolute; inset: 0; animation: spin 46s linear infinite; }
+    .orb {
+      position: absolute; top: 50%; left: 50%;
+      width: 19%; aspect-ratio: 1; margin: -9.5% 0 0 -9.5%;
+      border-radius: 50%; background: #0a0f14;
+      border: 2px solid var(--c); color: var(--c);
+      display: grid; place-items: center;
+      font-family: var(--serif); font-weight: 700; font-size: clamp(18px, 5.4vw, 26px);
+      box-shadow: 0 0 22px color-mix(in srgb, var(--c) 55%, transparent);
+      transform: rotate(var(--a)) translateY(-232%) rotate(calc(-1 * var(--a)));
+    }
+    .orb span { display: block; animation: spin-rev 46s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin-rev { to { transform: rotate(-360deg); } }
+
+    .hero h1 {
+      font-family: var(--serif); font-weight: 900;
+      font-size: clamp(72px, 22vw, 150px); line-height: 1; letter-spacing: 0.18em; text-indent: 0.18em;
+      background: linear-gradient(180deg, #ffffff 15%, var(--paper) 55%, #c79a45 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 0 28px rgba(159, 216, 255, 0.35));
+    }
+    .tagline {
+      margin-top: 18px; font-family: var(--serif); color: var(--gold);
+      font-size: clamp(16px, 4.4vw, 22px); letter-spacing: 0.42em; text-indent: 0.42em;
+    }
+    .lede { margin-top: 26px; max-width: 30em; color: #c9d1d9; font-size: clamp(15px, 4vw, 17px); }
+    .btn {
+      display: inline-block; margin-top: 40px; padding: 16px 56px;
+      font-family: var(--serif); font-weight: 700; font-size: 22px; letter-spacing: 0.3em; text-indent: 0.3em;
+      color: var(--gold-hi); border: 2px solid var(--gold-hi); border-radius: 999px;
+      background: rgba(13, 17, 23, 0.9);
+      box-shadow: 0 0 0 6px rgba(212, 168, 83, 0.12), 0 0 44px rgba(212, 168, 83, 0.28);
+      transition: transform 0.15s ease, box-shadow 0.25s ease, background 0.25s ease;
+    }
+    .btn:hover { background: #3d2c10; box-shadow: 0 0 0 8px rgba(212, 168, 83, 0.18), 0 0 60px rgba(212, 168, 83, 0.45); }
+    .btn:active { transform: scale(0.97); }
+    .scroll-hint {
+      position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+      color: var(--muted); font-size: 13px; letter-spacing: 0.3em; animation: bob 2.2s ease-in-out infinite;
+    }
+    @keyframes bob { 50% { transform: translate(-50%, 8px); opacity: 0.5; } }
+
+    /* ── 通用小节 ── */
+    section { padding: 84px 0; }
+    .head { text-align: center; margin-bottom: 48px; }
+    .head h2 { font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 8vw, 42px); letter-spacing: 0.2em; text-indent: 0.2em; }
+    .head p { margin-top: 8px; color: var(--gold); font-family: var(--serif); letter-spacing: 0.24em; font-size: 15px; }
+    .head::after { content: ""; display: block; width: 72px; height: 2px; margin: 22px auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
+      backdrop-filter: blur(6px);
+    }
+
+    /* ── 世界观 ── */
+    .story { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .story .card h3 { font-family: var(--serif); font-size: 22px; color: var(--gold-hi); margin-bottom: 10px; }
+    .story .card .no { font-family: var(--serif); color: var(--gold); opacity: 0.55; font-size: 14px; letter-spacing: 0.3em; }
+    .story .card p { color: #c9d1d9; font-size: 15.5px; }
+    .quote {
+      margin-top: 30px; text-align: center; font-family: var(--serif); font-size: clamp(17px, 4.6vw, 21px);
+      color: var(--paper); letter-spacing: 0.12em;
+    }
+
+    /* ── 五行生克 ── */
+    .wx { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+    .picker { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 20px; }
+    .picker button {
+      flex: 1; aspect-ratio: 1; max-width: 68px; border-radius: 50%;
+      background: #0a0f14; border: 2px solid var(--c); color: var(--c);
+      font-family: var(--serif); font-weight: 700; font-size: 24px; cursor: pointer;
+      opacity: 0.5; transition: all 0.2s ease;
+    }
+    .picker button.on { opacity: 1; background: color-mix(in srgb, var(--c) 30%, #0a0f14); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent); color: #fff; }
+    .advice { display: grid; gap: 12px; }
+    .advice .row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.06); }
+    .advice .tag { flex: none; width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-family: var(--serif); font-weight: 700; font-size: 20px; border: 1.5px solid var(--gold); color: var(--gold-hi); }
+    .advice b { font-family: var(--serif); font-size: 19px; }
+    .advice small { display: block; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+    .advice .bad .tag { border-color: #ff5a5a; color: #ff8a8a; }
+    table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+    th, td { padding: 11px 8px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+    th { color: var(--muted); font-weight: 500; font-size: 13.5px; }
+    td:last-child, th:last-child { text-align: right; font-family: var(--serif); font-weight: 700; font-size: 19px; }
+    tr:last-child td { border-bottom: 0; }
+    .m-hi { color: var(--gold-hi); } .m-ok { color: #b6f0c8; } .m-lo { color: var(--muted); }
+    .note { margin-top: 16px; color: var(--muted); font-size: 14px; }
+
+    /* ── 妖异 ── */
+    .foes { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+    .foe { text-align: center; padding: 20px 18px 24px; border-color: color-mix(in srgb, var(--c) 40%, transparent); }
+    .sprite {
+      width: 132px; height: 132px; margin: 0 auto 8px;
+      /* 图集单帧 307px，取 idle 第 0 帧 (1248,625)，按 132/307 缩放 */
+      background-repeat: no-repeat; background-size: 804.9px auto; background-position: -536.6px -268.7px;
+      filter: drop-shadow(0 0 18px color-mix(in srgb, var(--c) 50%, transparent));
+    }
+    .foe h3 { font-family: var(--serif); font-size: 21px; }
+    .foe .el { display: inline-block; margin: 6px 0 10px; padding: 1px 12px; border-radius: 999px; border: 1px solid var(--c); color: var(--c); font-size: 13px; font-family: var(--serif); }
+    .foe p { color: #c9d1d9; font-size: 14.5px; line-height: 1.65; }
+    .foe-extra { margin-top: 18px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .foe-extra h3 { font-family: var(--serif); font-size: 20px; color: var(--gold-hi); margin-bottom: 6px; }
+    .foe-extra p { color: #c9d1d9; font-size: 15px; }
+
+    /* ── 操作与流程 ── */
+    .grid3 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .grid3 .card h3 { font-family: var(--serif); font-size: 20px; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+    .grid3 .card h3 i {
+      flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+      font-style: normal; font-size: 19px; color: var(--gold-hi); border: 1.5px solid var(--gold);
+      background: rgba(212, 168, 83, 0.1);
+    }
+    .grid3 .card p { color: #c9d1d9; font-size: 15px; }
+    kbd { font-family: var(--sans); font-size: 12.5px; padding: 1px 7px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.06); color: var(--paper); }
+
+    .cta { text-align: center; padding: 96px 20px 110px; }
+    .cta h2 { font-family: var(--serif); font-size: clamp(28px, 7.6vw, 40px); letter-spacing: 0.16em; }
+    .cta p { margin-top: 14px; color: #c9d1d9; }
+    footer { padding: 28px 20px 40px; text-align: center; color: #484f58; font-size: 13px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .taiji, .orbit, .orb span, .scroll-hint { animation: none; }
     }
   </style>
 </head>
 <body>
-  <div class="noise-overlay"></div>
 
-  <!-- Hero Section -->
-  <section class="hero">
-    <div class="void-bg"></div>
-    <canvas id="particles"></canvas>
-
-    <div class="hero-content">
-      <h1 class="hero-title">无极</h1>
-      <p class="hero-subtitle">WUJI - THE LIMITLESS VOID</p>
-
-      <div class="hero-quote">
-        <span class="highlight">无极生太极，太极生两仪，</span><br>
-        两仪生四象，四象生五行，五行化万物。<br><br>
-        然而五行失衡，万物病变。<br>
-        世界正在崩坏。
+  <header class="hero">
+    <div class="diagram" aria-hidden="true">
+      <div class="ring"></div>
+      <div class="orbit">
+        <div class="orb" style="--c: var(--wood);  --a: 0deg"><span>木</span></div>
+        <div class="orb" style="--c: var(--fire);  --a: 72deg"><span>火</span></div>
+        <div class="orb" style="--c: var(--earth); --a: 144deg"><span>土</span></div>
+        <div class="orb" style="--c: var(--metal); --a: 216deg"><span>金</span></div>
+        <div class="orb" style="--c: var(--water); --a: 288deg"><span>水</span></div>
       </div>
-
-      <div class="hero-mission">
-        夺回五行之力，让世界归于平衡
-      </div>
+      <div class="taiji"></div>
     </div>
+    <h1>无极</h1>
+    <p class="tagline">五行轮转 · 意志之争</p>
+    <p class="lede">你是世界本源分裂出的一缕意志残魂。五行失衡，妖异丛生——在阵眼之间切换兵甲，以生克之道夺回五行之力。</p>
+    <a class="btn" href="/">踏入气脉</a>
+    <div class="scroll-hint">向下了解</div>
+  </header>
 
-    <div class="scroll-indicator">
-      探索
-    </div>
-  </section>
-
-  <!-- Wuxing Section -->
-  <section class="wuxing-section" id="wuxing">
-    <h2 class="section-title">五行之力</h2>
-    <p class="section-subtitle">金木水火土 · 相生相克</p>
-
-    <div class="wuxing-container">
-      <div class="wuxing-circle"></div>
-
-      <!-- Cycle lines SVG -->
-      <div class="cycle-lines">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
-          <!-- Generation cycle (pentagon) -->
-          <path class="generate-line" d="M50,10 L95,40 L75,85 L25,85 L5,40 Z" />
-        </svg>
+  <section id="story">
+    <div class="wrap">
+      <div class="head"><h2>世界观</h2><p>无极生太极 · 五行化万物</p></div>
+      <div class="story">
+        <div class="card">
+          <div class="no">壹</div>
+          <h3>五行失衡</h3>
+          <p>世界由金木水火土交织而成，相生相克，维系万物运转。不知何时五行开始失衡，变异的能量生出自我意志，化为<strong>妖异</strong>——它们不是外敌，而是世界自身的病变。</p>
+        </div>
+        <div class="card">
+          <div class="no">贰</div>
+          <h3>本源之子</h3>
+          <p>濒临崩坏之际，本源意志将自身分裂成无数缕<strong>残魂</strong>散落天地。每一缕残魂天生能操控五行之力，使命只有一个：夺回被妖异侵占的五行，归还于世界。</p>
+        </div>
+        <div class="card">
+          <div class="no">叁</div>
+          <h3>双向猎杀</h3>
+          <p>妖异想吞噬残魂，残魂要净化妖异。妖异溃散后留下纯粹的五行能量，残魂可将其<strong>塑型</strong>为器物环绕自身，以战养战，直至击溃盘踞气脉的<strong>病变核心</strong>。</p>
+        </div>
       </div>
-
-      <!-- Element nodes -->
-      <div class="element-node metal" data-element="metal">
-        <div class="element-icon">金</div>
-      </div>
-      <div class="element-node water" data-element="water">
-        <div class="element-icon">水</div>
-      </div>
-      <div class="element-node wood" data-element="wood">
-        <div class="element-icon">木</div>
-      </div>
-      <div class="element-node fire" data-element="fire">
-        <div class="element-icon">火</div>
-      </div>
-      <div class="element-node earth" data-element="earth">
-        <div class="element-icon">土</div>
-      </div>
-
-      <!-- Element info (center) -->
-      <div class="element-info" id="element-info">
-        <h3>五行</h3>
-        <p class="element-desc">点击元素查看详情</p>
-        <div class="element-skills"></div>
-      </div>
+      <p class="quote">「使命完成，你将回归本源，不留下任何痕迹。」</p>
     </div>
   </section>
 
-  <!-- Story Section -->
-  <section class="story-section" id="story">
-    <div class="story-container">
-      <h2 class="section-title">世界观</h2>
-      <p class="section-subtitle">本源之子的使命</p>
-
-      <div class="story-chapter">
-        <div class="chapter-number">壹</div>
-        <h3 class="chapter-title">五行天地</h3>
-        <p class="chapter-content">
-          太初之时，世界由五行之力交织而成——<strong>金、木、水、火、土</strong>相生相克，维系着万物的平衡与运转。然而不知何时，五行之力开始<strong>失衡</strong>。失衡的能量逐渐变异，产生了自我意志，化为形形色色的<strong>妖异</strong>。这些妖异并非外来入侵者，而是世界自身的病变。
-        </p>
-      </div>
-
-      <div class="story-divider">
-        <span></span><span></span><span></span>
-      </div>
-
-      <div class="story-chapter">
-        <div class="chapter-number">贰</div>
-        <h3 class="chapter-title">本源之子</h3>
-        <p class="chapter-content">
-          世界濒临崩坏之际，本源意志开始自救——它将自身分裂成无数缕<strong>意志残魂</strong>，散落于天地之间。每一缕残魂都是世界的一部分，天生拥有操控五行之力的能力。它们的使命只有一个：<strong>夺回被妖异侵占的五行之力，归还于世界</strong>。
-        </p>
-      </div>
-
-      <div class="story-divider">
-        <span></span><span></span><span></span>
-      </div>
-
-      <div class="story-chapter">
-        <div class="chapter-number">叁</div>
-        <h3 class="chapter-title">双向猎杀</h3>
-        <p class="chapter-content">
-          妖异想要夺取残魂，将本源意志据为己有；残魂则要击溃妖异，磨除其变异的意志。这是一场<strong>双向的猎杀</strong>，没有旁观者。当妖异被击败，残留的五行之力便恢复纯粹。残魂可以将这些能量塑形为<strong>器物</strong>——武器、铠甲、法宝——以战养战。
-        </p>
+  <section id="wuxing">
+    <div class="wrap">
+      <div class="head"><h2>五行生克</h2><p>进攻看兵 · 防守看甲</p></div>
+      <div class="wx">
+        <div class="card">
+          <p style="color:#c9d1d9; margin-bottom:16px;">点选你面对的妖异五行，看看该换什么：</p>
+          <div class="picker" id="picker">
+            <button data-wx="wood"  style="--c: var(--wood)">木</button>
+            <button data-wx="fire"  style="--c: var(--fire)">火</button>
+            <button data-wx="earth" style="--c: var(--earth)">土</button>
+            <button data-wx="metal" style="--c: var(--metal)">金</button>
+            <button data-wx="water" style="--c: var(--water)">水</button>
+          </div>
+          <div class="advice" id="advice"></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>攻击方五行 对 防御方五行</th><th>伤害</th></tr></thead>
+            <tbody>
+              <tr><td><b>克</b>　我克彼</td><td class="m-hi">×2.5</td></tr>
+              <tr><td><b>得生</b>　彼生我</td><td class="m-ok">×1.5</td></tr>
+              <tr><td><b>比</b>　同属</td><td>×1</td></tr>
+              <tr><td><b>受制</b>　彼克我</td><td class="m-lo">×0.5</td></tr>
+              <tr><td><b>泄</b>　我生彼</td><td class="m-lo">×0.25</td></tr>
+            </tbody>
+          </table>
+          <p class="note">相克：金→木→土→水→火→金　　相生：金→水→木→火→土→金<br>攻防用的是同一张表。妖异打你时，它是攻击方、你的防具是防御方。</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- Features Section -->
-  <section class="features-section" id="features">
-    <h2 class="section-title">游戏特色</h2>
-    <p class="section-subtitle">Roguelike · 五行构筑 · 策略对决</p>
-
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">⚔️</div>
-        <h3 class="feature-title">五行克制</h3>
-        <p class="feature-desc">金克木、木克土、土克水、水克火、火克金。利用五行相克关系，对敌人造成额外伤害，掌握战斗的主动权。</p>
+  <section id="foes">
+    <div class="wrap">
+      <div class="head"><h2>妖异</h2><p>五行阵眼 · 各有打法</p></div>
+      <div class="foes">
+        <div class="card foe" style="--c: var(--wood)">
+          <div class="sprite" style="background-image:url('/assets/monsters/树妖/atlas.png')"></div>
+          <h3>树妖</h3><span class="el">木</span>
+          <p>皮糙肉厚，还会缓慢回血。近身后挥出重击，拖得越久越难缠。</p>
+        </div>
+        <div class="card foe" style="--c: var(--fire)">
+          <div class="sprite" style="background-image:url('/assets/monsters/赤狐精/atlas.png')"></div>
+          <h3>赤狐精</h3><span class="el">火</span>
+          <p>始终与你保持距离，吐出狐火。弹道可以走位躲开，也可以贴上去逼它后退。</p>
+        </div>
+        <div class="card foe" style="--c: var(--earth)">
+          <div class="sprite" style="background-image:url('/assets/monsters/石头精/atlas.png')"></div>
+          <h3>石头精</h3><span class="el">土</span>
+          <p>行动迟缓、防御极高。蓄力后大范围震地，看到地上的红圈就该离开了。</p>
+        </div>
+        <div class="card foe" style="--c: var(--metal)">
+          <div class="sprite" style="background-image:url('/assets/monsters/獠牙怪/atlas.png')"></div>
+          <h3>獠牙怪</h3><span class="el">金</span>
+          <p>绕着你游走，锁定方向后直线冲锋。横向移动或用「遁」穿过它的冲锋线。</p>
+        </div>
+        <div class="card foe" style="--c: var(--water)">
+          <div class="sprite" style="background-image:url('/assets/monsters/青鳞蛇/atlas.png')"></div>
+          <h3>青鳞蛇</h3><span class="el">水</span>
+          <p>速度最快，贴身连续撕咬，被咬中会减速。别想跑赢它，换对兵甲正面解决。</p>
+        </div>
       </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🔮</div>
-        <h3 class="feature-title">属性构筑</h3>
-        <p class="feature-desc">25种属性技能，涵盖暴击、闪避、回复、灼烧、格挡等多元流派。通过装备搭配，打造独一无二的战斗风格。</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">⚗️</div>
-        <h3 class="feature-title">重组归元</h3>
-        <p class="feature-desc">将器物中的五行之力重组凝练，或归元吸收。五行能量本就不稳定，重组时常有失败之险，但也蕴含着更强大的可能。</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🌀</div>
-        <h3 class="feature-title">命脉交汇</h3>
-        <p class="feature-desc">多人竞技模式中，残魂们各自选择气穴去向。当多人选择同一路径，世界将进行裁决，以契合度决定谁能通行。</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">👹</div>
-        <h3 class="feature-title">病变核心</h3>
-        <p class="feature-desc">每片区域深处都盘踞着最为庞大的病变核心。净化它，是每一缕残魂的最终目标，也是殊途同归的终点。</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">♾️</div>
-        <h3 class="feature-title">永恒轮回</h3>
-        <p class="feature-desc">残魂完成使命后回归本源，不留痕迹。但世界广袤，新的病变仍在滋生。新的残魂将诞生，继续这场永无止境的净化之旅。</p>
+      <div class="foe-extra">
+        <div class="card"><h3>魁 · 阵眼之首</h3><p>第二轮起，阵眼中会出现体型更大、血量数倍的魁首。击溃后必定留下精纯的五行能量，更容易塑出高品质器物。</p></div>
+        <div class="card"><h3>病变核心</h3><p>每五轮现身一次。环形弹幕、召唤爪牙、震地重击，半血后进入狂怒。击溃它，这片气脉才算净化。</p></div>
       </div>
     </div>
   </section>
 
-  <!-- CTA Section -->
-  <section class="cta-section">
-    <h2 class="cta-title">成为意志残魂</h2>
-    <p class="cta-subtitle">背负使命，夺回五行之力，让世界归于平衡。你准备好了吗？</p>
-    <a href="/game" class="cta-button">开始游戏</a>
+  <section id="play">
+    <div class="wrap">
+      <div class="head"><h2>玩法</h2><p>单手竖屏 · 即开即玩</p></div>
+      <div class="grid3">
+        <div class="card"><h3><i>移</i>浮动摇杆</h3><p>在屏幕下半任意空白处按下即可移动。残魂会自动向射程内血量最少的妖异发射气劲，移动中也不停手。<br><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></p></div>
+        <div class="card"><h3><i>遁</i>闪避</h3><p>向移动方向瞬移一段并短暂无敌。妖异的每次攻击都有蓄力预警，看准红圈和冲锋线再用。<br><kbd>空格</kbd></p></div>
+        <div class="card"><h3><i>兵</i>五行快换</h3><p>右侧「兵 / 甲」两列各有五行按钮，点一下就换上灵囊里对应五行的武器或防具。这是战斗的核心操作。</p></div>
+        <div class="card"><h3><i>技</i>范围技能</h3><p>部分器物带有主动技能：裂空斩、寒潮、荆棘、焚天、地裂。穿上后出现在「遁」旁边，各自冷却。<br><kbd>1</kbd>–<kbd>5</kbd></p></div>
+        <div class="card"><h3><i>塑</i>塑型</h3><p>妖异溃散后留下的五行能量会被自动吸附，并凝练成同五行的器物。成功率取决于你防具的五行与能量的生克关系，失败会累积补偿。</p></div>
+        <div class="card"><h3><i>囊</i>灵囊</h3><p>打开时世界静止。在这里穿戴器物，把两件器物<strong>重组</strong>为更强的一件，或让穿着的器物<strong>归元</strong>吞噬另一件来强化。<br><kbd>I</kbd></p></div>
+      </div>
+      <div class="foe-extra" style="margin-top:16px">
+        <div class="card"><h3>气脉暂稳</h3><p>每轮限时。净化数量达标，残余妖异消散，本源回复生命并获得片刻调息。</p></div>
+        <div class="card"><h3>五行失衡加剧</h3><p>若未能及时净化，残余妖异陷入狂暴并滞留到下一轮，与新滋生的妖异一起向你涌来。</p></div>
+      </div>
+    </div>
   </section>
 
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="footer-logo">无极</div>
-    <div class="footer-links">
-      <a href="#wuxing">五行之力</a>
-      <a href="#story">世界观</a>
-      <a href="#features">游戏特色</a>
-    </div>
-    <p class="footer-copyright">© 2026 无极 WUJI. All rights reserved.</p>
-  </footer>
+  <div class="cta">
+    <h2>成为意志残魂</h2>
+    <p>夺回五行之力，让世界归于平衡。</p>
+    <a class="btn" href="/">踏入气脉</a>
+  </div>
+
+  <footer>无极 · 竖屏动作肉鸽　建议使用手机竖屏游玩，可添加到主屏幕获得全屏体验</footer>
 
   <script>
-    // ==================== PARTICLES ====================
-    const canvas = document.getElementById('particles');
-    const ctx = canvas.getContext('2d');
+    // 五行生克速查：面对某五行的妖异，武器用克它的，防具穿它所生的
+    (function () {
+      var NAME = { wood: '木', fire: '火', earth: '土', metal: '金', water: '水' };
+      var KE = { metal: 'wood', wood: 'earth', earth: 'water', water: 'fire', fire: 'metal' };   // a 克 KE[a]
+      var SHENG = { metal: 'water', water: 'wood', wood: 'fire', fire: 'earth', earth: 'metal' }; // a 生 SHENG[a]
+      var keys = Object.keys(NAME);
+      var picker = document.getElementById('picker');
+      var advice = document.getElementById('advice');
 
-    function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+      function span(wx) { return '<b style="color:var(--' + wx + ')">' + NAME[wx] + '</b>'; }
 
-    const particles = [];
-    const elementColors = [
-      '#d4a853', // Metal
-      '#58a6ff', // Water
-      '#3fb950', // Wood
-      '#f85149', // Fire
-      '#d29922'  // Earth
-    ];
-
-    class Particle {
-      constructor() {
-        this.reset();
+      function show(enemy) {
+        var atk = keys.filter(function (k) { return KE[k] === enemy; })[0]; // 克它的
+        var def = SHENG[enemy];                                             // 它所生的
+        var danger = KE[enemy];                                             // 被它克的
+        advice.innerHTML =
+          '<div class="row"><div class="tag">兵</div><div>武器换 ' + span(atk) + '　<b class="m-hi">×2.5</b>' +
+          '<small>' + NAME[atk] + '克' + NAME[enemy] + '，你对它造成两倍半伤害</small></div></div>' +
+          '<div class="row"><div class="tag">甲</div><div>防具穿 ' + span(def) + '　<b class="m-lo">只受 ×0.25</b>' +
+          '<small>' + NAME[enemy] + '生' + NAME[def] + '，它的攻击被你的防具化去</small></div></div>' +
+          '<div class="row bad"><div class="tag">危</div><div>别穿 ' + span(danger) + ' 甲　<b style="color:#ff8a8a">受 ×2.5</b>' +
+          '<small>' + NAME[enemy] + '克' + NAME[danger] + '，几下就会被打散</small></div></div>';
+        Array.prototype.forEach.call(picker.children, function (b) {
+          b.classList.toggle('on', b.getAttribute('data-wx') === enemy);
+        });
       }
 
-      reset() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * canvas.height;
-        this.size = Math.random() * 2 + 0.5;
-        this.speedX = (Math.random() - 0.5) * 0.3;
-        this.speedY = (Math.random() - 0.5) * 0.3;
-        this.color = elementColors[Math.floor(Math.random() * elementColors.length)];
-        this.alpha = Math.random() * 0.5 + 0.1;
-        this.life = Math.random() * 200 + 100;
-      }
-
-      update() {
-        this.x += this.speedX;
-        this.y += this.speedY;
-        this.life--;
-
-        if (this.life <= 0 || this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
-          this.reset();
-        }
-      }
-
-      draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = this.alpha * (this.life / 200);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // Create particles
-    for (let i = 0; i < 80; i++) {
-      particles.push(new Particle());
-    }
-
-    function animateParticles() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach(p => {
-        p.update();
-        p.draw();
+      picker.addEventListener('click', function (e) {
+        var wx = e.target && e.target.getAttribute && e.target.getAttribute('data-wx');
+        if (wx) show(wx);
       });
-      requestAnimationFrame(animateParticles);
-    }
-    animateParticles();
-
-    // ==================== ELEMENT INTERACTION ====================
-    const elementData = {
-      metal: {
-        name: '金',
-        title: '锐利肃杀',
-        desc: '金主肃杀，代表锐利、破坏、致命一击',
-        skills: ['锐度', '锋芒', '破甲', '杀意', '寒锋'],
-        color: '#d4a853'
-      },
-      water: {
-        name: '水',
-        title: '灵动玄妙',
-        desc: '水主灵动，代表闪避、精准、控制',
-        skills: ['灵动', '洞察', '凝滞', '玄冰', '润泽'],
-        color: '#58a6ff'
-      },
-      wood: {
-        name: '木',
-        title: '生生不息',
-        desc: '木主生长，代表生命、回复、顽强',
-        skills: ['根基', '生机', '韧性', '逢春', '怒木'],
-        color: '#3fb950'
-      },
-      fire: {
-        name: '火',
-        title: '炽烈爆发',
-        desc: '火主炽烈，代表攻击、燃烧、狂暴',
-        skills: ['炎威', '燎原', '暴燃', '焚意', '余烬'],
-        color: '#f85149'
-      },
-      earth: {
-        name: '土',
-        title: '厚重不动',
-        desc: '土主厚重，代表防御、格挡、反击',
-        skills: ['坚壁', '磐石', '厚土', '反震', '蓄势'],
-        color: '#d29922'
-      }
-    };
-
-    const elementNodes = document.querySelectorAll('.element-node');
-    const elementInfo = document.getElementById('element-info');
-
-    elementNodes.forEach(node => {
-      node.addEventListener('click', () => {
-        const element = node.dataset.element;
-        const data = elementData[element];
-
-        elementInfo.innerHTML = `
-          <h3 style="color: ${data.color}">${data.name} · ${data.title}</h3>
-          <p class="element-desc">${data.desc}</p>
-          <div class="element-skills">
-            ${data.skills.map(s => `<span style="border-color: ${data.color}; color: ${data.color}">${s}</span>`).join('')}
-          </div>
-        `;
-        elementInfo.classList.add('active');
-        elementInfo.style.setProperty('--active-color', data.color);
-      });
-    });
-
-    // ==================== SCROLL ANIMATIONS ====================
-    const storyChapters = document.querySelectorAll('.story-chapter');
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
-    }, { threshold: 0.2 });
-
-    storyChapters.forEach(chapter => observer.observe(chapter));
+      show('fire');
+    })();
   </script>
 </body>
 </html>

@@ -16,6 +16,7 @@ import { uiConfig, LAYOUT, UIConfig } from '../config/uiConfig.js';
 import { eventBus, GameEvent } from '../core/EventBus.js';
 import { createItemIcon, slotHintGlyph, wrapCJK } from '../systems/fx/ItemIcon.js';
 import { WX_TINT } from '../config/worldConfig.js';
+import { sfx } from '../systems/audio/Sfx.js';
 
 interface SlotInfo {
   type: 'inventory' | 'weapon' | 'armor' | 'treasure';
@@ -574,6 +575,7 @@ export class InventoryScene extends Phaser.Scene {
           this.lastClickSlot = undefined;
         } else {
           // 单击：更新详情面板
+          if (src.equipment) sfx.click();
           this.refreshDetailPanel(src.equipment ? src : undefined);
           this.lastClickTime = now;
           this.lastClickSlot = src;
@@ -764,6 +766,7 @@ export class InventoryScene extends Phaser.Scene {
 
     if (success) {
       this.showTopMessage(`装备了 ${equipment.name}`, '#3fb950');
+      sfx.swap(equipment.wuxing);
       eventBus.emit(GameEvent.WUXING_CHOSEN, gameState.getChosenWuxing());
       eventBus.emit(GameEvent.STATS_CHANGED);
       this.scene.restart();
@@ -797,6 +800,7 @@ export class InventoryScene extends Phaser.Scene {
       }
       eventBus.emit(GameEvent.STATS_CHANGED);
       this.showTopMessage(`卸下了 ${equipment.name}`, '#3fb950');
+      sfx.click();
       this.scene.restart();
     } else {
       this.showTopMessage('卸下失败', '#f85149');

@@ -83,7 +83,8 @@ export class WorldBackdrop {
       ctx.fillStyle = dark;
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = light;
-      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.fill();
+      // 左阳右阴：白（阳）居左、鱼头在上，黑（阴）居右、鱼头在下，顺时针流转
+      ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI / 2, Math.PI * 1.5); ctx.fill();
       ctx.fillStyle = light;
       ctx.beginPath(); ctx.arc(cx, cy - r / 2, r / 2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = dark;
@@ -106,8 +107,9 @@ export class WorldBackdrop {
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(cx, cy, 500, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.arc(cx, cy, 340, 0, Math.PI * 2); ctx.stroke();
-      // 先天八卦（自上顺时针）：乾 兑 离 震 坤 艮 坎 巽，1=阳爻 0=阴爻，由内到外
-      const trigrams = [[1, 1, 1], [1, 1, 0], [1, 0, 1], [1, 0, 0], [0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1]];
+      // 先天八卦：乾南（上）坤北（下）离东（左）坎西（右）
+      // 自上顺时针：乾 巽 坎 艮 坤 震 离 兑；1=阳爻 0=阴爻，由内（初爻）到外
+      const trigrams = [[1, 1, 1], [0, 1, 1], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1], [1, 1, 0]];
       trigrams.forEach((tri, i) => {
         ctx.save();
         ctx.translate(cx, cy);

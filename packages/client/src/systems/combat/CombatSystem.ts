@@ -10,6 +10,7 @@ import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { Fx, FX_DEPTH } from '../fx/Fx.js';
 import { AUTO_ATTACK_RANGE, WX_TINT, SPIRIT_TINT } from '../../config/worldConfig.js';
+import { sfx } from '../audio/Sfx.js';
 
 /** 范围技能配置 */
 export interface AoeConfig {
@@ -262,6 +263,7 @@ export class CombatSystem {
       color,
     });
     this.fx.flashGlow(sx + Math.cos(angle) * 34, sy + Math.sin(angle) * 34, 34, color, 140, 0.9);
+    sfx.shoot();
   }
 
   private updateBolts(delta: number): void {
@@ -340,6 +342,8 @@ export class CombatSystem {
     } else {
       this.fx.floatText(tx, ty - 30, `${res.damage}`, '#ffffff', 26);
     }
+
+    sfx.hit(res.relation === 'ke', res.relation === 'sheng' || res.relation === 'beike');
 
     // 受击反馈：闪白、火花、击退
     target.sprite.setTintFill(0xffffff);
@@ -501,6 +505,7 @@ export class CombatSystem {
 
     const tint = WX_TINT[entity.wuxing];
     const big = entity.tier !== 'normal';
+    sfx.enemyDie(entity.wuxing, big);
     this.fx.burst(sprite.x, sprite.y, tint, big ? 40 : 14);
     this.fx.ember(sprite.x, sprite.y, tint, big ? 24 : 8, big ? 90 : 36);
     this.fx.ring(sprite.x, sprite.y, big ? 260 : 110, tint, big ? 600 : 380);
@@ -554,6 +559,7 @@ export class CombatSystem {
     const r = cfg.radius;
 
     // 演出
+    sfx.skill(cfg.wuxing);
     this.fx.ring(px, py, r, color, 480, 0.1);
     this.fx.ring(px, py, r * 0.7, 0xffffff, 340, 0.1);
     this.fx.flashGlow(px, py, r * 1.1, color, 480, 0.75);
@@ -609,6 +615,7 @@ export class CombatSystem {
     this.pc.hp = Math.min(this.pc.maxHp, this.pc.hp + amount);
     this.fx.floatText(this.player.x, this.player.y - 90, `+${this.pc.hp - before}`, '#4ade80', 26);
     this.fx.ember(this.player.x, this.player.y + 20, 0x4ade80, 8, 40);
+    sfx.heal();
     this.emitHp();
   }
 
@@ -640,6 +647,7 @@ export class CombatSystem {
 
     if (res.dodged) {
       this.fx.floatText(px, py, '闪', '#9fd8ff', 30);
+      sfx.dodge();
       const runze = this.skillLevel(AttributeSkillId.RUNZE);
       if (runze) this.healPlayer(Math.max(1, Math.round(this.pc.maxHp * getSkillValue(AttributeSkillId.RUNZE, runze) / 100)));
       return false;
@@ -651,6 +659,7 @@ export class CombatSystem {
     const weak = res.relation === 'sheng' || res.relation === 'beike';
     const label = (res.blocked ? '挡 ' : ke ? '被克 ' : res.relation === 'sheng' ? '化 ' : '') + `-${res.damage}`;
     this.fx.floatText(px, py, label, ke ? '#ff3b3b' : weak ? '#c9d1d9' : '#ff7a7a', ke ? 42 : weak ? 24 : 30, ke ? 96 : 70);
+    sfx.playerHurt(ke);
     this.player.setTint(0xff6a6a);
     this.hurtFlashTimer = 140;
     this.fx.burst(this.player.x, this.player.y - 20, 0xff5a5a, ke ? 18 : 8);
@@ -703,6 +712,7 @@ export class CombatSystem {
     const img = this.scene.add.image(x, y, 'fx_glow').setTint(tint)
       .setBlendMode(Phaser.BlendModes.ADD).setScale(0.36).setDepth(FX_DEPTH - 2);
     const core = this.scene.add.image(x, y, 'fx_dot').setScale(1.3).setDepth(FX_DEPTH - 1);
+    sfx.enemyShoot();
     this.enemyBolts.push({ img, core, source: entity, vx: dirX * speed, vy: dirY * speed, life: 2600, mult });
   }
 

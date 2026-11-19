@@ -12,10 +12,8 @@ import { AOE_CONFIG } from '../systems/combat/CombatSystem.js';
 import { getEquippedAoeSkills, quickSwapGear } from './WorldScene.js';
 import { Fx } from '../systems/fx/Fx.js';
 import { wrapCJK } from '../systems/fx/ItemIcon.js';
-import {
-  ZONES, WORLD_SIZE, WORLD_CENTER, WX_TINT, WX_ORDER, isBossRound,
-  relationOf, bestAttackAgainst, bestDefenseAgainst,
-} from '../config/worldConfig.js';
+import { ZONES, WORLD_SIZE, WORLD_CENTER, WX_TINT, WX_ORDER, isBossRound } from '../config/worldConfig.js';
+import { sfx } from '../systems/audio/Sfx.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", serif';
 const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
@@ -40,9 +38,6 @@ interface WorldState {
   bossZone: number;
   fragments: number;
   bagFull: boolean;
-  threat: Wuxing | null;
-  atkWuxing: Wuxing | null;
-  defWuxing: Wuxing | null;
 }
 
 interface RoundButton {
@@ -91,8 +86,6 @@ export class HUDScene extends Phaser.Scene {
   private dashBtn!: RoundButton;
   private skillBtns: RoundButton[] = [];
   private wuxingObjs: Phaser.GameObjects.GameObject[] = [];
-  private swapMarks: Array<{ type: EquipmentType; wuxing: Wuxing; mark: Phaser.GameObjects.Text; owned: boolean; equipped: boolean }> = [];
-  private lastThreat: Wuxing | null = null;
   private controlObjs: Phaser.GameObjects.GameObject[] = [];
 
   // 横幅
@@ -128,8 +121,6 @@ export class HUDScene extends Phaser.Scene {
     this.lastFragments = gameState.getFragmentCount();
     this.lastBuffs = [];
     this.lastState = undefined;
-    this.lastThreat = null;
-    this.swapMarks = [];
 
     // 上下压暗，保证文字与按钮可读
     this.add.image(width / 2, 0, 'hud_shade').setOrigin(0.5, 0).setDisplaySize(width, 260).setFlipY(true).setAlpha(0.85);
@@ -250,7 +241,7 @@ export class HUDScene extends Phaser.Scene {
     const bagHit = this.add.rectangle(bx, by, bs + 12, bs + 12, 0xffffff, 0).setInteractive();
     bagHit.on('pointerdown', () => drawBag(true));
     bagHit.on('pointerout', () => drawBag(false));
-    bagHit.on('pointerup', () => { drawBag(false); this.toggleInventory(); });
+    bagHit.on('pointerup', () => { drawBag(false); sfx.click(); this.toggleInventory(); });
 
     // 五行阵图（小地图）
     this.minimap = this.add.graphics();
@@ -404,12 +395,10 @@ export class HUDScene extends Phaser.Scene {
   /**
    * 五行快换：两列按钮，左列换武器（进攻五行），右列换防具（防守五行）。
    * 灵囊里有该五行的器物才可点；当前穿戴的高亮。
-   * 按钮角标提示面对眼前妖异的最佳选择：武器「克」、防具「御」，被克的防具标「危」。
    */
   private refreshWuxingButtons(): void {
     this.wuxingObjs.forEach(o => o.destroy());
     this.wuxingObjs = [];
-    this.swapMarks = [];
     const { width, height } = this.scale;
     const eq = gameState.getPlayerState().equipment;
     const inv = gameState.getInventory();
@@ -449,14 +438,7 @@ export class HUDScene extends Phaser.Scene {
           color: equipped ? '#ffffff' : hex(color), stroke: '#000000', strokeThickness: 4,
         }).setOrigin(0.5).setAlpha(owned ? 1 : 0.22);
 
-        // 角标（克 / 御 / 危），由 updateSwapMarks 控制显隐
-        const mark = this.add.text(col.x - r + 2, y - r + 2, '', {
-          fontFamily: SANS, fontSize: '18px', fontStyle: 'bold', color: '#0d1117',
-          backgroundColor: '#ffe066', padding: { x: 4, y: 1 },
-        }).setOrigin(0.5).setVisible(false);
-        this.swapMarks.push({ type: col.type, wuxing: wx, mark, owned, equipped });
-
-        this.wuxingObjs.push(g, t, mark);
+        this.wuxingObjs.push(g, t);
         if (owned && !equipped) {
           const hit = this.add.circle(col.x, y, r + 3, 0xffffff, 0).setInteractive();
           hit.on('pointerdown', () => {
@@ -471,29 +453,6 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.applyControlVisibility();
-    this.updateSwapMarks(this.lastState?.threat ?? null);
-  }
-
-  /** 按眼前妖异的五行刷新角标 */
-  private updateSwapMarks(threat: Wuxing | null): void {
-    const show = !this.inventoryOpen && !this.overlayShown;
-    const atkBest = threat ? bestAttackAgainst(threat) : null;
-    const defBest = threat ? bestDefenseAgainst(threat) : null;
-    this.swapMarks.forEach(m => {
-      let label = '';
-      let bg = '#ffe066';
-      if (threat) {
-        if (m.type === EquipmentType.WEAPON) {
-          if (m.wuxing === atkBest && m.owned) label = '克';
-        } else {
-          if (m.wuxing === defBest && m.owned) { label = '御'; bg = '#7dd3fc'; }
-          // 正穿着被眼前妖异所克的防具：危险
-          else if (m.equipped && relationOf(threat, m.wuxing) === 'ke') { label = '危'; bg = '#ff5a5a'; }
-        }
-      }
-      if (label) m.mark.setText(label).setBackgroundColor(bg);
-      m.mark.setVisible(show && label !== '');
-    });
   }
 
   private applyControlVisibility(): void {
@@ -504,7 +463,6 @@ export class HUDScene extends Phaser.Scene {
     this.wuxingObjs.forEach(set);
     this.joystick?.setEnabled(v);
     if (v && this.lastState) this.updateCooldowns(this.lastState);
-    this.updateSwapMarks(v ? (this.lastState?.threat ?? null) : null);
   }
 
   // ───────────────────────── 世界状态刷新 ─────────────────────────
@@ -589,10 +547,6 @@ export class HUDScene extends Phaser.Scene {
     if (s.fragments !== this.lastFragments) {
       this.lastFragments = s.fragments;
       this.refreshStats();
-    }
-    if (s.threat !== this.lastThreat) {
-      this.lastThreat = s.threat;
-      this.updateSwapMarks(s.threat);
     }
     this.drawMinimap(s);
     this.updateCooldowns(s);
@@ -772,7 +726,7 @@ export class HUDScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(1001).setInteractive({ useHandCursor: true }).setAlpha(0);
     btn.on('pointerdown', () => btn.setScale(0.94));
     btn.on('pointerout', () => btn.setScale(1));
-    btn.on('pointerup', () => { btn.setScale(1); onClick(); });
+    btn.on('pointerup', () => { btn.setScale(1); sfx.click(); onClick(); });
     this.tweens.add({ targets: btn, alpha: 1, duration: 400, delay: 700 });
     return btn;
   }

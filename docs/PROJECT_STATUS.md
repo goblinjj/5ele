@@ -32,7 +32,7 @@ pnpm dev:client       # http://localhost:5173
 - **妖异**（`systems/world/EnemyAI.ts`）：每个阵眼滋生对应五行的妖异，打法各异，攻击都有蓄力预警：
   獠牙怪（金）冲锋、青鳞蛇（水）高速撕咬并减速、赤狐精（火）远程狐火、
   树妖（木）皮厚回血、石头精（土）大范围震地。另有「魁」（精英）与「病变核心」（每 5 轮的首领）。
-- **塑型**：妖异溃散后约三成留下五行能量（魁首与核心必掉），靠近自动吸附并凝练成同五行的器物（优先补齐该五行缺的武器 / 防具）。
+- **塑型**：妖异溃散后约六成留下五行能量（连续 2 只不掉则保底；魁首与核心必掉），靠近自动吸附并凝练成同五行的器物（优先补齐该五行缺的武器 / 防具）。
   成功率以防具五行为「我」：生（能量生我）75% / 比 60% / 耗（我克）50% / 泄（我生）40% / 克（克我）30%，
   失败 +5% 补偿并得 1 碎片；灵囊（15 格）已满时能量直接归元回血。
 - **轮次**：每轮限时。击杀数达到净化目标 → 气脉暂稳（残敌消散、回复 15% 生命、6 秒调息）；
@@ -49,6 +49,7 @@ pnpm dev:client       # http://localhost:5173
 | `systems/combat/` | `CombatSystem`（普攻弹道、技能、状态、受击）、`CombatResolver` |
 | `systems/world/` | `SpawnSystem`、`EnemyAI`、`EntityManager`、`WorldBackdrop`（程序化地表） |
 | `systems/fx/Fx.ts` | 程序化特效贴图、火花、冲击波、飘字对象池 |
+| `systems/audio/Sfx.ts` | 程序化音效：全部用 Web Audio 实时合成，五行对应五声音阶 |
 | `systems/input/` | `InputManager`、浮动 `VirtualJoystick` |
 | `config/worldConfig.ts` | 地图 / 阵眼 / 五行色 / 数值常量 |
 

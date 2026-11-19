@@ -4,6 +4,7 @@ import { SpawnSystem } from './SpawnSystem.js';
 import { CombatSystem } from '../combat/CombatSystem.js';
 import { Fx } from '../fx/Fx.js';
 import { WX_TINT, ZONE_RADIUS } from '../../config/worldConfig.js';
+import { sfx } from '../audio/Sfx.js';
 
 /** 阵眼内妖异发现残魂的距离 */
 const DETECT_RANGE = 640;
@@ -290,6 +291,7 @@ export class EnemyAI {
       const tx = e.sprite.x, ty = e.sprite.y + 30;
       const hitDist = Phaser.Math.Distance.Between(tx, ty, player.x, player.y);
       const heavy = e.kind === 'slammer' || e.tier !== 'normal';
+      if (hitDist < 900) sfx.slam();
       this.fx.ring(tx, ty, radius, heavy ? 0xffc27a : TELE_COLOR, heavy ? 360 : 240, 0.5);
       if (heavy) {
         this.fx.burst(tx, ty, 0xc9a06a, 14);
@@ -356,7 +358,7 @@ export class EnemyAI {
     e.bossSummonTimer -= delta;
     if (e.bossSummonTimer <= 0) {
       e.bossSummonTimer = fury ? 8000 : 11000;
-      this.spawnSystem.spawnMinions(e.sprite.x, e.sprite.y, fury ? 4 : 3, this.round, e.wuxing);
+      this.spawnSystem.spawnMinions(e.sprite.x, e.sprite.y, fury ? 2 : 1, this.round, e.wuxing);
     }
 
     // 逼近并震地

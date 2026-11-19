@@ -27,7 +27,7 @@ const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
 const KIND_SPEED = { charger: 175, swift: 270, caster: 170, brute: 150, slammer: 135 } as const;
 
 /** 场上妖异数量上限（保证移动端帧率） */
-export const MAX_ENEMIES = 70;
+export const MAX_ENEMIES = 36;
 
 export class SpawnSystem {
   private scene: Phaser.Scene;
@@ -86,19 +86,19 @@ export class SpawnSystem {
     const tpl = NORMAL_ENEMIES.find(e => e.name === zone.monster) ?? NORMAL_ENEMIES[0];
     // 器物数值是 1~10 的小数，战斗中统一 ×STAT_SCALE
     const grow = 1 + (round - 1) * 0.45;
-    let hp = tpl.hp * 1.4 * grow * STAT_SCALE;
-    let attack = (tpl.attack + 1.5 + (round - 1) * 1.2) * STAT_SCALE;
+    let hp = tpl.hp * 3.4 * grow * STAT_SCALE;
+    let attack = (tpl.attack + 2.5 + (round - 1) * 1.3) * STAT_SCALE;
     let defense = (tpl.defense + (round - 1) * 0.4) * STAT_SCALE;
     if (zone.kind === 'brute') hp *= 1.5;
 
     let name = tpl.name;
     if (tier === 'elite') {
-      hp = hp * 5 + 6 * STAT_SCALE;
+      hp = hp * 3.2 + 6 * STAT_SCALE;
       attack *= 1.35;
       defense += STAT_SCALE;
       name = `${tpl.name}·魁`;
     } else if (tier === 'boss') {
-      hp = (60 * grow + 40) * STAT_SCALE;
+      hp = (110 * grow + 60) * STAT_SCALE;
       attack *= 1.6;
       defense += 1.5 * STAT_SCALE;
       name = '病变核心';

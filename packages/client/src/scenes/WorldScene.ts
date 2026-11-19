@@ -33,6 +33,7 @@ import {
   PLAYER_SCALE, PLAYER_SPEED, AUTO_ATTACK_RANGE, ORB_MAGNET_RANGE,
   getRoundDuration, isBossRound, relationOf, STAT_SCALE,
 } from '../config/worldConfig.js';
+import { sfx } from '../systems/audio/Sfx.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 
@@ -387,6 +388,7 @@ export class WorldScene extends Phaser.Scene {
       const d = data as { item: Equipment };
       const wx = d.item.wuxing;
       const tint = wx ? WX_TINT[wx] : SPIRIT_TINT;
+      sfx.swap(wx);
       this.fx.burst(this.player.x, this.player.y, tint, 22);
       this.fx.ring(this.player.x, this.player.y, 130, tint, 320);
       this.fx.floatText(this.player.x, this.player.y - 120, d.item.name, '#' + tint.toString(16).padStart(6, '0'), 26, 50, 700);
@@ -504,6 +506,7 @@ export class WorldScene extends Phaser.Scene {
       this.dashDirY = this.facingY;
       this.dashGhostTimer = 0;
       this.combat.setInvulnerable(DASH_INVULN);
+      sfx.dash();
       const tint = this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT;
       this.fx.ring(this.player.x, this.player.y, 90, tint, 260);
       this.fx.burst(this.player.x, this.player.y, tint, 10);
@@ -593,8 +596,8 @@ export class WorldScene extends Phaser.Scene {
       this.createOrb(x, y, wuxing, level, false);
       return;
     }
-    // 普通妖异约三成留下能量；连续 4 只没掉则第 5 只必掉
-    if (Math.random() < 0.3 || this.dryKills >= 4) {
+    // 妖异数量少，每只约六成留下能量；连续 2 只没掉则下一只必掉
+    if (Math.random() < 0.6 || this.dryKills >= 2) {
       this.dryKills = 0;
       this.createOrb(x, y, wuxing, level, false);
     } else {
@@ -672,6 +675,7 @@ export class WorldScene extends Phaser.Scene {
     const tint = WX_TINT[o.wuxing];
     this.fx.burst(this.player.x, this.player.y - 10, tint, 10);
     this.fx.ember(this.player.x, this.player.y, tint, 6, 30);
+    sfx.pickup(o.wuxing);
     if (gameState.isInventoryFull()) {
       // 灵囊已满：能量直接归元，化为己用
       this.combat.healPlayer(Math.ceil(this.pc.maxHp * (o.highQuality ? 0.06 : 0.02)));
@@ -740,6 +744,7 @@ export class WorldScene extends Phaser.Scene {
       }
       gameState.addToInventory(item);
       const worn = this.autoEquipIfSlotFree(item);
+      sfx.shapeOk(job.wuxing);
       this.fx.floatText(px, py, `塑型成功${relTag} ${item.name}${worn ? ' · 已穿戴' : ''}`, RARITY_COLOR[item.rarity] ?? '#ffffff', 26, 90, 1300);
       this.fx.ring(this.player.x, this.player.y, 110, WX_TINT[job.wuxing], 380);
       this.fx.burst(this.player.x, py + 12, WX_TINT[job.wuxing], 16);
@@ -748,6 +753,7 @@ export class WorldScene extends Phaser.Scene {
     } else {
       this.shapingBonus = Math.min(0.70, this.shapingBonus + 0.05);
       gameState.addFragment();
+      sfx.shapeFail();
       this.fx.burst(this.player.x, py + 12, 0x6e7681, 8);
       this.fx.floatText(px, py, `塑型失败${relTag} 碎片+1`, '#8b949e', 22, 70, 1000);
     }
@@ -798,7 +804,8 @@ export class WorldScene extends Phaser.Scene {
     this.combat.resetRoundFlags();
 
     const bossRound = isBossRound(round);
-    const perZone = bossRound ? Math.min(6, 2 + Math.floor(round / 5)) : Math.min(12, 3 + round);
+    // 妖异少而强：每个阵眼只有两三只，逐只应对才有五行生克的余地
+    const perZone = bossRound ? 2 : Math.min(5, 2 + Math.floor((round - 1) / 2));
     let quota = 0;
     ZONES.forEach((_z, i) => { quota += this.spawnSystem.spawnZonePack(i, perZone, round); });
 
@@ -812,6 +819,7 @@ export class WorldScene extends Phaser.Scene {
       return best;
     };
 
+    if (bossRound) sfx.ominous(); else sfx.roundStart();
     if (bossRound) {
       const zi = farthest();
       this.boss = this.spawnSystem.spawnBoss(zi, round);
@@ -839,7 +847,7 @@ export class WorldScene extends Phaser.Scene {
       });
     }
 
-    this.hunterTimer = 7000;
+    this.hunterTimer = 9000;
     this.emitWorldState();
   }
 
@@ -856,9 +864,9 @@ export class WorldScene extends Phaser.Scene {
     // 侵袭：游荡的妖异循着本源气息而来
     this.hunterTimer -= delta;
     if (this.hunterTimer <= 0) {
-      this.hunterTimer = Math.max(3000, 7500 - this.round * 500);
+      this.hunterTimer = Math.max(7000, 11000 - this.round * 400);
       if (this.roundTimer > 6000) {
-        const n = Math.min(8, 2 + this.round);
+        const n = this.round >= 6 ? 3 : this.round >= 3 ? 2 : 1;
         this.spawnSystem.spawnHunters(this.player.x, this.player.y, n, this.round);
       }
     }
@@ -880,6 +888,7 @@ export class WorldScene extends Phaser.Scene {
   /** 净化达标：气脉暂稳 */
   private roundCleared(): void {
     const heal = Math.ceil(this.pc.maxHp * 0.15);
+    sfx.roundClear();
     this.combat.healPlayer(heal);
     this.fx.celebrate(this.player.x, this.player.y - 40, ZONES.map(z => WX_TINT[z.wuxing]));
     eventBus.emit(GameEvent.BANNER, {
@@ -902,6 +911,7 @@ export class WorldScene extends Phaser.Scene {
 
   /** 超时：五行失衡加剧，残余妖异狂暴并滞留到下一轮 */
   private roundTimeout(): void {
+    sfx.ominous();
     const left = this.entityManager.getAlive();
     left.forEach(e => {
       if (e.enraged) return;
@@ -933,6 +943,7 @@ export class WorldScene extends Phaser.Scene {
   private onBossDefeated(): void {
     this.boss = null;
     this.phase = 'victory';
+    sfx.victory();
     this.fx.celebrate(this.player.x, this.player.y - 40, [...ZONES.map(z => WX_TINT[z.wuxing]), 0xffe9a8, 0xffffff]);
     this.spawnSystem.dissolveAll();
     this.combat.clearProjectiles();
@@ -948,6 +959,7 @@ export class WorldScene extends Phaser.Scene {
   private onGameOver(): void {
     if (this.phase === 'over') return;
     this.phase = 'over';
+    sfx.gameOver();
     this.combat.stop();
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
@@ -995,26 +1007,9 @@ export class WorldScene extends Phaser.Scene {
       py: this.player.y / WORLD_SIZE,
       boss,
       bossZone: this.boss && !this.boss.dying ? this.boss.zoneIndex : -1,
-      threat: this.findThreatWuxing(),
-      atkWuxing: this.pc.attackWuxing?.wuxing ?? null,
-      defWuxing: this.pc.defenseWuxing?.wuxing ?? null,
       fragments: gameState.getFragmentCount(),
       bagFull: gameState.isInventoryFull(),
     });
-  }
-
-  /** 当前最需要应对的妖异五行：优先锁定目标，其次 700 范围内最近的 */
-  private findThreatWuxing(): Wuxing | null {
-    const t = this.combat.getTarget();
-    if (t && !t.dying) return t.wuxing;
-    let best: WorldEntity | null = null;
-    let bestD = 700 * 700;
-    const alive = this.entityManager.getAlive();
-    for (let i = 0; i < alive.length; i++) {
-      const d = Phaser.Math.Distance.Squared(this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y);
-      if (d < bestD) { bestD = d; best = alive[i]; }
-    }
-    return best ? best.wuxing : null;
   }
 
   /** 视野内没有妖异时，在残魂身边指出最近妖异 / 魁首 / 核心的方向 */

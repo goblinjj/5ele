@@ -5,9 +5,13 @@ import { uiConfig } from './config/uiConfig.js';
 import { gameState } from './systems/GameStateManager.js';
 import { eventBus, GameEvent } from './core/EventBus.js';
 import { inputManager } from './systems/input/InputManager.js';
+import { installAudioUnlock } from './systems/audio/Sfx.js';
 
 // 创建游戏实例
 const game = new Phaser.Game(gameConfig);
+
+// 音效全部实时合成；浏览器要求首次手势后才能发声
+installAudioUnlock();
 
 // 监听游戏缩放变化，更新 UI 配置
 game.scale.on('resize', (gameSize: Phaser.Structs.Size) => {
