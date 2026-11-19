@@ -81,7 +81,7 @@ export const ORB_MAGNET_RANGE = 230;
 
 /** 每轮时长（秒） */
 export function getRoundDuration(round: number): number {
-  return Math.min(150, 75 + (round - 1) * 10);
+  return Math.min(180, 100 + (round - 1) * 10);
 }
 /** 是否为病变核心轮 */
 export function isBossRound(round: number): boolean {

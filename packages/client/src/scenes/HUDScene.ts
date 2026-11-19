@@ -29,6 +29,7 @@ interface WorldState {
   enemies: number;
   combo: number;
   dashPct: number;
+  guardPct: number;
   skillTimers: number[];
   skillMax: number[];
   zones: number[];
@@ -84,6 +85,7 @@ export class HUDScene extends Phaser.Scene {
 
   // 操控
   private dashBtn!: RoundButton;
+  private guardBtn!: RoundButton;
   private skillBtns: RoundButton[] = [];
   private wuxingObjs: Phaser.GameObjects.GameObject[] = [];
   private controlObjs: Phaser.GameObjects.GameObject[] = [];
@@ -318,6 +320,10 @@ export class HUDScene extends Phaser.Scene {
     // 遁
     this.dashBtn = this.makeRoundButton(width - 128, height - 200, 70, '遁', 0x9fd8ff, 46, () => inputManager.pressDash());
     this.controlObjs.push(...this.dashBtn.objs);
+
+    // 御：格挡 / 防反
+    this.guardBtn = this.makeRoundButton(width - 292, height - 148, 58, '御', 0xffe9a8, 40, () => inputManager.pressGuard());
+    this.controlObjs.push(...this.guardBtn.objs);
   }
 
   /** 圆形按钮（带冷却扇形遮罩） */
@@ -381,9 +387,11 @@ export class HUDScene extends Phaser.Scene {
     ids.forEach((id, i) => {
       const cfg = AOE_CONFIG[id];
       if (!cfg) return;
-      const a = Phaser.Math.DegToRad(170 + i * 31);
+      // 前四个沿「遁」上方的弧线排开（给左侧的「御」让位），第五个放在外圈
+      const a = Phaser.Math.DegToRad(i < 4 ? 200 + i * 31 : 215);
+      const rad = i < 4 ? 178 : 300;
       const btn = this.makeRoundButton(
-        cx + Math.cos(a) * 178, cy + Math.sin(a) * 178, 44,
+        cx + Math.cos(a) * rad, cy + Math.sin(a) * rad, 44,
         cfg.label.slice(0, 2), WX_TINT[cfg.wuxing], 26,
         () => inputManager.pressSkill(i),
       );
@@ -555,6 +563,7 @@ export class HUDScene extends Phaser.Scene {
   private updateCooldowns(s: WorldState): void {
     if (this.inventoryOpen || this.overlayShown) return;
     this.setCooldown(this.dashBtn, s.dashPct * 3000, s.dashPct);
+    this.setCooldown(this.guardBtn, s.guardPct * 1500, s.guardPct);
     this.skillBtns.forEach((btn, i) => {
       const t = s.skillTimers[i] ?? 0;
       const m = s.skillMax[i] ?? 1;
@@ -665,6 +674,8 @@ export class HUDScene extends Phaser.Scene {
       '五行伤害：克 ×2.5　得生 ×1.5　同属 ×1　受制 ×0.5　泄 ×0.25',
       '进攻用克制妖异的五行；防守穿妖异所「生」的五行最稳，被克则重创。',
       '战斗中点右侧「兵 / 甲」两列即可快换灵囊里的器物。',
+      '「御」：架势中受伤减七成；在妖异出手的瞬间按下则防反——无伤、震退并反击。',
+      '被防反或震晕的妖异露出破绽，此时受到的伤害 +50%。',
     );
     if (skills.length > 0) {
       parts.push('', '── 技能 ──');
@@ -700,6 +711,7 @@ export class HUDScene extends Phaser.Scene {
     if (open) {
       this.infoPanelText.setText(this.buildEffectsText());
       this.dashBtn.cd.clear();
+      this.guardBtn.cd.clear();
       this.skillBtns.forEach(b => b.cd.clear());
     } else {
       this.refreshStats();

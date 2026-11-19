@@ -156,7 +156,7 @@ export class EnemyAI {
         break;
 
       case 'swift':
-        if (dist < 100 && e.cooldown <= 0) this.beginAttack(e, 260, nx, ny);
+        if (dist < 100 && e.cooldown <= 0) this.beginAttack(e, 380, nx, ny);
         else if (dist > 80) body.setVelocity(nx * speed, ny * speed);
         else body.setVelocity(0, 0);
         break;
@@ -216,7 +216,7 @@ export class EnemyAI {
     body.setVelocity(0, 0);
     e.phase = 'windup';
     // 蓄力整体偏短，留给玩家的反应窗口更紧
-    e.phaseDuration = windup * 0.8 * (e.enraged ? 0.8 : 1);
+    e.phaseDuration = windup * 1.2 * (e.enraged ? 0.85 : 1);
     e.phaseTimer = e.phaseDuration;
     e.dirX = nx;
     e.dirY = ny;
@@ -291,12 +291,12 @@ export class EnemyAI {
         const a = Math.atan2(player.y - sy, player.x - sx);
         const shots = e.tier === 'elite' ? [-0.28, 0, 0.28] : [0];
         shots.forEach(off => {
-          this.combat.spawnEnemyBolt(e, sx, sy, Math.cos(a + off), Math.sin(a + off), 540);
+          this.combat.spawnEnemyBolt(e, sx, sy, Math.cos(a + off), Math.sin(a + off), 520, 1.4);
         });
         this.fx.flashGlow(sx, sy, 60, WX_TINT[e.wuxing], 200);
         e.phase = 'recover';
         e.phaseTimer = 250;
-        e.cooldown = e.enraged ? 1100 : 1700;
+        e.cooldown = e.enraged ? 2000 : 2900;
         return;
       }
 
@@ -312,12 +312,21 @@ export class EnemyAI {
         this.fx.radial(tx, ty, radius * 0.9, 0xc9a06a, 18);
         if (hitDist < 700) this.fx.shake(0.005, 120);
       }
+      // 出手动作：朝残魂扑出一小步，并划出一道斩击弧
+      const la = Math.atan2(player.y - e.sprite.y, player.x - e.sprite.x);
+      if (e.tier !== 'boss') {
+        e.knockX = Math.cos(la) * 300;
+        e.knockY = Math.sin(la) * 300;
+        e.knockTimer = 90;
+      }
+      this.fx.slash(e.sprite.x + Math.cos(la) * radius * 0.45, e.sprite.y + Math.sin(la) * radius * 0.45, la, radius * 1.5, heavy ? 0xffc27a : 0xff6a5a);
       if (hitDist < radius) {
-        this.combat.enemyStrikePlayer(e, e.kind === 'slammer' ? 1.3 : 1, e.kind === 'swift' ? 1400 : 0);
+        this.combat.enemyStrikePlayer(e, e.kind === 'slammer' ? 2.0 : e.kind === 'swift' ? 1.2 : 1.5, e.kind === 'swift' ? 1400 : 0);
       }
       e.phase = 'recover';
-      e.phaseTimer = e.kind === 'swift' ? 180 : 380;
-      e.cooldown = (e.kind === 'slammer' ? 1900 : e.kind === 'swift' ? 650 : 1050) * (e.enraged ? 0.7 : 1);
+      // 出手后的收招硬直：这是反击的窗口
+      e.phaseTimer = e.kind === 'swift' ? 380 : 650;
+      e.cooldown = (e.kind === 'slammer' ? 3200 : e.kind === 'swift' ? 1500 : 2200) * (e.enraged ? 0.75 : 1);
       return;
     }
 
@@ -327,20 +336,25 @@ export class EnemyAI {
       body.setVelocity(e.dirX * speed, e.dirY * speed);
       if (!e.strikeHit && dist < 78) {
         e.strikeHit = true;
-        this.combat.enemyStrikePlayer(e, 1.2);
+        this.combat.enemyStrikePlayer(e, 1.7);
       }
       if (Math.random() < 0.5) this.fx.afterimage(e.sprite, WX_TINT[e.wuxing]);
       if (e.phaseTimer <= 0 || body.blocked.none === false) {
         body.setVelocity(0, 0);
         e.phase = 'recover';
-        e.phaseTimer = 520;
-        e.cooldown = e.enraged ? 1500 : 2300;
+        e.phaseTimer = 800;
+        e.cooldown = e.enraged ? 2400 : 3400;
       }
       return;
     }
 
-    // recover
-    body.setVelocity(0, 0);
+    // recover（出手瞬间的前扑在这里走完）
+    if (e.knockTimer > 0) {
+      e.knockTimer -= delta;
+      body.setVelocity(e.knockX, e.knockY);
+    } else {
+      body.setVelocity(0, 0);
+    }
     if (e.phaseTimer <= 0) this.endAttack(e);
   }
 
@@ -357,7 +371,7 @@ export class EnemyAI {
     // 环形弹幕
     e.bossBurstTimer -= delta;
     if (e.bossBurstTimer <= 0) {
-      e.bossBurstTimer = fury ? 2600 : 3800;
+      e.bossBurstTimer = fury ? 3400 : 4800;
       const n = fury ? 18 : 12;
       const offset = Math.random() * Math.PI * 2;
       for (let k = 0; k < n; k++) {

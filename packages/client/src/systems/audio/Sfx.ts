@@ -209,6 +209,30 @@ class SfxEngine {
     this.noise({ dur: 0.12, gain: 0.1, filter: 'highpass', freq: 2500 });
   }
 
+  /** 起势格挡 */
+  guard(): void {
+    if (!this.ready()) return;
+    this.tone({ freq: 180, to: 260, dur: 0.12, gain: 0.14, type: 'triangle' });
+    this.noise({ dur: 0.08, gain: 0.08, filter: 'bandpass', freq: 900 });
+  }
+
+  /** 普通格挡：闷响 */
+  block(): void {
+    if (!this.ready() || !this.gate('block', 80)) return;
+    this.tone({ freq: 140, to: 70, dur: 0.16, gain: 0.3, type: 'square' });
+    this.noise({ dur: 0.1, gain: 0.16, filter: 'lowpass', freq: 1200 });
+  }
+
+  /** 防反：清脆的金石之声 */
+  parry(): void {
+    if (!this.ready()) return;
+    this.noise({ dur: 0.06, gain: 0.3, filter: 'highpass', freq: 4000 });
+    this.chime(1318.5, 0.5, 0.22);
+    this.chime(1975.5, 0.45, 0.16, 0.02);
+    this.chime(2637, 0.6, 0.1, 0.05);
+    this.tone({ freq: 90, to: 40, dur: 0.25, gain: 0.3, type: 'sine' });
+  }
+
   /** 遁 */
   dash(): void {
     if (!this.ready()) return;

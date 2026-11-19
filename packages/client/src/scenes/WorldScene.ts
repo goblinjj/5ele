@@ -136,6 +136,8 @@ export class WorldScene extends Phaser.Scene {
   private playerAura!: Phaser.GameObjects.Image;
   private rangeRing!: Phaser.GameObjects.Image;
   private targetMark!: Phaser.GameObjects.Image;
+  private guardRing!: Phaser.GameObjects.Image;
+  private guardGlow!: Phaser.GameObjects.Image;
   private pc!: Combatant;
 
   private keys?: Record<string, Phaser.Input.Keyboard.Key>;
@@ -329,6 +331,9 @@ export class WorldScene extends Phaser.Scene {
     this.targetMark = this.add.image(C, C, 'fx_ring').setTint(0xffe066)
       .setBlendMode(Phaser.BlendModes.ADD).setVisible(false).setDepth(-13);
     this.playerShadow = this.add.image(C, C, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
+    // 御的护体气罩
+    this.guardRing = this.add.image(C, C, 'fx_ring').setBlendMode(Phaser.BlendModes.ADD).setVisible(false).setDepth(FX_DEPTH - 4);
+    this.guardGlow = this.add.image(C, C, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setVisible(false).setDepth(FX_DEPTH - 5);
 
     this.player = this.textures.exists(PLAYER_ATLAS)
       ? this.physics.add.sprite(C, C, PLAYER_ATLAS, 'character_idle_0')
@@ -366,6 +371,8 @@ export class WorldScene extends Phaser.Scene {
     if (!kb) return;
     this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on('keydown-SPACE', () => inputManager.pressDash());
+    kb.on('keydown-SHIFT', () => inputManager.pressGuard());
+    kb.on('keydown-F', () => inputManager.pressGuard());
     ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'].forEach((name, i) => {
       kb.on(`keydown-${name}`, () => inputManager.pressSkill(i));
     });
@@ -527,8 +534,11 @@ export class WorldScene extends Phaser.Scene {
     const speed = PLAYER_SPEED * this.combat.getPlayerSpeedMul();
     body.setVelocity(vx * speed, vy * speed);
 
-    // 朝向：移动时看移动方向；站定时看目标
-    if (moving) {
+    // 朝向：出手时看目标；移动时看移动方向；站定时看目标
+    if (this.combat.isAttackAnimActive()) {
+      const t = this.combat.getTarget();
+      if (t) this.player.setFlipX(t.sprite.x < this.player.x);
+    } else if (moving) {
       if (Math.abs(vx) > 0.15) this.player.setFlipX(vx < 0);
     } else {
       const t = this.combat.getTarget();
@@ -540,9 +550,12 @@ export class WorldScene extends Phaser.Scene {
       const cur = this.player.anims.currentAnim?.key;
       const runKey = `${PLAYER_ATLAS}_run`;
       const idleKey = `${PLAYER_ATLAS}_idle`;
-      if (moving) {
+      // 出手动作优先：播完之前不被跑动 / 待机覆盖（移动本身不受影响）
+      if (this.combat.isAttackAnimActive()) {
+        // 保持出手动作
+      } else if (moving) {
         if (cur !== runKey) { this.player.play(runKey, true); this.player.anims.timeScale = 1.25; }
-      } else if (!this.combat.isAttackAnimActive()) {
+      } else {
         if (cur !== idleKey) { this.player.play(idleKey, true); this.player.anims.timeScale = 1; }
       }
     }
@@ -568,6 +581,20 @@ export class WorldScene extends Phaser.Scene {
     this.playerShadow.setPosition(p.x, footY);
     this.playerAura.setPosition(p.x, footY - 10);
     this.rangeRing.setPosition(p.x, p.y);
+
+    // 御：护体气罩。防反窗口内是金色亮环，之后转为防具五行色的格挡罩
+    if (this.combat.isGuarding()) {
+      const parry = this.combat.isParryWindow();
+      const gc = parry ? 0xffe9a8 : (this.pc.defenseWuxing ? WX_TINT[this.pc.defenseWuxing.wuxing] : SPIRIT_TINT);
+      this.guardRing.setVisible(true).setPosition(p.x, p.y).setTint(gc)
+        .setScale(parry ? 0.78 : 0.66).setAlpha(parry ? 1 : 0.7);
+      this.guardGlow.setVisible(true).setPosition(p.x, p.y).setTint(gc)
+        .setScale(parry ? 0.95 : 0.75).setAlpha(parry ? 0.55 : 0.3);
+      this.guardRing.rotation += 0.12;
+    } else if (this.guardRing.visible) {
+      this.guardRing.setVisible(false);
+      this.guardGlow.setVisible(false);
+    }
 
     // 无敌帧微微透明
     p.setAlpha(this.combat.isInvulnerable() && this.dashTimer <= 0 ? 0.7 : 1);
@@ -842,7 +869,7 @@ export class WorldScene extends Phaser.Scene {
       this.roundQuota = quota;
       eventBus.emit(GameEvent.BANNER, {
         title: `第 ${round} 轮`,
-        sub: round === 1 ? '妖异盘踞于五行阵眼，夺回五行之力' : elites > 0 ? '阵眼之中有魁首现身' : '净化妖异，稳固气脉',
+        sub: round === 1 ? '红圈蓄满的瞬间按「御」可防反' : elites > 0 ? '阵眼之中有魁首现身' : '净化妖异，稳固气脉',
         color: 0xd4a853,
       });
     }
@@ -999,6 +1026,7 @@ export class WorldScene extends Phaser.Scene {
       enemies: alive.length,
       combo: this.combat.getCombo(),
       dashPct: this.dashCd / DASH_COOLDOWN,
+      guardPct: this.combat.getGuardCdPct(),
       skillTimers: this.combat.getSkillTimers(),
       skillMax: this.combat.getSkillMaxTimers(),
       zones: this.zoneAlive,

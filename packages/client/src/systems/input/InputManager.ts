@@ -9,6 +9,8 @@ export class InputManager {
   private skillJustPressed: boolean[] = [false, false, false, false, false];
   /** 遁（闪避）触发脉冲 */
   private dashJustPressed: boolean = false;
+  /** 御（格挡 / 防反）触发脉冲 */
+  private guardJustPressed: boolean = false;
 
   static getInstance(): InputManager {
     if (!InputManager.instance) {
@@ -33,6 +35,16 @@ export class InputManager {
     this.dashJustPressed = true;
   }
 
+  pressGuard(): void {
+    this.guardJustPressed = true;
+  }
+
+  consumeGuard(): boolean {
+    const v = this.guardJustPressed;
+    this.guardJustPressed = false;
+    return v;
+  }
+
   /** 由战斗系统每帧调用，消费技能脉冲 */
   consumeJustPressed(): boolean[] {
     const copy = this.skillJustPressed;
@@ -51,6 +63,7 @@ export class InputManager {
     this.moveX = 0;
     this.moveY = 0;
     this.dashJustPressed = false;
+    this.guardJustPressed = false;
     this.skillJustPressed = [false, false, false, false, false];
   }
 }
