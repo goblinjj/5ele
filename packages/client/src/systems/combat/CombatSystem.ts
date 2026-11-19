@@ -564,6 +564,7 @@ export class CombatSystem {
     body?.setVelocity(0, 0);
     body?.setEnable(false);
     entity.tele?.setVisible(false);
+    entity.teleEdge?.setVisible(false);
     entity.hpBg.setVisible(false);
     entity.hpFill.setVisible(false);
     entity.ring.setVisible(false);
@@ -737,7 +738,8 @@ export class CombatSystem {
       sfx.block();
       this.fx.ring(this.player.x, this.player.y, 110, 0xc9d1d9, 220, 0.6);
     }
-    const label = (guarded || res.blocked ? '挡 ' : ke ? '被克 ' : res.relation === 'sheng' ? '化 ' : '') + `-${res.damage}`;
+    // 「御」的格挡只靠音效提示；磐石（被动格挡）仍标「挡」
+    const label = (res.blocked ? '挡 ' : ke ? '被克 ' : res.relation === 'sheng' ? '化 ' : '') + `-${res.damage}`;
     this.fx.floatText(px, py, label, ke ? '#ff3b3b' : weak ? '#c9d1d9' : '#ff7a7a', ke ? 42 : weak ? 24 : 30, ke ? 96 : 70);
     if (!guarded) sfx.playerHurt(ke);
     this.player.setTint(0xff6a6a);
@@ -785,8 +787,8 @@ export class CombatSystem {
   private parry(entity: WorldEntity): void {
     const p = this.player;
     const color = this.pc.defenseWuxing ? WX_TINT[this.pc.defenseWuxing.wuxing] : SPIRIT_TINT;
+    // 防反只用音效与闪光提示，不飘字
     sfx.parry();
-    this.fx.floatText(p.x, p.y - 130, '防反', '#ffe9a8', 50, 70, 900);
     this.fx.ring(p.x, p.y, 190, 0xffe9a8, 360, 0.3);
     this.fx.ring(p.x, p.y, 120, color, 260, 0.3);
     this.fx.burst(p.x, p.y - 10, 0xffe9a8, 26);
@@ -795,7 +797,7 @@ export class CombatSystem {
 
     this.invulnTimer = 450;
     this.guardTimer = 0;
-    this.guardCd = 350;      // 防反成功几乎不进冷却
+    this.guardCd = 0;        // 防反成功：冷却直接恢复
     this.attackTimer = Math.min(this.attackTimer, 250);
 
     if (entity.dying) return;

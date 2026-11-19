@@ -12,7 +12,10 @@ const DETECT_RANGE = 760;
 const LEASH_RANGE = 1150;
 const PATROL_SPEED = 55;
 
-const TELE_COLOR = 0xff4a3a;
+const TELE_COLOR = 0xff2a1a;
+const TELE_EDGE = 0xffd0c0;
+/** 预警画在地表装饰之上、角色之下 */
+const TELE_DEPTH = -8;
 
 /**
  * 妖异 AI：五种妖异各有打法，所有攻击都有蓄力预警，可以走位或用「遁」躲开。
@@ -232,28 +235,43 @@ export class EnemyAI {
       e.sprite.anims.timeScale = Math.max(0.5, 500 / (e.phaseDuration + 120));
     }
 
-    // 预警
+    // 预警：外框一开始就标出完整范围，内部填充随蓄力涨满；涨满即出手
+    const footY = e.sprite.y + 30;
     if (e.kind === 'charger' && e.tier !== 'boss') {
-      const len = 470;
-      if (!e.tele || !(e.tele instanceof Phaser.GameObjects.Rectangle)) {
+      const len = 470, wid = 76;
+      if (!(e.tele instanceof Phaser.GameObjects.Rectangle)) {
         e.tele?.destroy();
-        e.tele = this.scene.add.rectangle(0, 0, len, 64, TELE_COLOR, 0.3).setOrigin(0, 0.5).setDepth(-15);
+        e.teleEdge?.destroy();
+        e.tele = this.scene.add.rectangle(0, 0, len, wid, TELE_COLOR, 1).setOrigin(0, 0.5).setDepth(TELE_DEPTH);
+        e.teleEdge = this.scene.add.rectangle(0, 0, len, wid, TELE_COLOR, 0.14).setOrigin(0, 0.5)
+          .setStrokeStyle(5, TELE_EDGE, 1).setDepth(TELE_DEPTH + 1);
       }
-      e.tele.setPosition(e.sprite.x, e.sprite.y + 20).setRotation(Math.atan2(ny, nx))
-        .setVisible(true).setAlpha(0.15).setScale(0.2, 1);
-    } else if (e.kind !== 'caster' || e.tier === 'boss') {
-      if (!e.tele || !(e.tele instanceof Phaser.GameObjects.Image)) {
+      const rot = Math.atan2(ny, nx);
+      e.tele.setPosition(e.sprite.x, footY - 10).setRotation(rot).setVisible(true).setAlpha(0.45).setScale(0.02, 1);
+      e.teleEdge!.setPosition(e.sprite.x, footY - 10).setRotation(rot).setVisible(true).setAlpha(1);
+    } else {
+      if (!(e.tele instanceof Phaser.GameObjects.Image)) {
         e.tele?.destroy();
-        e.tele = this.scene.add.image(0, 0, 'fx_disc').setTint(TELE_COLOR).setDepth(-15);
+        e.teleEdge?.destroy();
+        e.tele = this.scene.add.image(0, 0, 'fx_disc').setTint(TELE_COLOR).setDepth(TELE_DEPTH);
+        e.teleEdge = this.scene.add.image(0, 0, 'fx_ring').setTint(TELE_EDGE).setDepth(TELE_DEPTH + 1);
       }
-      e.tele.setPosition(e.sprite.x, e.sprite.y + 30).setVisible(true).setAlpha(0.2).setScale(0.05);
+      const full = (this.teleRadius(e) * 2) / 256;
+      e.tele.setPosition(e.sprite.x, footY).setVisible(true).setAlpha(0.5).setScale(full * 0.05);
+      e.teleEdge!.setPosition(e.sprite.x, footY).setVisible(true).setAlpha(1).setScale(full * 1.06);
     }
+  }
+
+  /** 预警圈半径：近身 / 震地是真实的命中范围；赤狐精只是施法提示 */
+  private teleRadius(e: WorldEntity): number {
+    return e.kind === 'caster' && e.tier !== 'boss' ? 62 : this.strikeRadius(e);
   }
 
   private endAttack(e: WorldEntity): void {
     e.phase = 'idle';
     e.phaseTimer = 0;
     e.tele?.setVisible(false);
+    e.teleEdge?.setVisible(false);
     e.sprite.anims.timeScale = 1;
   }
 
@@ -266,19 +284,25 @@ export class EnemyAI {
     if (e.phase === 'windup') {
       body.setVelocity(0, 0);
       const t = 1 - Math.max(0, e.phaseTimer) / e.phaseDuration;
-      // 预警随蓄力填充
+      // 预警随蓄力涨满；最后 150ms 整体爆闪，提示"就是现在"
       if (e.tele?.visible) {
+        const flash = e.phaseTimer < 150 && Math.floor(e.phaseTimer / 50) % 2 === 0;
         if (e.tele instanceof Phaser.GameObjects.Rectangle) {
-          e.tele.setScale(0.2 + 0.8 * t, 1).setAlpha(0.15 + 0.3 * t);
+          e.tele.setScale(Math.max(0.02, t), 1).setAlpha(flash ? 0.9 : 0.4 + 0.3 * t);
         } else {
-          const full = (this.strikeRadius(e) * 2) / 256;
-          e.tele.setScale(full * (0.3 + 0.7 * t)).setAlpha(0.2 + 0.4 * t);
+          const full = (this.teleRadius(e) * 2) / 256;
+          e.tele.setScale(full * Math.max(0.05, t)).setAlpha(flash ? 1 : 0.5 + 0.4 * t);
         }
+        const col = flash ? 0xffffff : TELE_COLOR;
+        if (e.tele instanceof Phaser.GameObjects.Rectangle) e.tele.setFillStyle(col, 1);
+        else e.tele.setTint(col);
+        e.teleEdge?.setAlpha(0.75 + 0.25 * Math.sin(e.phaseTimer / 45));
       }
       if (e.phaseTimer > 0) return;
 
       // —— 出手 ——
       e.tele?.setVisible(false);
+      e.teleEdge?.setVisible(false);
       if (e.kind === 'charger' && e.tier !== 'boss') {
         e.phase = 'strike';
         e.phaseTimer = 400;

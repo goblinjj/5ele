@@ -22,6 +22,8 @@ export interface WorldEntity {
   hpFill: Phaser.GameObjects.Rectangle;
   /** 蓄力预警（圆或矩形，按需创建） */
   tele?: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+  /** 预警的外框：从蓄力开始就标出完整的攻击范围 */
+  teleEdge?: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
 
   // AI
   homeX: number;

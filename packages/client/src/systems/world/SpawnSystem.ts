@@ -301,6 +301,8 @@ export class SpawnSystem {
     entity.hpFill.destroy();
     entity.tele?.destroy();
     entity.tele = undefined;
+    entity.teleEdge?.destroy();
+    entity.teleEdge = undefined;
     if (entity.sprite.active) entity.sprite.destroy();
     this.entityManager.remove(entity.combatant.id);
   }
@@ -313,6 +315,7 @@ export class SpawnSystem {
       entity.combatant.hp = 0;
       (entity.sprite.body as Phaser.Physics.Arcade.Body | null)?.setEnable(false);
       entity.tele?.setVisible(false);
+      entity.teleEdge?.setVisible(false);
       this.fx.burst(entity.sprite.x, entity.sprite.y, WX_TINT[entity.wuxing], 6);
       this.scene.tweens.add({
         targets: [entity.sprite, entity.shadow, entity.ring],
