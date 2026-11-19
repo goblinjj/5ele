@@ -4,7 +4,7 @@ import { inputManager } from './InputManager.js';
 /**
  * 浮动虚拟摇杆：
  *  - 在允许区域内任意位置按下，摇杆底座就出现在手指处
- *  - 手指拖出底座范围时底座跟随，随时可以反向
+ *  - 本次触摸期间底座固定不动，松手后下一次触摸重新定位
  *  - 带死区与响应曲线：推到 60% 行程即满速
  */
 export class VirtualJoystick {
@@ -82,23 +82,17 @@ export class VirtualJoystick {
   }
 
   private track(px: number, py: number): void {
-    let dx = px - this.originX;
-    let dy = py - this.originY;
-    let dist = Math.sqrt(dx * dx + dy * dy);
+    const dx = px - this.originX;
+    const dy = py - this.originY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // 手指拖出底座：底座跟着手指走，保证随时能反向
-    if (dist > this.baseRadius) {
-      const over = dist - this.baseRadius;
-      this.originX += (dx / dist) * over;
-      this.originY += (dy / dist) * over;
-      this.base.setPosition(this.originX, this.originY);
-      dx = px - this.originX;
-      dy = py - this.originY;
-      dist = this.baseRadius;
-    }
-    this.thumb.setPosition(px, py);
+    // 底座固定在本次按下的位置；摇杆头最多拖到底座边缘
+    const clamped = Math.min(dist, this.baseRadius);
+    const ux = dist > 0 ? dx / dist : 0;
+    const uy = dist > 0 ? dy / dist : 0;
+    this.thumb.setPosition(this.originX + ux * clamped, this.originY + uy * clamped);
 
-    const raw = dist / this.baseRadius;
+    const raw = clamped / this.baseRadius;
     const DEAD = 0.14;
     if (raw < DEAD) {
       inputManager.setMove(0, 0);
@@ -106,7 +100,7 @@ export class VirtualJoystick {
     }
     // 60% 行程即满速
     const force = Math.min(1, (raw - DEAD) / (0.6 - DEAD));
-    inputManager.setMove((dx / dist) * force, (dy / dist) * force);
+    inputManager.setMove(ux * force, uy * force);
   }
 
   private release(): void {

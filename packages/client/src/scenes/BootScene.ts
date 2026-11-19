@@ -1,8 +1,12 @@
 import Phaser from 'phaser';
 import { uiConfig } from '../config/uiConfig.js';
+import { SpawnSystem } from '../systems/world/SpawnSystem.js';
+
+const PLAYER_ATLAS = 'player_spirit';
 
 /**
- * 启动场景 - 加载资源
+ * 启动场景：在这里把全部图集一次加载完（约 5MB），
+ * 进度显示在 index.html 的启动画面上，避免进入战斗时长时间黑屏。
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -10,61 +14,35 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // 显示加载进度
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-
-    // 初始化全局 UI 配置
-    uiConfig.init(width, height);
-
-    // 开发模式下暴露 uiConfig，方便调试字体大小
+    uiConfig.init(this.cameras.main.width, this.cameras.main.height);
     if (import.meta.env.DEV) {
       (window as any).uiConfig = uiConfig;
     }
 
-    const progressBar = this.add.graphics();
-    const progressBox = this.add.graphics();
-    progressBox.fillStyle(0x222222, 0.8);
-    progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
-
-    const loadingText = this.add.text(width / 2, height / 2 - 50, '加载中...', {
-      fontFamily: 'Arial',
-      fontSize: '20px',
-      color: '#ffffff',
-    });
-    loadingText.setOrigin(0.5, 0.5);
-
-    const percentText = this.add.text(width / 2, height / 2, '0%', {
-      fontFamily: 'Arial',
-      fontSize: '18px',
-      color: '#ffffff',
-    });
-    percentText.setOrigin(0.5, 0.5);
-
-    // 监听加载进度
-    this.load.on('progress', (value: number) => {
-      percentText.setText(`${Math.round(value * 100)}%`);
-      progressBar.clear();
-      progressBar.fillStyle(0x22c55e, 1);
-      progressBar.fillRect(width / 2 - 150, height / 2 - 15, 300 * value, 30);
+    const fill = document.getElementById('splash-fill');
+    const tip = document.getElementById('splash-tip');
+    // 脚本下载完成算 10%，其余 90% 给图集
+    const setProgress = (v: number) => {
+      const pct = Math.round(10 + v * 90);
+      if (fill) fill.style.width = `${pct}%`;
+      if (tip) tip.textContent = `唤醒本源… ${pct}%`;
+    };
+    setProgress(0);
+    this.load.on('progress', setProgress);
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      if (tip) tip.textContent = `资源加载失败：${file.key}，请刷新重试`;
     });
 
-    this.load.on('complete', () => {
-      progressBar.destroy();
-      progressBox.destroy();
-      loadingText.destroy();
-      percentText.destroy();
-    });
-
-    // TODO: 加载实际资源
-    // 暂时模拟加载延迟
-    for (let i = 0; i < 10; i++) {
-      this.load.image(`placeholder_${i}`, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
-    }
+    this.load.atlas(PLAYER_ATLAS, 'assets/player/灵体残骸/atlas.png', 'assets/player/灵体残骸/atlas.json');
+    SpawnSystem.preloadAtlases(this);
   }
 
   create(): void {
-    // 跳转到菜单场景
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.classList.add('done');
+      window.setTimeout(() => splash.remove(), 600);
+    }
     this.scene.start('MenuScene');
   }
 }

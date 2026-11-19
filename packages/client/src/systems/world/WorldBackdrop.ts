@@ -29,14 +29,16 @@ export class WorldBackdrop {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     Fx.ensureTextures(scene);
-    this.makeTextures();
+    WorldBackdrop.ensureTextures(scene);
     this.build();
   }
 
   // ───────────────────────── 贴图 ─────────────────────────
 
-  private makeTextures(): void {
-    const tx = this.scene.textures;
+  /** 生成地表 / 太极 / 八卦 / 地貌贴图（主菜单也会复用） */
+  static ensureTextures(scene: Phaser.Scene): void {
+    Fx.ensureTextures(scene);
+    const tx = scene.textures;
 
     // 墨色地面（可平铺）
     if (!tx.exists('bg_ground')) {
@@ -126,11 +128,11 @@ export class WorldBackdrop {
     }
 
     // 五行地貌小件
-    this.makeDecor();
+    WorldBackdrop.makeDecor(scene);
   }
 
-  private makeDecor(): void {
-    const tx = this.scene.textures;
+  private static makeDecor(scene: Phaser.Scene): void {
+    const tx = scene.textures;
     const make = (key: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
       if (tx.exists(key)) return;
       const c = tx.createCanvas(key, w, h)!;

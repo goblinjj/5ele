@@ -1,267 +1,263 @@
 import Phaser from 'phaser';
-import { WUXING_COLORS, Wuxing } from '@xiyou/shared';
+import { WUXING_NAMES } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
-import { uiConfig } from '../config/uiConfig.js';
+import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
+import { WX_ORDER, WX_TINT, SPIRIT_TINT } from '../config/worldConfig.js';
+
+const SERIF = '"Noto Serif SC", "Songti SC", "STSong", serif';
+const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
+const GOLD = 0xd4a853;
+const PLAYER_ATLAS = 'player_spirit';
+
+const hex = (c: number) => '#' + c.toString(16).padStart(6, '0');
 
 /**
- * 主菜单场景 - 响应式布局（基于屏幕百分比）
+ * 主菜单
+ *
+ * 画面：墨色大地上的太极八卦阵缓缓旋转，五行沿相生环绕行，
+ * 残魂悬于阵心 —— 与游戏内的气脉区域是同一套视觉语言。
  */
 export class MenuScene extends Phaser.Scene {
-  private readonly colors = {
-    bgDark: 0x0d1117,
-    inkBlack: 0x1c2128,
-    inkGrey: 0x30363d,
-    paperWhite: 0xf0e6d3,
-    goldAccent: 0xd4a853,
-  };
+  private taiji!: Phaser.GameObjects.Image;
+  private bagua!: Phaser.GameObjects.Image;
+  private orbs: Array<{ glow: Phaser.GameObjects.Image; core: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }> = [];
+  private links!: Phaser.GameObjects.Graphics;
+  private orbitAngle: number = 0;
+  private cx: number = 0;
+  private cy: number = 0;
+  private starting: boolean = false;
 
   constructor() {
     super({ key: 'MenuScene' });
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.scale;
+    WorldBackdrop.ensureTextures(this);
+    this.orbs = [];
+    this.orbitAngle = 0;
+    this.starting = false;
+    this.cx = width / 2;
+    this.cy = height * 0.43;
 
-    this.createBackground();
-    this.createTitle();
-    this.createWuxingDecoration();
-    this.createButtons();
+    this.createBackground(width, height);
+    this.createDiagram();
+    this.createSpirit();
+    this.createTitle(width, height);
+    this.createButtons(width, height);
 
-    // 版本号 - 底部 5%
-    this.add.text(width / 2, height * 0.95, 'v0.3.0', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: '#484f58',
+    this.add.text(width / 2, height - 44, 'v0.4.0', {
+      fontFamily: SANS, fontSize: '18px', color: '#484f58',
     }).setOrigin(0.5);
+
+    this.cameras.main.fadeIn(500, 0, 0, 0);
   }
 
-  private createBackground(): void {
-    const { width, height } = this.cameras.main;
+  // ───────────────────────── 背景 ─────────────────────────
 
-    const bgGraphics = this.add.graphics();
-    bgGraphics.fillStyle(this.colors.bgDark, 1);
-    bgGraphics.fillRect(0, 0, width, height);
+  private createBackground(width: number, height: number): void {
+    this.cameras.main.setBackgroundColor('#05080b');
+    this.add.tileSprite(width / 2, height / 2, width, height, 'bg_ground').setTint(0x9fb4bc);
 
-    // 水墨晕染效果
-    for (let i = 0; i < 8; i++) {
-      const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(0, height);
-      const radius = Phaser.Math.Between(width * 0.06, width * 0.15);
-      bgGraphics.fillStyle(this.colors.inkBlack, 0.5);
-      bgGraphics.fillCircle(x, y, radius);
-    }
+    // 阵心的本源之光
+    this.add.image(this.cx, this.cy, 'fx_glow').setTint(SPIRIT_TINT)
+      .setBlendMode(Phaser.BlendModes.ADD).setScale(5.2).setAlpha(0.3);
 
-    // 装饰线 - 上方 18%，下方 80%
-    bgGraphics.lineStyle(1, this.colors.goldAccent, 0.3);
-    bgGraphics.lineBetween(width * 0.03, height * 0.18, width * 0.97, height * 0.18);
-    bgGraphics.lineBetween(width * 0.03, height * 0.80, width * 0.97, height * 0.80);
-  }
-
-  private createTitle(): void {
-    const { width, height } = this.cameras.main;
-
-    // 主标题 - 顶部 9%
-    const title = this.add.text(width / 2, height * 0.09, '无极', {
-      fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
-      fontSize: `${uiConfig.font3XL}px`,
-      color: '#f0e6d3',
-      fontStyle: 'bold',
-    });
-    title.setOrigin(0.5);
-    title.setStroke('#000000', 6);
-
-    // 标题光效
-    this.tweens.add({
-      targets: title,
-      alpha: { from: 0.9, to: 1 },
-      duration: 2000,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
+    // 升腾的灵气
+    this.add.particles(0, 0, 'fx_dot', {
+      x: { min: 0, max: width },
+      y: { min: height * 0.15, max: height },
+      lifespan: 5200,
+      speedY: { min: -46, max: -14 },
+      speedX: { min: -10, max: 10 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      tint: [SPIRIT_TINT, GOLD, 0xffffff],
+      frequency: 110,
+      blendMode: Phaser.BlendModes.ADD,
     });
 
-    // 副标题 - 顶部 15%
-    this.add.text(width / 2, height * 0.15, '五行轮转 · 意志之争', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5);
+    // 暗角（置于最上层之下的装饰层之上）
+    this.add.image(width / 2, height / 2, 'fx_vignette')
+      .setDisplaySize(width * 1.3, height * 1.15).setDepth(50);
   }
 
-  private createWuxingDecoration(): void {
-    const { width, height } = this.cameras.main;
+  // ───────────────────────── 太极 · 八卦 · 五行 ─────────────────────────
 
-    const wuxingOrder = [Wuxing.METAL, Wuxing.WOOD, Wuxing.WATER, Wuxing.FIRE, Wuxing.EARTH];
-    const wuxingSymbols = ['金', '木', '水', '火', '土'];
+  private readonly ORBIT_R = 268;
 
-    // 响应式大小 - 放大图标
-    const circleRadius = Math.max(22, Math.min(34, width * 0.028));
-    const spacing = Math.max(60, Math.min(90, width * 0.08));
-    const startX = width / 2 - (wuxingOrder.length - 1) * spacing / 2;
-    const y = height * 0.27; // 27% 从顶部
+  private createDiagram(): void {
+    this.bagua = this.add.image(this.cx, this.cy, 'bg_bagua').setScale(0.6).setAlpha(0.6);
+    // 相生环 + 相克星（每帧随五行转动重绘）
+    this.links = this.add.graphics();
+    this.taiji = this.add.image(this.cx, this.cy, 'bg_taiji').setScale(0.44).setAlpha(0.7);
 
-    wuxingOrder.forEach((wuxing, index) => {
-      const x = startX + index * spacing;
-      const color = WUXING_COLORS[wuxing];
-
-      const aura = this.add.circle(x, y, circleRadius + 8, color, 0.15);
-      const circle = this.add.circle(x, y, circleRadius, color, 0.8);
-      circle.setStrokeStyle(2, 0xffffff, 0.3);
-
-      const symbol = this.add.text(x, y, wuxingSymbols[index], {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: '#ffffff',
+    WX_ORDER.forEach(wx => {
+      const tint = WX_TINT[wx];
+      const glow = this.add.image(0, 0, 'fx_glow').setTint(tint)
+        .setBlendMode(Phaser.BlendModes.ADD).setScale(0.75).setAlpha(0.75);
+      const core = this.add.circle(0, 0, 37, 0x0a0f14, 0.92).setStrokeStyle(3, tint, 1);
+      const label = this.add.text(0, 0, WUXING_NAMES[wx], {
+        fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: hex(tint),
       }).setOrigin(0.5);
-
       this.tweens.add({
-        targets: aura,
-        scaleX: 1.3,
-        scaleY: 1.3,
-        alpha: 0,
-        duration: 1500,
-        delay: index * 300,
-        repeat: -1,
-        ease: 'Power2.easeOut',
+        targets: glow, alpha: 0.4, scale: 0.9,
+        duration: 1400 + Math.random() * 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
       });
+      this.orbs.push({ glow, core, label });
+    });
+    this.layoutOrbs();
+  }
+
+  private layoutOrbs(): void {
+    const pts: Array<{ x: number; y: number }> = [];
+    this.orbs.forEach((o, i) => {
+      const a = this.orbitAngle - Math.PI / 2 + (i * Math.PI * 2) / 5;
+      const x = this.cx + Math.cos(a) * this.ORBIT_R;
+      const y = this.cy + Math.sin(a) * this.ORBIT_R;
+      o.glow.setPosition(x, y);
+      o.core.setPosition(x, y);
+      o.label.setPosition(x, y);
+      pts.push({ x, y });
     });
 
-    // 相克说明 - 五行下方
-    this.add.text(width / 2, y + circleRadius + 32, '相克：金→木→土→水→火→金', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#6e7681',
-    }).setOrigin(0.5);
-  }
-
-  private createButtons(): void {
-    const { width, height } = this.cameras.main;
-
-    // 开始游戏按钮 - 纵向排列 48%
-    this.createButton(width / 2, height * 0.48, '开始游戏', '单人模式', () => this.startSinglePlayer());
-
-    // 多人模式按钮 - 纵向排列 58%
-    this.createButton(width / 2, height * 0.58, '多人模式', '敬请期待', () => this.startMultiPlayer(), true);
-
-    // 游戏介绍链接 67%
-    this.createLinkButton(width / 2, height * 0.67, '游戏介绍', () => this.openLanding());
-  }
-
-  private createLinkButton(x: number, y: number, text: string, onClick: () => void): void {
-    const linkText = this.add.text(x, y, `📜 ${text}`, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5);
-
-    linkText.setInteractive({ useHandCursor: true });
-
-    linkText.on('pointerover', () => {
-      linkText.setColor('#d4a853');
-      linkText.setScale(1.05);
+    const g = this.links;
+    g.clear();
+    g.lineStyle(2, GOLD, 0.28);
+    g.strokeCircle(this.cx, this.cy, this.ORBIT_R);
+    // 隔位相克
+    pts.forEach((p, i) => {
+      const q = pts[(i + 2) % 5];
+      g.lineStyle(2, WX_TINT[WX_ORDER[i]], 0.22);
+      g.lineBetween(p.x, p.y, q.x, q.y);
     });
-
-    linkText.on('pointerout', () => {
-      linkText.setColor('#8b949e');
-      linkText.setScale(1);
-    });
-
-    linkText.on('pointerup', onClick);
   }
 
-  private openLanding(): void {
-    window.open('/landing/', '_blank');
-  }
-
-  private createButton(
-    x: number,
-    y: number,
-    text: string,
-    subText: string,
-    onClick: () => void,
-    disabled: boolean = false
-  ): void {
-    const { width, height } = this.cameras.main;
-
-    // 响应式按钮尺寸（放大）
-    const buttonWidth = Math.max(260, Math.min(520, width * 0.75));
-    const buttonHeight = Math.max(64, Math.min(90, height * 0.07));
-
-    const container = this.add.container(x, y);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(this.colors.inkBlack, 0.9);
-    bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-    bg.lineStyle(2, disabled ? this.colors.inkGrey : this.colors.goldAccent, disabled ? 0.3 : 0.6);
-    bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-
-    const buttonText = this.add.text(0, -buttonHeight * 0.14, text, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.font2XL}px`,
-      color: disabled ? '#484f58' : '#f0e6d3',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    const buttonSubText = this.add.text(0, buttonHeight * 0.22, subText, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontMD}px`,
-      color: disabled ? '#30363d' : '#8b949e',
-    }).setOrigin(0.5);
-
-    container.add([bg, buttonText, buttonSubText]);
-
-    if (!disabled) {
-      const hitArea = this.add.rectangle(0, 0, buttonWidth, buttonHeight, 0x000000, 0);
-      hitArea.setInteractive({ useHandCursor: true });
-      container.add(hitArea);
-
-      hitArea.on('pointerover', () => {
-        bg.clear();
-        bg.fillStyle(this.colors.goldAccent, 0.9);
-        bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-        bg.lineStyle(2, this.colors.paperWhite, 0.8);
-        bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-        buttonText.setColor('#0d1117');
-        buttonSubText.setColor('#30363d');
-      });
-
-      hitArea.on('pointerout', () => {
-        bg.clear();
-        bg.fillStyle(this.colors.inkBlack, 0.9);
-        bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-        bg.lineStyle(2, this.colors.goldAccent, 0.6);
-        bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 12);
-        buttonText.setColor('#f0e6d3');
-        buttonSubText.setColor('#8b949e');
-      });
-
-      hitArea.on('pointerdown', () => container.setScale(0.98));
-      hitArea.on('pointerup', () => {
-        container.setScale(1);
-        onClick();
-      });
+  /** 悬于阵心的残魂 */
+  private createSpirit(): void {
+    if (!this.textures.exists(PLAYER_ATLAS)) return;
+    const idleKey = `${PLAYER_ATLAS}_idle`;
+    if (!this.anims.exists(idleKey)) {
+      const frames: Phaser.Types.Animations.AnimationFrame[] = [];
+      for (let i = 0; i < 6; i++) {
+        const f = `character_idle_${i}`;
+        if (this.textures.get(PLAYER_ATLAS).has(f)) frames.push({ key: PLAYER_ATLAS, frame: f });
+      }
+      if (frames.length > 0) this.anims.create({ key: idleKey, frames, frameRate: 8, repeat: -1 });
     }
+    this.add.image(this.cx, this.cy + 86, 'fx_shadow').setScale(1.5).setAlpha(0.8);
+    const spirit = this.add.sprite(this.cx, this.cy - 6, PLAYER_ATLAS, 'character_idle_0').setScale(0.62);
+    if (this.anims.exists(idleKey)) spirit.play(idleKey);
+    this.tweens.add({
+      targets: spirit, y: this.cy - 22, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // ───────────────────────── 标题 ─────────────────────────
+
+  private createTitle(width: number, height: number): void {
+    const y = height * 0.105;
+    const title = this.add.text(width / 2, y, '无极', {
+      fontFamily: SERIF, fontSize: '168px', fontStyle: 'bold', color: '#f0e6d3',
+      stroke: '#05080b', strokeThickness: 10,
+      shadow: { offsetX: 0, offsetY: 0, color: '#9fd8ff', blur: 34, fill: true, stroke: false },
+      // 留出边距，否则光晕会被文字画布的边界裁出一个方框
+      padding: { x: 60, y: 50 },
+    }).setOrigin(0.5).setDepth(60);
+    // 金白渐变
+    const grad = title.context.createLinearGradient(0, 0, 0, title.height);
+    grad.addColorStop(0.15, '#ffffff');
+    grad.addColorStop(0.55, '#f0e6d3');
+    grad.addColorStop(1, '#c79a45');
+    title.setFill(grad);
+
+    const subY = y + 122;
+    const sub = this.add.text(width / 2, subY, '五 行 轮 转 · 意 志 之 争', {
+      fontFamily: SERIF, fontSize: '28px', color: hex(GOLD),
+    }).setOrigin(0.5).setDepth(60);
+    const g = this.add.graphics().setDepth(60);
+    const half = sub.width / 2 + 22;
+    g.lineStyle(2, GOLD, 0.6);
+    g.lineBetween(width / 2 - half - 90, subY, width / 2 - half, subY);
+    g.lineBetween(width / 2 + half, subY, width / 2 + half + 90, subY);
+    g.fillStyle(GOLD, 0.9);
+    g.fillCircle(width / 2 - half - 90, subY, 3);
+    g.fillCircle(width / 2 + half + 90, subY, 3);
+
+    title.setAlpha(0).setScale(1.12);
+    sub.setAlpha(0);
+    this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 900, ease: 'Cubic.easeOut' });
+    this.tweens.add({ targets: sub, alpha: 1, duration: 700, delay: 500 });
+  }
+
+  // ───────────────────────── 按钮 ─────────────────────────
+
+  private createButtons(width: number, height: number): void {
+    // 主按钮
+    const bw = 440, bh = 104;
+    const bx = width / 2, by = height * 0.745;
+    const glow = this.add.image(bx, by, 'fx_glow').setTint(GOLD).setBlendMode(Phaser.BlendModes.ADD)
+      .setDisplaySize(bw * 1.5, bh * 2.6).setAlpha(0.35).setDepth(60);
+    this.tweens.add({ targets: glow, alpha: 0.15, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    const bg = this.add.graphics().setDepth(61);
+    const draw = (down: boolean) => {
+      bg.clear();
+      bg.fillStyle(down ? 0x3d2c10 : 0x0d1117, 0.92);
+      bg.fillRoundedRect(bx - bw / 2, by - bh / 2, bw, bh, bh / 2);
+      bg.lineStyle(3, 0xffe9a8, 1);
+      bg.strokeRoundedRect(bx - bw / 2, by - bh / 2, bw, bh, bh / 2);
+      bg.lineStyle(1.5, GOLD, 0.5);
+      bg.strokeRoundedRect(bx - bw / 2 + 8, by - bh / 2 + 8, bw - 16, bh - 16, (bh - 16) / 2);
+    };
+    draw(false);
+    this.add.text(bx, by - 2, '踏 入 气 脉', {
+      fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: '#ffe9a8',
+    }).setOrigin(0.5).setDepth(62);
+    const hit = this.add.rectangle(bx, by, bw, bh, 0xffffff, 0).setDepth(63).setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => draw(true));
+    hit.on('pointerout', () => draw(false));
+    hit.on('pointerup', () => { draw(false); this.startSinglePlayer(); });
+
+    this.add.text(bx, by + bh / 2 + 34, '夺回五行之力，让世界归于平衡', {
+      fontFamily: SERIF, fontSize: '22px', color: '#8b949e',
+    }).setOrigin(0.5).setDepth(60);
+
+    // 次级入口
+    const rowY = height * 0.875;
+    this.createLink(width / 2 - 130, rowY, '游戏介绍', true, () => window.open('/landing/', '_blank'));
+    this.createLink(width / 2 + 130, rowY, '多人 · 敬请期待', false, () => undefined);
+    const sep = this.add.graphics().setDepth(60);
+    sep.lineStyle(1.5, 0x30363d, 1);
+    sep.lineBetween(width / 2, rowY - 16, width / 2, rowY + 16);
+  }
+
+  private createLink(x: number, y: number, label: string, enabled: boolean, onClick: () => void): void {
+    const t = this.add.text(x, y, label, {
+      fontFamily: SERIF, fontSize: '26px', color: enabled ? '#c9d1d9' : '#484f58',
+      padding: { x: 18, y: 14 },
+    }).setOrigin(0.5).setDepth(60);
+    if (!enabled) return;
+    t.setInteractive({ useHandCursor: true });
+    t.on('pointerover', () => t.setColor(hex(GOLD)));
+    t.on('pointerout', () => t.setColor('#c9d1d9'));
+    t.on('pointerup', onClick);
   }
 
   private startSinglePlayer(): void {
+    if (this.starting) return;
+    this.starting = true;
     gameState.reset();
-    this.scene.start('PrologueScene');
+    this.cameras.main.fadeOut(350, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start('PrologueScene');
+    });
   }
 
-  private startMultiPlayer(): void {
-    const { width, height } = this.cameras.main;
-    const tip = this.add.text(width / 2, height * 0.78, '多人模式开发中...', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5);
-
-    this.tweens.add({
-      targets: tip,
-      alpha: 0,
-      duration: 1500,
-      delay: 1000,
-      onComplete: () => tip.destroy(),
-    });
+  update(_time: number, delta: number): void {
+    this.taiji.rotation += delta * 0.00035;
+    this.bagua.rotation -= delta * 0.00008;
+    this.orbitAngle += delta * 0.00012;
+    this.layoutOrbs();
   }
 }

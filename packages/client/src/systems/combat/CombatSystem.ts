@@ -195,29 +195,38 @@ export class CombatSystem {
 
   // ───────────────────────── 本源之击（自动普攻） ─────────────────────────
 
+  /** 索敌：射程内血量最少的妖异（血量相同取更近的），优先收掉残血 */
   private findTarget(range: number): WorldEntity | null {
-    let nearest: WorldEntity | null = null;
-    let best = range * range;
+    let pick: WorldEntity | null = null;
+    let bestHp = Infinity;
+    let bestD2 = Infinity;
+    const r2 = range * range;
     const px = this.player.x, py = this.player.y;
     const alive = this.entityManager.getAlive();
     for (let i = 0; i < alive.length; i++) {
       const e = alive[i];
       const dx = e.sprite.x - px, dy = e.sprite.y - py;
       const d2 = dx * dx + dy * dy;
-      if (d2 < best) { best = d2; nearest = e; }
+      if (d2 > r2) continue;
+      const hp = e.combatant.hp;
+      if (hp < bestHp || (hp === bestHp && d2 < bestD2)) {
+        bestHp = hp; bestD2 = d2; pick = e;
+      }
     }
-    return nearest;
+    return pick;
   }
 
   private updateAutoAttack(moving: boolean): void {
-    // 目标失效则重新索敌
-    const t = this.currentTarget;
-    if (!t || t.dying || t.combatant.hp <= 0 ||
-        Phaser.Math.Distance.Between(this.player.x, this.player.y, t.sprite.x, t.sprite.y) > AUTO_ATTACK_RANGE) {
-      this.currentTarget = this.findTarget(AUTO_ATTACK_RANGE);
+    if (this.attackTimer > 0) {
+      // 冷却期间只在目标失效时重新索敌（用于朝向与锁定标记）
+      const t = this.currentTarget;
+      if (!t || t.dying || t.combatant.hp <= 0 ||
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, t.sprite.x, t.sprite.y) > AUTO_ATTACK_RANGE) {
+        this.currentTarget = this.findTarget(AUTO_ATTACK_RANGE);
+      }
+      return;
     }
-    if (this.attackTimer > 0) return;
-    // 开火瞬间总是打最近的
+    // 每次出手都重新挑选射程内血量最少的
     const target = this.findTarget(AUTO_ATTACK_RANGE);
     this.currentTarget = target;
     if (!target) return;

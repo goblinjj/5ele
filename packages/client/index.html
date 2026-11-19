@@ -103,10 +103,55 @@
         display: flex;
       }
     }
+
+    /* 启动加载画面：脚本与图集下载期间显示，由 BootScene 更新进度并移除 */
+    #splash {
+      position: fixed; inset: 0; z-index: 9000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 42%, #14222a 0%, #070b0f 70%);
+      color: #f0e6d3;
+      font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+      transition: opacity 0.5s ease;
+    }
+    #splash.done { opacity: 0; pointer-events: none; }
+    #splash .taiji {
+      width: 96px; height: 96px; border-radius: 50%;
+      border: 2px solid rgba(212,168,83,0.8);
+      background:
+        radial-gradient(circle at 50% 25%, #0e141a 0 7%, transparent 7.5%),
+        radial-gradient(circle at 50% 75%, #d6e2e0 0 7%, transparent 7.5%),
+        radial-gradient(circle at 50% 25%, #d6e2e0 0 25%, transparent 25.5%),
+        radial-gradient(circle at 50% 75%, #0e141a 0 25%, transparent 25.5%),
+        linear-gradient(90deg, #0e141a 50%, #d6e2e0 50%);
+      box-shadow: 0 0 40px rgba(159,216,255,0.25);
+      animation: splash-spin 6s linear infinite;
+    }
+    @keyframes splash-spin { to { transform: rotate(360deg); } }
+    #splash .name { margin-top: 36px; font-size: 56px; font-weight: bold; letter-spacing: 0.3em; text-indent: 0.3em; }
+    #splash .bar {
+      margin-top: 40px; width: min(62vw, 300px); height: 6px; border-radius: 3px;
+      background: rgba(255,255,255,0.08); overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(212,168,83,0.35);
+    }
+    #splash .fill {
+      width: 4%; height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, #8a6a2c, #ffe9a8);
+      transition: width 0.25s ease;
+    }
+    #splash .tip { margin-top: 16px; font-size: 14px; color: #8b949e; letter-spacing: 0.1em;
+      font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
   </style>
 </head>
 <body>
   <div id="game-container"></div>
+
+  <!-- 启动加载画面 -->
+  <div id="splash">
+    <div class="taiji"></div>
+    <div class="name">无极</div>
+    <div class="bar"><div class="fill" id="splash-fill"></div></div>
+    <div class="tip" id="splash-tip">唤醒本源… 0%</div>
+  </div>
 
   <!-- 竖屏提示 -->
   <div id="orientation-overlay">
