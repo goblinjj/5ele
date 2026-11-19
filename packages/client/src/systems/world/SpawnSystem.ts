@@ -150,7 +150,8 @@ export class SpawnSystem {
   }
 
   /**
-   * 侵袭：一小队妖异在视野外凝聚成形，直扑残魂
+   * 侵袭：一小队妖异在视野外凝聚成形，朝残魂此刻所在的位置游荡过来；
+   * 它们同样要进入一屏之内才会发现残魂
    * @returns 实际生成数量
    */
   spawnHunters(px: number, py: number, count: number, round: number, wuxing?: Wuxing): number {
@@ -170,7 +171,10 @@ export class SpawnSystem {
     for (let i = 0; i < count; i++) {
       if (this.entityManager.getAlive().length >= MAX_ENEMIES) break;
       const a = (i / count) * Math.PI * 2;
-      this.spawnEnemy(zone, -1, cx + Math.cos(a) * 70, cy + Math.sin(a) * 70, round, 'normal', true);
+      const e = this.spawnEnemy(zone, -1, cx + Math.cos(a) * 70, cy + Math.sin(a) * 70, round, 'normal', false);
+      // 以残魂当前位置为驻地：走过来后在附近游荡
+      e.homeX = px;
+      e.homeY = py;
       spawned++;
     }
     return spawned;

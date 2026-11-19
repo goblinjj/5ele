@@ -916,7 +916,6 @@ export class WorldScene extends Phaser.Scene {
     left.forEach(e => {
       if (e.enraged) return;
       e.enraged = true;
-      e.aggro = true;
       e.combatant.attack += 1;
       this.combat.refreshTint(e);
     });

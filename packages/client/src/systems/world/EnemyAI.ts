@@ -6,8 +6,10 @@ import { Fx } from '../fx/Fx.js';
 import { WX_TINT, ZONE_RADIUS } from '../../config/worldConfig.js';
 import { sfx } from '../audio/Sfx.js';
 
-/** 阵眼内妖异发现残魂的距离 */
-const DETECT_RANGE = 640;
+/** 索敌范围：大约一个屏幕（半屏高 780）。只有魁首无视距离、全图追杀 */
+const DETECT_RANGE = 760;
+/** 追出这个距离仍够不着就放弃，回到原处游荡 */
+const LEASH_RANGE = 1150;
 const PATROL_SPEED = 55;
 
 const TELE_COLOR = 0xff4a3a;
@@ -87,8 +89,15 @@ export class EnemyAI {
       return;
     }
 
-    // 发现残魂
-    if (!e.aggro && dist < DETECT_RANGE) e.aggro = true;
+    // 索敌：魁首全图追杀；其余妖异只在一屏之内发现残魂，被甩开太远则放弃
+    if (e.tier === 'elite') {
+      e.aggro = true;
+    } else if (!e.aggro) {
+      if (dist < DETECT_RANGE) e.aggro = true;
+    } else if (dist > LEASH_RANGE && e.phase === 'idle') {
+      e.aggro = false;
+      e.patrolTimer = 0;
+    }
 
     // 攻击流程中
     if (e.phase !== 'idle') {
@@ -170,7 +179,12 @@ export class EnemyAI {
       e.patrolTimer = Phaser.Math.Between(1500, 3500);
       const hx = e.homeX - e.sprite.x, hy = e.homeY - e.sprite.y;
       const fromHome = Math.sqrt(hx * hx + hy * hy);
-      if (fromHome > ZONE_RADIUS - 60) {
+      if (fromHome > ZONE_RADIUS + 200) {
+        // 离驻地很远（放弃追击 / 侵袭途中）：快步赶回去
+        const v = e.moveSpeed * 0.8;
+        body.setVelocity((hx / fromHome) * v, (hy / fromHome) * v);
+        e.patrolTimer = 600;
+      } else if (fromHome > ZONE_RADIUS - 60) {
         body.setVelocity((hx / fromHome) * PATROL_SPEED, (hy / fromHome) * PATROL_SPEED);
       } else if (Math.random() < 0.35) {
         body.setVelocity(0, 0);
