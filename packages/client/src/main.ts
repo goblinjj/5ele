@@ -2,6 +2,9 @@
 import Phaser from 'phaser';
 import { gameConfig } from './config/gameConfig.js';
 import { uiConfig } from './config/uiConfig.js';
+import { gameState } from './systems/GameStateManager.js';
+import { eventBus, GameEvent } from './core/EventBus.js';
+import { inputManager } from './systems/input/InputManager.js';
 
 // 创建游戏实例
 const game = new Phaser.Game(gameConfig);
@@ -112,4 +115,5 @@ showInstallPrompt();
 // 开发模式下暴露 game 实例
 if (import.meta.env.DEV) {
   (window as any).game = game;
+  (window as any).__dev = { gameState, eventBus, GameEvent, inputManager };
 }

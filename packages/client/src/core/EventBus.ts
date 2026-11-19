@@ -29,6 +29,18 @@ export enum GameEvent {
   ENEMY_COUNT_UPDATE = 'ui:enemy_count',
   // 游戏失败
   GAME_OVER          = 'player:game_over',
+  // 世界状态快照（HUD 每隔数帧刷新一次）
+  WORLD_STATE        = 'ui:world_state',
+  // 屏幕横幅
+  BANNER             = 'ui:banner',
+  // 净化病变核心
+  VICTORY            = 'world:victory',
+  // 胜利后选择继续轮回
+  CONTINUE_RUN       = 'world:continue_run',
+  // HUD 快换武器 / 防具
+  GEAR_SWAPPED       = 'player:gear_swapped',
+  // 灵囊内容变化（塑型得到新器物）
+  INVENTORY_CHANGED  = 'player:inventory_changed',
 }
 
 type EventHandler = (...args: unknown[]) => void;

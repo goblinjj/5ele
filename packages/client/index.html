@@ -97,8 +97,8 @@
       color: #8b949e;
     }
 
-    /* 仅在横屏时显示遮罩 */
-    @media screen and (orientation: landscape) {
+    /* 仅在触屏设备横屏时提示；桌面浏览器窗口通常是横向的，直接居中显示竖屏画面 */
+    @media screen and (orientation: landscape) and (pointer: coarse) {
       #orientation-overlay {
         display: flex;
       }

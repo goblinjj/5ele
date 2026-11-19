@@ -1,0 +1,386 @@
+import Phaser from 'phaser';
+import { EntityManager, WorldEntity } from './EntityManager.js';
+import { SpawnSystem } from './SpawnSystem.js';
+import { CombatSystem } from '../combat/CombatSystem.js';
+import { Fx } from '../fx/Fx.js';
+import { WX_TINT, ZONE_RADIUS } from '../../config/worldConfig.js';
+
+/** 阵眼内妖异发现残魂的距离 */
+const DETECT_RANGE = 640;
+const PATROL_SPEED = 55;
+
+const TELE_COLOR = 0xff4a3a;
+
+/**
+ * 妖异 AI：五种妖异各有打法，所有攻击都有蓄力预警，可以走位或用「遁」躲开。
+ *
+ *  獠牙怪（金）charger  —— 锁定方向后直线冲锋
+ *  青鳞蛇（水）swift    —— 高速贴身撕咬，命中附带减速
+ *  赤狐精（火）caster   —— 保持距离吐狐火
+ *  树妖  （木）brute    —— 皮厚、缓慢回血，近身重击
+ *  石头精（土）slammer  —— 大范围震地
+ *  病变核心 boss        —— 环形弹幕 + 召唤爪牙 + 震地
+ */
+export class EnemyAI {
+  private scene: Phaser.Scene;
+  private entityManager: EntityManager;
+  private spawnSystem: SpawnSystem;
+  private combat: CombatSystem;
+  private fx: Fx;
+  private round: number = 1;
+
+  constructor(scene: Phaser.Scene, em: EntityManager, spawn: SpawnSystem, combat: CombatSystem, fx: Fx) {
+    this.scene = scene;
+    this.entityManager = em;
+    this.spawnSystem = spawn;
+    this.combat = combat;
+    this.fx = fx;
+  }
+
+  setRound(round: number): void {
+    this.round = round;
+  }
+
+  update(delta: number, player: Phaser.Physics.Arcade.Sprite): void {
+    const alive = this.entityManager.getAlive();
+    for (let i = 0; i < alive.length; i++) {
+      this.updateEntity(alive[i], delta, player);
+    }
+    // 死亡动画中的也要同步阴影位置
+    const all = this.entityManager.getAll();
+    for (let i = 0; i < all.length; i++) this.spawnSystem.syncVisuals(all[i]);
+  }
+
+  // ───────────────────────── 单体更新 ─────────────────────────
+
+  private updateEntity(e: WorldEntity, delta: number, player: Phaser.Physics.Arcade.Sprite): void {
+    const body = e.sprite.body as Phaser.Physics.Arcade.Body;
+    const px = player.x, py = player.y;
+    const dx = px - e.sprite.x, dy = py - e.sprite.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = dx / dist, ny = dy / dist;
+
+    e.cooldown = Math.max(0, e.cooldown - delta);
+
+    // 树妖：缓慢回血
+    if (e.kind === 'brute' && e.combatant.hp < e.combatant.maxHp) {
+      e.regenTimer -= delta;
+      if (e.regenTimer <= 0) {
+        e.regenTimer = 3000;
+        e.combatant.hp = Math.min(e.combatant.maxHp, e.combatant.hp + Math.ceil(e.combatant.maxHp * 0.06));
+        this.spawnSystem.updateHpBar(e);
+      }
+    }
+
+    // 硬直（地裂）
+    if (e.stunTimer > 0) {
+      e.stunTimer -= delta;
+      if (e.knockTimer > 0) {
+        e.knockTimer -= delta;
+        body.setVelocity(e.knockX, e.knockY);
+      } else {
+        body.setVelocity(0, 0);
+      }
+      if (e.phase !== 'idle') this.endAttack(e);
+      this.playAnim(e, 'idle');
+      return;
+    }
+
+    // 发现残魂
+    if (!e.aggro && dist < DETECT_RANGE) e.aggro = true;
+
+    // 攻击流程中
+    if (e.phase !== 'idle') {
+      this.updateAttack(e, delta, body, dist, nx, ny, player);
+      return;
+    }
+
+    // 击退
+    if (e.knockTimer > 0) {
+      e.knockTimer -= delta;
+      body.setVelocity(e.knockX, e.knockY);
+      return;
+    }
+
+    if (!e.aggro) {
+      this.patrol(e, delta, body);
+      return;
+    }
+
+    const slowed = this.combat.isEnemySlowed(e.combatant.id);
+    const speed = e.moveSpeed * (slowed ? 0.5 : 1) * (e.enraged ? 1.3 : 1);
+    e.sprite.setFlipX(dx < 0);
+
+    if (e.tier === 'boss') {
+      this.updateBoss(e, delta, body, dist, nx, ny, speed, player);
+      return;
+    }
+
+    switch (e.kind) {
+      case 'charger':
+        if (dist < 380 && e.cooldown <= 0) {
+          this.beginAttack(e, 520, nx, ny);
+        } else if (dist > 300) {
+          body.setVelocity(nx * speed, ny * speed);
+        } else {
+          // 绕着残魂游走，等待冲锋
+          body.setVelocity(-ny * speed * 0.7, nx * speed * 0.7);
+        }
+        break;
+
+      case 'caster': {
+        if (dist < 560 && e.cooldown <= 0) {
+          this.beginAttack(e, 480, nx, ny);
+          break;
+        }
+        if (dist > 430) body.setVelocity(nx * speed, ny * speed);
+        else if (dist < 270) body.setVelocity(-nx * speed * 0.85, -ny * speed * 0.85);
+        else body.setVelocity(-ny * speed * 0.5, nx * speed * 0.5);
+        break;
+      }
+
+      case 'slammer':
+        if (dist < 150 && e.cooldown <= 0) this.beginAttack(e, 850, nx, ny);
+        else if (dist > 110) body.setVelocity(nx * speed, ny * speed);
+        else body.setVelocity(0, 0);
+        break;
+
+      case 'swift':
+        if (dist < 100 && e.cooldown <= 0) this.beginAttack(e, 260, nx, ny);
+        else if (dist > 80) body.setVelocity(nx * speed, ny * speed);
+        else body.setVelocity(0, 0);
+        break;
+
+      case 'brute':
+      default:
+        if (dist < 115 && e.cooldown <= 0) this.beginAttack(e, 560, nx, ny);
+        else if (dist > 90) body.setVelocity(nx * speed, ny * speed);
+        else body.setVelocity(0, 0);
+        break;
+    }
+
+    const moving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
+    this.playAnim(e, moving ? 'run' : 'idle');
+  }
+
+  private patrol(e: WorldEntity, delta: number, body: Phaser.Physics.Arcade.Body): void {
+    e.patrolTimer -= delta;
+    if (e.patrolTimer <= 0) {
+      e.patrolTimer = Phaser.Math.Between(1500, 3500);
+      const hx = e.homeX - e.sprite.x, hy = e.homeY - e.sprite.y;
+      const fromHome = Math.sqrt(hx * hx + hy * hy);
+      if (fromHome > ZONE_RADIUS - 60) {
+        body.setVelocity((hx / fromHome) * PATROL_SPEED, (hy / fromHome) * PATROL_SPEED);
+      } else if (Math.random() < 0.35) {
+        body.setVelocity(0, 0);
+      } else {
+        const a = Math.random() * Math.PI * 2;
+        body.setVelocity(Math.cos(a) * PATROL_SPEED, Math.sin(a) * PATROL_SPEED);
+      }
+      if (Math.abs(body.velocity.x) > 1) e.sprite.setFlipX(body.velocity.x < 0);
+    }
+    const moving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
+    this.playAnim(e, moving ? 'run' : 'idle');
+  }
+
+  // ───────────────────────── 攻击流程 ─────────────────────────
+
+  /** 攻击落点半径（圆形预警用） */
+  private strikeRadius(e: WorldEntity): number {
+    const s = e.tier === 'boss' ? 2.0 : e.tier === 'elite' ? 1.35 : 1;
+    switch (e.kind) {
+      case 'slammer': return 185 * s;
+      case 'brute': return 135 * s;
+      case 'swift': return 115 * s;
+      default: return 130 * s;
+    }
+  }
+
+  private beginAttack(e: WorldEntity, windup: number, nx: number, ny: number): void {
+    const body = e.sprite.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    e.phase = 'windup';
+    // 蓄力整体偏短，留给玩家的反应窗口更紧
+    e.phaseDuration = windup * 0.8 * (e.enraged ? 0.8 : 1);
+    e.phaseTimer = e.phaseDuration;
+    e.dirX = nx;
+    e.dirY = ny;
+    e.strikeHit = false;
+    e.sprite.setFlipX(nx < 0);
+
+    // 动作
+    const animName = e.kind === 'caster' ? 'magic' : 'atk';
+    const key = `${e.atlasKey}_${animName}`;
+    if (e.atlasKey && this.scene.anims.exists(key)) {
+      e.sprite.play(key, true);
+      // 6 帧 @12fps = 500ms，压到蓄力时长内
+      e.sprite.anims.timeScale = Math.max(0.5, 500 / (e.phaseDuration + 120));
+    }
+
+    // 预警
+    if (e.kind === 'charger' && e.tier !== 'boss') {
+      const len = 470;
+      if (!e.tele || !(e.tele instanceof Phaser.GameObjects.Rectangle)) {
+        e.tele?.destroy();
+        e.tele = this.scene.add.rectangle(0, 0, len, 64, TELE_COLOR, 0.3).setOrigin(0, 0.5).setDepth(-15);
+      }
+      e.tele.setPosition(e.sprite.x, e.sprite.y + 20).setRotation(Math.atan2(ny, nx))
+        .setVisible(true).setAlpha(0.15).setScale(0.2, 1);
+    } else if (e.kind !== 'caster' || e.tier === 'boss') {
+      if (!e.tele || !(e.tele instanceof Phaser.GameObjects.Image)) {
+        e.tele?.destroy();
+        e.tele = this.scene.add.image(0, 0, 'fx_disc').setTint(TELE_COLOR).setDepth(-15);
+      }
+      e.tele.setPosition(e.sprite.x, e.sprite.y + 30).setVisible(true).setAlpha(0.2).setScale(0.05);
+    }
+  }
+
+  private endAttack(e: WorldEntity): void {
+    e.phase = 'idle';
+    e.phaseTimer = 0;
+    e.tele?.setVisible(false);
+    e.sprite.anims.timeScale = 1;
+  }
+
+  private updateAttack(
+    e: WorldEntity, delta: number, body: Phaser.Physics.Arcade.Body,
+    dist: number, nx: number, ny: number, player: Phaser.Physics.Arcade.Sprite,
+  ): void {
+    e.phaseTimer -= delta;
+
+    if (e.phase === 'windup') {
+      body.setVelocity(0, 0);
+      const t = 1 - Math.max(0, e.phaseTimer) / e.phaseDuration;
+      // 预警随蓄力填充
+      if (e.tele?.visible) {
+        if (e.tele instanceof Phaser.GameObjects.Rectangle) {
+          e.tele.setScale(0.2 + 0.8 * t, 1).setAlpha(0.15 + 0.3 * t);
+        } else {
+          const full = (this.strikeRadius(e) * 2) / 256;
+          e.tele.setScale(full * (0.3 + 0.7 * t)).setAlpha(0.2 + 0.4 * t);
+        }
+      }
+      if (e.phaseTimer > 0) return;
+
+      // —— 出手 ——
+      e.tele?.setVisible(false);
+      if (e.kind === 'charger' && e.tier !== 'boss') {
+        e.phase = 'strike';
+        e.phaseTimer = 400;
+        this.fx.flashGlow(e.sprite.x, e.sprite.y, 80, WX_TINT[e.wuxing], 200);
+        return;
+      }
+      if (e.kind === 'caster' && e.tier !== 'boss') {
+        // 朝残魂当前位置吐火
+        const sx = e.sprite.x + nx * 40, sy = e.sprite.y - 20;
+        const a = Math.atan2(player.y - sy, player.x - sx);
+        const shots = e.tier === 'elite' ? [-0.28, 0, 0.28] : [0];
+        shots.forEach(off => {
+          this.combat.spawnEnemyBolt(e, sx, sy, Math.cos(a + off), Math.sin(a + off), 540);
+        });
+        this.fx.flashGlow(sx, sy, 60, WX_TINT[e.wuxing], 200);
+        e.phase = 'recover';
+        e.phaseTimer = 250;
+        e.cooldown = e.enraged ? 1100 : 1700;
+        return;
+      }
+
+      // 近身 / 震地：落点判定
+      const radius = this.strikeRadius(e);
+      const tx = e.sprite.x, ty = e.sprite.y + 30;
+      const hitDist = Phaser.Math.Distance.Between(tx, ty, player.x, player.y);
+      const heavy = e.kind === 'slammer' || e.tier !== 'normal';
+      this.fx.ring(tx, ty, radius, heavy ? 0xffc27a : TELE_COLOR, heavy ? 360 : 240, 0.5);
+      if (heavy) {
+        this.fx.burst(tx, ty, 0xc9a06a, 14);
+        this.fx.radial(tx, ty, radius * 0.9, 0xc9a06a, 18);
+        if (hitDist < 700) this.fx.shake(0.005, 120);
+      }
+      if (hitDist < radius) {
+        this.combat.enemyStrikePlayer(e, e.kind === 'slammer' ? 1.3 : 1, e.kind === 'swift' ? 1400 : 0);
+      }
+      e.phase = 'recover';
+      e.phaseTimer = e.kind === 'swift' ? 180 : 380;
+      e.cooldown = (e.kind === 'slammer' ? 1900 : e.kind === 'swift' ? 650 : 1050) * (e.enraged ? 0.7 : 1);
+      return;
+    }
+
+    if (e.phase === 'strike') {
+      // 獠牙怪冲锋：沿锁定方向直线突进，擦到就算命中
+      const speed = 860;
+      body.setVelocity(e.dirX * speed, e.dirY * speed);
+      if (!e.strikeHit && dist < 78) {
+        e.strikeHit = true;
+        this.combat.enemyStrikePlayer(e, 1.2);
+      }
+      if (Math.random() < 0.5) this.fx.afterimage(e.sprite, WX_TINT[e.wuxing]);
+      if (e.phaseTimer <= 0 || body.blocked.none === false) {
+        body.setVelocity(0, 0);
+        e.phase = 'recover';
+        e.phaseTimer = 520;
+        e.cooldown = e.enraged ? 1500 : 2300;
+      }
+      return;
+    }
+
+    // recover
+    body.setVelocity(0, 0);
+    if (e.phaseTimer <= 0) this.endAttack(e);
+  }
+
+  // ───────────────────────── 病变核心 ─────────────────────────
+
+  private updateBoss(
+    e: WorldEntity, delta: number, body: Phaser.Physics.Arcade.Body,
+    dist: number, nx: number, ny: number, speed: number, player: Phaser.Physics.Arcade.Sprite,
+  ): void {
+    void player;
+    const hpPct = e.combatant.hp / e.combatant.maxHp;
+    const fury = hpPct < 0.5;
+
+    // 环形弹幕
+    e.bossBurstTimer -= delta;
+    if (e.bossBurstTimer <= 0) {
+      e.bossBurstTimer = fury ? 2600 : 3800;
+      const n = fury ? 18 : 12;
+      const offset = Math.random() * Math.PI * 2;
+      for (let k = 0; k < n; k++) {
+        const a = offset + (k / n) * Math.PI * 2;
+        this.combat.spawnEnemyBolt(e, e.sprite.x, e.sprite.y, Math.cos(a), Math.sin(a), fury ? 330 : 280);
+      }
+      this.fx.ring(e.sprite.x, e.sprite.y, 240, WX_TINT[e.wuxing], 500);
+      this.fx.flashGlow(e.sprite.x, e.sprite.y, 260, 0xc9a0ff, 400, 0.7);
+    }
+
+    // 召唤爪牙
+    e.bossSummonTimer -= delta;
+    if (e.bossSummonTimer <= 0) {
+      e.bossSummonTimer = fury ? 8000 : 11000;
+      this.spawnSystem.spawnMinions(e.sprite.x, e.sprite.y, fury ? 4 : 3, this.round, e.wuxing);
+    }
+
+    // 逼近并震地
+    if (dist < 230 && e.cooldown <= 0) {
+      this.beginAttack(e, 900, nx, ny);
+      return;
+    }
+    if (dist > 160) body.setVelocity(nx * speed, ny * speed);
+    else body.setVelocity(0, 0);
+    const moving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
+    this.playAnim(e, moving ? 'run' : 'idle');
+  }
+
+  // ───────────────────────── 动画 ─────────────────────────
+
+  private playAnim(e: WorldEntity, name: 'run' | 'idle'): void {
+    if (!e.atlasKey) return;
+    const key = `${e.atlasKey}_${name}`;
+    const cur = e.sprite.anims.currentAnim?.key;
+    if (cur === key) return;
+    // 受击动画播完再切
+    if (cur === `${e.atlasKey}_hurt` && e.sprite.anims.isPlaying) return;
+    if (!this.scene.anims.exists(key)) return;
+    e.sprite.play(key, true);
+    e.sprite.anims.timeScale = 1;
+  }
+}

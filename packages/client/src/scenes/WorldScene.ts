@@ -1,11 +1,9 @@
 import Phaser from 'phaser';
-import { LAYOUT, uiConfig } from '../config/uiConfig.js';
 import { inputManager } from '../systems/input/InputManager.js';
 import { eventBus, GameEvent } from '../core/EventBus.js';
 import { gameState } from '../systems/GameStateManager.js';
 import {
   Combatant,
-  Equipment,
   getTotalAttack,
   getTotalDefense,
   getTotalSpeed,
@@ -13,130 +11,176 @@ import {
   getDefenseWuxing,
   getAllWuxingLevels,
   getAllAttributeSkills,
+  calculateSkillEffectLevels,
+  getSkillValue,
+  generateWuxingEquipment,
   AttributeSkillId,
   Wuxing,
-  WUXING_COLORS,
   WUXING_NAMES,
-  generateSimpleLoot,
+  Rarity,
+  Equipment,
+  EquipmentType,
+  MAX_TREASURES,
 } from '@xiyou/shared';
-import { EntityManager } from '../systems/world/EntityManager.js';
+import { EntityManager, WorldEntity, EnemyTier } from '../systems/world/EntityManager.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
-import { CombatSystem, AUTO_ATTACK_RANGE, ENEMY_ATTACK_RANGE } from '../systems/combat/CombatSystem.js';
+import { EnemyAI } from '../systems/world/EnemyAI.js';
+import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
+import { CombatSystem, AOE_SKILL_IDS } from '../systems/combat/CombatSystem.js';
+import { Fx, FX_DEPTH } from '../systems/fx/Fx.js';
+import {
+  WORLD_SIZE, WORLD_CENTER, ZONES, WX_TINT, SPIRIT_TINT,
+  PLAYER_SCALE, PLAYER_SPEED, AUTO_ATTACK_RANGE, ORB_MAGNET_RANGE,
+  getRoundDuration, isBossRound, relationOf, STAT_SCALE,
+} from '../config/worldConfig.js';
 
-/**
- * 世界尺寸：角色显示大小 ≈ 46px（307 × 0.15），地图 = 角色 × 50
- * 2300 × 2300
- */
-const WORLD_W = 2300;
-const WORLD_H = 2300;
-
-/** 每轮游戏时间（秒）：第 N 轮 = 60 + (N-1) * 15 */
-function getRoundDuration(round: number): number {
-  return 60 + (round - 1) * 15;
-}
-
-/** 塑型基准时长（ms） */
-const CHANNEL_DURATION = 2000;
-
-/** 五行相生链：A 生 B */
-const WX_GENERATES: Partial<Record<Wuxing, Wuxing>> = {
-  [Wuxing.WOOD]:  Wuxing.FIRE,
-  [Wuxing.FIRE]:  Wuxing.EARTH,
-  [Wuxing.EARTH]: Wuxing.METAL,
-  [Wuxing.METAL]: Wuxing.WATER,
-  [Wuxing.WATER]: Wuxing.WOOD,
-};
-/** 五行相克链：A 克 B */
-const WX_OVERCOMES: Partial<Record<Wuxing, Wuxing>> = {
-  [Wuxing.WOOD]:  Wuxing.EARTH,
-  [Wuxing.EARTH]: Wuxing.WATER,
-  [Wuxing.WATER]: Wuxing.FIRE,
-  [Wuxing.FIRE]:  Wuxing.METAL,
-  [Wuxing.METAL]: Wuxing.WOOD,
-};
-
-/**
- * 从能量的角度计算五行关系及成功率
- * 生(50%) 助(40%) 泄(25%) 克(30%) 耗(35%)
- */
-function calcWuxingResult(
-  defWuxing: Wuxing | undefined,
-  energyWuxing: Wuxing
-): { rel: string; rate: number } {
-  if (defWuxing === undefined) return { rel: '无属', rate: 0.25 };
-  if (defWuxing === energyWuxing) return { rel: '助', rate: 0.40 };
-  // 生：防御生能量（对能量有利）
-  if (WX_GENERATES[defWuxing] === energyWuxing) return { rel: '生', rate: 0.50 };
-  // 泄：能量生防御（能量被泄耗）
-  if (WX_GENERATES[energyWuxing] === defWuxing) return { rel: '泄', rate: 0.25 };
-  // 克：防御克能量
-  if (WX_OVERCOMES[defWuxing] === energyWuxing) return { rel: '克', rate: 0.30 };
-  // 耗：能量克防御（能量被耗）
-  if (WX_OVERCOMES[energyWuxing] === defWuxing) return { rel: '耗', rate: 0.35 };
-  return { rel: '无属', rate: 0.25 };
-}
-
-/** 玩家移动速度 */
-const PLAYER_SPEED = 220;
-
-/** 图集键 */
 const PLAYER_ATLAS = 'player_spirit';
 
-/** AOE 攻击技能 ID 集合 */
-const AOE_SKILL_IDS = new Set([
-  AttributeSkillId.LIEKONGZHAN,
-  AttributeSkillId.HANCHAO,
-  AttributeSkillId.JINGJI,
-  AttributeSkillId.FENTIAN,
-  AttributeSkillId.DILIE,
-]);
+/** 遁（闪避） */
+const DASH_SPEED = 1350;
+const DASH_DURATION = 170;
+const DASH_COOLDOWN = 3000;
+const DASH_INVULN = 340;
 
-interface LootDrop {
-  graphics: Phaser.GameObjects.Graphics;
-  label: Phaser.GameObjects.Text;
-  x: number;
-  y: number;
+/** 塑型：每份能量的凝练时长（不打断移动与攻击） */
+const SHAPE_DURATION = 600;
+/** 轮间调息时长 */
+const REST_DURATION = 6000;
+
+const RARITY_COLOR: Record<string, string> = {
+  [Rarity.COMMON]: '#c9d1d9',
+  [Rarity.UNCOMMON]: '#4ade80',
+  [Rarity.RARE]: '#58a6ff',
+  [Rarity.EPIC]: '#c084fc',
+  [Rarity.LEGENDARY]: '#ffb020',
+};
+
+interface Orb {
+  glow: Phaser.GameObjects.Image;
+  core: Phaser.GameObjects.Image;
   wuxing: Wuxing;
   level: number;
-  collected: boolean;
+  highQuality: boolean;
+  life: number;
+  speed: number;
+  /** 落地弹开的初速度 */
+  vx: number;
+  vy: number;
+}
+
+interface ShapeJob {
+  wuxing: Wuxing;
+  level: number;
+  highQuality: boolean;
+}
+
+type RoundPhase = 'fight' | 'rest' | 'victory' | 'over';
+
+/**
+ * 塑型成功率：以残魂防具的五行为「我」，看被吸纳的能量
+ *   生（能量生我）75%  比（同属）60%  耗（我克能量）50%  泄（我生能量）40%  克（能量克我）30%
+ */
+function shapingRate(defWuxing: Wuxing | undefined, energy: Wuxing): { rel: string; rate: number } {
+  switch (relationOf(defWuxing, energy)) {
+    case 'bisheng': return { rel: '生', rate: 0.75 };
+    case 'same': return { rel: '比', rate: 0.60 };
+    case 'ke': return { rel: '耗', rate: 0.50 };
+    case 'sheng': return { rel: '泄', rate: 0.40 };
+    case 'beike': return { rel: '克', rate: 0.30 };
+    default: return { rel: '无属', rate: 0.45 };
+  }
+}
+
+/** 灵囊与身上是否已有某五行的某类器物 */
+function ownsGear(type: EquipmentType, wuxing: Wuxing): boolean {
+  const eq = gameState.getPlayerState().equipment;
+  const equipped = type === EquipmentType.WEAPON ? eq.weapon : eq.armor;
+  if (equipped?.wuxing === wuxing) return true;
+  return gameState.getInventory().some(it => it?.type === type && it.wuxing === wuxing);
+}
+
+/**
+ * 在灵囊中找出某五行最好的武器 / 防具并换上（原来穿的回到灵囊同一格）
+ * @returns 换上的器物；没有可换的返回 null
+ */
+export function quickSwapGear(type: EquipmentType.WEAPON | EquipmentType.ARMOR, wuxing: Wuxing): Equipment | null {
+  const inv = gameState.getInventory();
+  let best = -1;
+  let bestScore = -1;
+  inv.forEach((it, i) => {
+    if (!it || it.type !== type || it.wuxing !== wuxing) return;
+    const main = type === EquipmentType.WEAPON ? (it.attack ?? 0) : (it.defense ?? 0);
+    const score = main * 100 + (it.wuxingLevel ?? 1) * 10 + it.upgradeLevel * 5 + (it.hp ?? 0);
+    if (score > bestScore) { bestScore = score; best = i; }
+  });
+  if (best < 0) return null;
+  const item = inv[best]!;
+  const ok = type === EquipmentType.WEAPON ? gameState.equipWeapon(best) : gameState.equipArmor(best);
+  return ok ? item : null;
+}
+
+/** 当前装备提供的范围技能（去重、保持顺序，最多 5 个）—— HUD 与战斗系统共用 */
+export function getEquippedAoeSkills(): AttributeSkillId[] {
+  const all = getAllAttributeSkills(gameState.getPlayerState().equipment);
+  const out: AttributeSkillId[] = [];
+  all.forEach(id => {
+    if (AOE_SKILL_IDS.has(id) && !out.includes(id)) out.push(id);
+  });
+  return out.slice(0, 5);
 }
 
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
-  private playerCombatant!: Combatant;
-  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private _cdBroadcastTick: number = 0;
+  private playerShadow!: Phaser.GameObjects.Image;
+  private playerAura!: Phaser.GameObjects.Image;
+  private rangeRing!: Phaser.GameObjects.Image;
+  private targetMark!: Phaser.GameObjects.Image;
+  private pc!: Combatant;
+
+  private keys?: Record<string, Phaser.Input.Keyboard.Key>;
+
+  private fx!: Fx;
+  private backdrop!: WorldBackdrop;
   private entityManager!: EntityManager;
   private spawnSystem!: SpawnSystem;
-  private combatSystem!: CombatSystem;
-  private activeSkillIds: AttributeSkillId[] = [];
-  private currentRound: number = 1;
-  /** 本轮剩余时间（ms） */
+  private combat!: CombatSystem;
+  private enemyAI!: EnemyAI;
+
+  // 操控
+  private facingX: number = 1;
+  private facingY: number = 0;
+  private dashTimer: number = 0;
+  private dashCd: number = 0;
+  private dashDirX: number = 1;
+  private dashDirY: number = 0;
+  private dashGhostTimer: number = 0;
+
+  // 轮次
+  private round: number = 1;
+  private phase: RoundPhase = 'fight';
   private roundTimer: number = 0;
-  /** 轮间过渡倒计时（ms），> 0 时进入过渡阶段 */
-  private roundTransitionTimer: number = 0;
-  /** 是否正在过渡（防止重复触发） */
-  private roundTransitioning: boolean = false;
-  /** 游戏是否已失败 */
-  private isGameOver: boolean = false;
-  /** 视口固定：剩余妖异数量文字 */
-  private enemyCountText!: Phaser.GameObjects.Text;
-  /** 视口固定：轮次计时器文字 */
-  private roundTimerText!: Phaser.GameObjects.Text;
-  /** 轮次结束横幅（过渡期显示，non-blocking） */
-  private roundBannerObjects: Phaser.GameObjects.GameObject[] = [];
-  private enemyIndicator!: Phaser.GameObjects.Graphics;
-  private attackRangeIndicator!: Phaser.GameObjects.Graphics;
-  private lootDrops: LootDrop[] = [];
-  // 塑型系统
-  private isChanneling: boolean = false;
-  private channelingTimer: number = 0;
-  private channelingTarget?: LootDrop;
-  private channelingIndicator!: Phaser.GameObjects.Graphics;
+  private restTimer: number = 0;
+  private hunterTimer: number = 0;
+  private roundKills: number = 0;
+  private roundQuota: number = 0;
+  private boss: WorldEntity | null = null;
+  private zoneAlive: number[] = [0, 0, 0, 0, 0];
+
+  // 五行能量与塑型
+  private orbs: Orb[] = [];
+  private shapeQueue: ShapeJob[] = [];
+  private shapeTimer: number = 0;
+  private shapeGfx!: Phaser.GameObjects.Graphics;
   /** 塑型失败累计补偿概率：每次失败 +5%，成功后清零 */
-  private channelingBonus: number = 0;
-  /** 五行所属粒子发射器（跟随玩家） */
+  private shapingBonus: number = 0;
+
+  private indicator!: Phaser.GameObjects.Graphics;
   private wuxingEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private stateTick: number = 0;
+  private trailTick: number = 0;
+  /** 连续多少只普通妖异没有留下能量（掉落保底用） */
+  private dryKills: number = 0;
+  private statsSynced: boolean = false;
 
   constructor() {
     super({ key: 'WorldScene' });
@@ -144,297 +188,153 @@ export class WorldScene extends Phaser.Scene {
 
   preload(): void {
     if (!this.textures.exists(PLAYER_ATLAS)) {
-      this.load.atlas(
-        PLAYER_ATLAS,
-        'assets/player/灵体残骸/atlas.png',
-        'assets/player/灵体残骸/atlas.json'
-      );
+      this.load.atlas(PLAYER_ATLAS, 'assets/player/灵体残骸/atlas.png', 'assets/player/灵体残骸/atlas.json');
     }
-
-    this.entityManager = new EntityManager();
-    this.spawnSystem = new SpawnSystem(this, this.entityManager);
-    this.spawnSystem.preloadAtlases();
+    SpawnSystem.preloadAtlases(this);
   }
 
   create(): void {
-    // 清理上一局残留的事件监听，防止多局游戏重复注册导致事件触发多次
+    // 清理上一局残留的事件监听与输入
     eventBus.clear();
+    inputManager.reset();
+    this.resetState();
 
-    const { width, height } = this.cameras.main;
-    const viewportH = Math.floor(height * LAYOUT.VIEWPORT_RATIO);
+    const { width, height } = this.scale;
 
-    // ---- 相机视口：只占上 60%，地图外显示黑色 ----
-    this.cameras.main.setViewport(0, 0, width, viewportH);
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.setBackgroundColor('#000000');
+    // ---- 相机：全屏，残魂略偏上，给下方操控区留出视野 ----
+    const cam = this.cameras.main;
+    cam.setViewport(0, 0, width, height);
+    cam.setBounds(-260, -260, WORLD_SIZE + 520, WORLD_SIZE + 520);
+    cam.setBackgroundColor('#020406');
+    this.physics.world.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-    // 物理世界边界（必须单独设置，与相机边界无关）
-    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
+    // ---- 世界 ----
+    this.fx = new Fx(this);
+    this.backdrop = new WorldBackdrop(this);
+    this.createAtmosphere(width, height);
 
-    // ---- 世界背景 ----
-    this.createWorldBackground();
-
-    // ---- 玩家 ----
+    // ---- 残魂 ----
     this.createPlayer();
+    this.createPlayerAnims();
+    cam.startFollow(this.player, true, 0.14, 0.14, 0, -height * 0.07);
+    cam.fadeIn(600, 0, 0, 0);
 
-    // ---- 相机跟随玩家 ----
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
-    // 碰撞：玩家与敌人不重叠
-    this.physics.add.collider(this.player, this.spawnSystem.getEnemyGroup());
-    // 碰撞：敌人之间不重叠
+    // ---- 系统 ----
+    this.entityManager = new EntityManager();
+    this.spawnSystem = new SpawnSystem(this, this.entityManager, this.fx);
+    this.spawnSystem.createAnims();
+    this.combat = new CombatSystem(this, this.entityManager, this.spawnSystem, this.fx, this.player, this.pc);
+    this.enemyAI = new EnemyAI(this, this.entityManager, this.spawnSystem, this.combat, this.fx);
+    // 妖异之间互相推挤，避免叠成一团（不与残魂碰撞，残魂不会被卡住）
     this.physics.add.collider(this.spawnSystem.getEnemyGroup(), this.spawnSystem.getEnemyGroup());
 
-    // ---- 键盘备用 ----
-    this.cursors = this.input.keyboard?.createCursorKeys();
+    this.shapeGfx = this.add.graphics().setDepth(FX_DEPTH + 2);
+    this.indicator = this.add.graphics().setDepth(FX_DEPTH + 3);
 
-    // ---- 创建玩家动画 ----
-    this.createPlayerAnims();
+    this.syncPlayerStats();
+    this.setupKeyboard();
+    this.bindEvents();
 
-    // ---- 怪物动画 + 生成 ----
-    this.spawnSystem.createAnims();
-    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
-
-    // ---- 战斗系统 ----
-    this.combatSystem = new CombatSystem(this, this.entityManager, this.spawnSystem, this.activeSkillIds);
-
-    // ---- 指示器（世界坐标，随相机移动） ----
-    this.enemyIndicator = this.add.graphics().setDepth(15);
-    this.attackRangeIndicator = this.add.graphics().setDepth(14);
-    this.channelingIndicator = this.add.graphics().setDepth(16);
-
-    // ---- 轮次计时器 ----
-    this.roundTimer = getRoundDuration(this.currentRound) * 1000;
-    this.roundTransitionTimer = 0;
-    this.roundTransitioning = false;
-    this.isGameOver = false;
-    this.roundBannerObjects = [];
-
-    // ---- 视口固定 UI：剩余妖异 + 计时器（用 setScrollFactor(0) 固定在视口） ----
-    this.enemyCountText = this.add.text(width / 2, 30, '剩余妖异 --', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.font2XL}px`,
-      color: '#d4a853',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
-
-    this.roundTimerText = this.add.text(width * 0.85, 30, `第${this.currentRound}轮 ${getRoundDuration(this.currentRound)}s`, {
-      fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#8b949e',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
-
-    eventBus.on(GameEvent.ENEMY_DIED, () => this.onEnemyDied());
-    eventBus.on(GameEvent.LOOT_DROPPED, (data: unknown) => {
-      const d = data as { x: number; y: number; wuxing: Wuxing; level: number };
-      this.createLootDrop(d.x, d.y, d.wuxing, d.level);
-    });
-    eventBus.on(GameEvent.GAME_OVER, () => this.onGameOver());
-
-    // 初始妖异数量（delayedCall 确保 HUDScene 已启动）
-    this.time.delayedCall(100, () => {
-      const count = this.entityManager.getAlive().length;
-      this.enemyCountText?.setText(`剩余妖异 ${count}`);
-      eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, count);
-    });
-
-    // ---- 启动 HUDScene（先停止确保 create() 重新执行，重注册所有事件监听） ----
-    if (this.scene.isActive('HUDScene')) {
-      this.scene.stop('HUDScene');
-    }
+    // ---- HUD ----
+    if (this.scene.isActive('HUDScene')) this.scene.stop('HUDScene');
     this.scene.launch('HUDScene');
-    // HUDScene 必须渲染在 WorldScene 之上，否则弹框/控件被游戏画面遮盖
     this.scene.bringToTop('HUDScene');
 
-    // 发送初始 HP
-    eventBus.emit(
-      GameEvent.PLAYER_HP_CHANGE,
-      this.playerCombatant.hp,
-      this.playerCombatant.maxHp
-    );
+    // 「五行所属」已由武器 / 防具的五行取代
+    gameState.setChosenWuxing(undefined);
 
-    // 装备变化时同步 playerCombatant 战斗属性（保证技能/属性实时生效）
-    eventBus.on(GameEvent.STATS_CHANGED, () => {
-      const eq = gameState.getPlayerState().equipment;
-      this.playerCombatant.attack = getTotalAttack(eq);
-      this.playerCombatant.defense = getTotalDefense(eq);
-      this.playerCombatant.speed = getTotalSpeed(eq);
-      this.playerCombatant.attributeSkills = getAllAttributeSkills(eq);
-      this.playerCombatant.allWuxingLevels = getAllWuxingLevels(eq);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.onShutdown());
 
-      // maxHp 可能随装备变化（按比例调整当前 HP）
-      const ps = gameState.getPlayerState();
-      if (ps.maxHp !== this.playerCombatant.maxHp) {
-        const ratio = this.playerCombatant.hp / this.playerCombatant.maxHp;
-        this.playerCombatant.maxHp = ps.maxHp;
-        this.playerCombatant.hp = Math.max(1, Math.round(ps.maxHp * ratio));
-        eventBus.emit(GameEvent.PLAYER_HP_CHANGE, this.playerCombatant.hp, this.playerCombatant.maxHp);
-      }
-
-      // 若有五行所属选择，重新应用覆盖
-      const chosen = gameState.getChosenWuxing();
-      if (chosen) {
-        this.playerCombatant.attackWuxing  = { wuxing: chosen, level: 1 };
-        this.playerCombatant.defenseWuxing = { wuxing: chosen, level: 1 };
-      } else {
-        this.playerCombatant.attackWuxing  = getAttackWuxing(eq);
-        this.playerCombatant.defenseWuxing = getDefenseWuxing(eq);
-      }
+    // HUD 就绪后同步一次生命值
+    this.time.delayedCall(100, () => {
+      eventBus.emit(GameEvent.PLAYER_HP_CHANGE, this.pc.hp, this.pc.maxHp);
     });
-
-    // ---- 五行所属粒子 ----
-    this.generateWuxingParticleTextures();
-    // 监听五行所属变化
-    eventBus.on(GameEvent.WUXING_CHOSEN, (wuxing: unknown) => {
-      this.onWuxingChosen(wuxing as Wuxing | undefined);
-    });
-    // 如果已有选择，初始化粒子
-    const initWuxing = gameState.getChosenWuxing();
-    if (initWuxing) this.startWuxingParticles(initWuxing);
   }
 
-  update(_time: number, delta: number): void {
-    if (this.isGameOver) return;
-    // 灵囊界面开启时暂停世界更新（防止玩家死亡/倒计时归零）
-    if (this.scene.isActive('InventoryScene')) return;
-
-    // ---- 轮次过渡倒计时（玩家可继续操作） ----
-    if (this.roundTransitioning) {
-      this.roundTransitionTimer -= delta;
-      if (this.roundTransitionTimer <= 0) {
-        this.startNextRound();
-        return;
-      }
-      // 过渡中继续更新横幅倒计时文字
-      this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
-      if (this._cdBroadcastTick === 0) {
-        const secs = Math.max(1, Math.ceil(this.roundTransitionTimer / 1000));
-        const bannerCountdown = this.roundBannerObjects[2] as Phaser.GameObjects.Text | undefined;
-        if (bannerCountdown?.active) bannerCountdown.setText(`${secs} 秒后进入下一轮...`);
-        eventBus.emit(
-          GameEvent.SKILL_CD_UPDATE,
-          this.combatSystem.getPlayerSkillTimers(),
-          this.combatSystem.getPlayerSkillMaxTimers()
-        );
-      }
-      // 过渡期玩家仍可移动和战斗
-      this.movePlayer(delta);
-      this.updateEnemies(delta);
-      this.combatSystem.update(delta, this.player, this.playerCombatant);
-      this.updateEnemyIndicator();
-      this.updateAttackRangeIndicator();
-      this.updateLootDrops();
-      this.updateChanneling(delta);
-      return;
-    }
-
-    if (!this.roundTransitioning) {
-      this.roundTimer -= delta;
-    }
-
-    // 广播计时器（每5帧一次）
-    this._cdBroadcastTick = (this._cdBroadcastTick + 1) % 5;
-    if (this._cdBroadcastTick === 0) {
-      const secsLeft = Math.max(0, Math.ceil(this.roundTimer / 1000));
-      const color = secsLeft <= 10 ? '#f85149' : secsLeft <= 30 ? '#eab308' : '#8b949e';
-      this.roundTimerText?.setText(`第${this.currentRound}轮 ${secsLeft}s`).setColor(color);
-      eventBus.emit(GameEvent.ROUND_TIMER_UPDATE, secsLeft, this.currentRound);
-      eventBus.emit(
-        GameEvent.SKILL_CD_UPDATE,
-        this.combatSystem.getPlayerSkillTimers(),
-        this.combatSystem.getPlayerSkillMaxTimers()
-      );
-    }
-
-    // 超时 → 本轮结束
-    if (this.roundTimer <= 0) {
-      this.triggerRoundEnd();
-      return;
-    }
-
-    this.movePlayer(delta);
-    this.updateEnemies(delta);
-    this.combatSystem.update(delta, this.player, this.playerCombatant);
-    this.updateEnemyIndicator();
-    this.updateAttackRangeIndicator();
-    this.updateLootDrops();
-    this.updateChanneling(delta);
+  /** 场景实例会被复用（重新开始），所有运行期状态都要在这里复位 */
+  private resetState(): void {
+    this.facingX = 1; this.facingY = 0;
+    this.dashTimer = 0; this.dashCd = 0; this.dashGhostTimer = 0;
+    // 以"第 0 轮调息"开局，短暂停顿后自动进入第 1 轮
+    this.round = 0;
+    this.phase = 'rest';
+    this.roundTimer = 0; this.restTimer = 400; this.hunterTimer = 0;
+    this.roundKills = 0; this.roundQuota = 0;
+    this.boss = null;
+    this.zoneAlive = [0, 0, 0, 0, 0];
+    this.orbs = [];
+    this.shapeQueue = [];
+    this.shapeTimer = 0;
+    this.shapingBonus = 0;
+    this.wuxingEmitter = undefined;
+    this.stateTick = 0;
+    this.trailTick = 0;
+    this.dryKills = 0;
+    this.statsSynced = false;
   }
 
-  // -----------------------------------------------
+  private onShutdown(): void {
+    this.scene.stop('HUDScene');
+    this.scene.stop('InventoryScene');
+    inputManager.reset();
+    eventBus.clear();
+  }
 
-  private createWorldBackground(): void {
-    const g = this.add.graphics();
+  // ───────────────────────── 搭建 ─────────────────────────
 
-    g.fillStyle(0x1a3a1a, 1);
-    g.fillRect(0, 0, WORLD_W, WORLD_H);
+  /** 漂浮的灵气微尘 + 暗角 */
+  private createAtmosphere(width: number, height: number): void {
+    this.add.particles(0, 0, 'fx_dot', {
+      x: { min: 0, max: width },
+      y: { min: 0, max: height },
+      lifespan: 4200,
+      speedY: { min: -38, max: -10 },
+      speedX: { min: -14, max: 14 },
+      scale: { start: 0.55, end: 0 },
+      alpha: { start: 0.55, end: 0 },
+      tint: [0x9fd8ff, 0xd4a853, 0xffffff],
+      frequency: 170,
+      blendMode: Phaser.BlendModes.ADD,
+    }).setScrollFactor(0).setDepth(FX_DEPTH - 20);
 
-    g.lineStyle(1, 0x2d5c2d, 0.8);
-    for (let x = 0; x <= WORLD_W; x += 120) {
-      g.lineBetween(x, 0, x, WORLD_H);
-    }
-    for (let y = 0; y <= WORLD_H; y += 120) {
-      g.lineBetween(0, y, WORLD_W, y);
-    }
-
-    for (let i = 0; i < 60; i++) {
-      const x = Phaser.Math.Between(0, WORLD_W);
-      const y = Phaser.Math.Between(0, WORLD_H);
-      const r = Phaser.Math.Between(40, 150);
-      g.fillStyle(0x274d27, 0.6);
-      g.fillCircle(x, y, r);
-    }
-
-    g.lineStyle(8, 0xd4a853, 0.9);
-    g.strokeRect(0, 0, WORLD_W, WORLD_H);
-    g.lineStyle(3, 0xf0e6d3, 0.4);
-    g.strokeRect(10, 10, WORLD_W - 20, WORLD_H - 20);
+    this.add.image(width / 2, height / 2, 'fx_vignette')
+      .setDisplaySize(width * 1.25, height * 1.12)
+      .setScrollFactor(0).setDepth(FX_DEPTH + 60);
   }
 
   private createPlayer(): void {
-    const startX = WORLD_W / 2;
-    const startY = WORLD_H / 2;
-
-    const playerState = gameState.getPlayerState();
-    const equipment = playerState.equipment;
-
-    const chosenWuxing = gameState.getChosenWuxing();
-    const wuxingOverride = chosenWuxing ? { wuxing: chosenWuxing, level: 1 } : null;
-    this.playerCombatant = {
+    const ps = gameState.getPlayerState();
+    this.pc = {
       id: 'player',
       name: '残魂',
-      hp: playerState.hp,
-      maxHp: playerState.maxHp,
-      attack: getTotalAttack(equipment),
-      defense: getTotalDefense(equipment),
-      speed: getTotalSpeed(equipment),
+      hp: ps.hp * STAT_SCALE,
+      maxHp: ps.maxHp * STAT_SCALE,
+      attack: 1,
+      defense: 0,
+      speed: 0,
       isPlayer: true,
-      attackWuxing: wuxingOverride ?? getAttackWuxing(equipment),
-      defenseWuxing: wuxingOverride ?? getDefenseWuxing(equipment),
-      allWuxingLevels: getAllWuxingLevels(equipment),
-      attributeSkills: getAllAttributeSkills(equipment),
+      attackWuxing: null,
+      defenseWuxing: null,
       frozen: false,
+      statusEffects: {},
     };
 
-    const allSkills = getAllAttributeSkills(equipment);
-    this.activeSkillIds = allSkills.filter(id => AOE_SKILL_IDS.has(id));
+    const C = WORLD_CENTER;
+    this.playerAura = this.add.image(C, C, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(SPIRIT_TINT).setScale(1.25).setAlpha(0.42).setDepth(-12);
+    this.tweens.add({ targets: this.playerAura, alpha: 0.26, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.rangeRing = this.add.image(C, C, 'fx_ring').setTint(SPIRIT_TINT)
+      .setScale((AUTO_ATTACK_RANGE * 2) / 256).setAlpha(0.07).setDepth(-14);
+    this.targetMark = this.add.image(C, C, 'fx_ring').setTint(0xffe066)
+      .setBlendMode(Phaser.BlendModes.ADD).setVisible(false).setDepth(-13);
+    this.playerShadow = this.add.image(C, C, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
 
-    if (this.textures.exists(PLAYER_ATLAS)) {
-      this.player = this.physics.add.sprite(startX, startY, PLAYER_ATLAS, 'character_idle_0');
-    } else {
-      this.player = this.physics.add.sprite(startX, startY, '__DEFAULT');
-    }
-
+    this.player = this.textures.exists(PLAYER_ATLAS)
+      ? this.physics.add.sprite(C, C, PLAYER_ATLAS, 'character_idle_0')
+      : this.physics.add.sprite(C, C, '__DEFAULT');
+    this.player.setScale(PLAYER_SCALE);
     this.player.setCollideWorldBounds(true);
-    this.player.setDepth(10);
-    this.player.setScale(0.15);
-
-    if (this.player.body) {
-      (this.player.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
-    }
+    (this.player.body as Phaser.Physics.Arcade.Body).setCircle(56, 98, 130);
   }
 
   private createPlayerAnims(): void {
@@ -442,588 +342,740 @@ export class WorldScene extends Phaser.Scene {
     const types = ['idle', 'run', 'atk', 'hurt', 'magic', 'die'];
     types.forEach(anim => {
       const key = `${PLAYER_ATLAS}_${anim}`;
-      if (this.anims.exists(key)) return;
+      if (this.anims.exists(key)) this.anims.remove(key);
       const frames: Phaser.Types.Animations.AnimationFrame[] = [];
       for (let i = 0; i < 6; i++) {
         const f = `character_${anim}_${i}`;
-        if (this.textures.get(PLAYER_ATLAS).has(f)) {
-          frames.push({ key: PLAYER_ATLAS, frame: f });
-        }
+        if (this.textures.get(PLAYER_ATLAS).has(f)) frames.push({ key: PLAYER_ATLAS, frame: f });
       }
       if (frames.length > 0) {
         this.anims.create({
           key,
           frames,
           frameRate: anim === 'idle' ? 8 : 12,
-          repeat: anim === 'idle' ? -1 : 0,
+          repeat: anim === 'idle' || anim === 'run' ? -1 : 0,
         });
       }
     });
     this.player.play(`${PLAYER_ATLAS}_idle`);
   }
 
-  private movePlayer(_delta: number): void {
+  private setupKeyboard(): void {
+    const kb = this.input.keyboard;
+    if (!kb) return;
+    this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
+    kb.on('keydown-SPACE', () => inputManager.pressDash());
+    ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'].forEach((name, i) => {
+      kb.on(`keydown-${name}`, () => inputManager.pressSkill(i));
+    });
+  }
+
+  private bindEvents(): void {
+    eventBus.on(GameEvent.ENEMY_DIED, (e: unknown) => this.onEnemyDied(e as WorldEntity));
+    eventBus.on(GameEvent.LOOT_DROPPED, (data: unknown) => {
+      const d = data as { x: number; y: number; wuxing: Wuxing; level: number; tier: EnemyTier };
+      this.dropLoot(d.x, d.y, d.wuxing, d.level, d.tier);
+    });
+    eventBus.on(GameEvent.GAME_OVER, () => this.onGameOver());
+    eventBus.on(GameEvent.PLAYER_HP_CHANGE, () => {
+      const ps = gameState.getPlayerState();
+      ps.hp = Math.max(0, Math.min(ps.maxHp, Math.round(this.pc.hp / STAT_SCALE)));
+    });
+    eventBus.on(GameEvent.STATS_CHANGED, () => this.syncPlayerStats());
+    // HUD 快换器物：换上后给一个该五行的爆发提示
+    eventBus.on(GameEvent.GEAR_SWAPPED, (data: unknown) => {
+      const d = data as { item: Equipment };
+      const wx = d.item.wuxing;
+      const tint = wx ? WX_TINT[wx] : SPIRIT_TINT;
+      this.fx.burst(this.player.x, this.player.y, tint, 22);
+      this.fx.ring(this.player.x, this.player.y, 130, tint, 320);
+      this.fx.floatText(this.player.x, this.player.y - 120, d.item.name, '#' + tint.toString(16).padStart(6, '0'), 26, 50, 700);
+    });
+    eventBus.on(GameEvent.CONTINUE_RUN, () => {
+      if (this.phase !== 'victory') return;
+      this.beginRest(false);
+    });
+  }
+
+  // ───────────────────────── 属性同步 ─────────────────────────
+
+  /** 从装备重新计算战斗属性（装备 / 五行所属变化时调用） */
+  private syncPlayerStats(): void {
+    const ps = gameState.getPlayerState();
+    const eq = ps.equipment;
+    const pc = this.pc;
+
+    pc.attributeSkills = getAllAttributeSkills(eq);
+    pc.allWuxingLevels = getAllWuxingLevels(eq);
+    pc.skillEffectLevels = calculateSkillEffectLevels(pc.attributeSkills, pc.allWuxingLevels);
+    const lv = (id: AttributeSkillId) => pc.skillEffectLevels!.levels.get(id) ?? 0;
+
+    // 炎威 / 坚壁 / 根基
+    const yanwei = lv(AttributeSkillId.YANWEI);
+    const jianbi = lv(AttributeSkillId.JIANBI);
+    const genji = lv(AttributeSkillId.GENJI);
+    pc.attack = getTotalAttack(eq) * STAT_SCALE * (1 + (yanwei ? getSkillValue(AttributeSkillId.YANWEI, yanwei) : 0) / 100);
+    pc.defense = getTotalDefense(eq) * STAT_SCALE * (1 + (jianbi ? getSkillValue(AttributeSkillId.JIANBI, jianbi) : 0) / 100);
+    pc.speed = getTotalSpeed(eq);
+
+    const newMax = (ps.maxHp + (genji ? getSkillValue(AttributeSkillId.GENJI, genji) : 0)) * STAT_SCALE;
+    if (newMax !== pc.maxHp) {
+      const ratio = pc.maxHp > 0 ? pc.hp / pc.maxHp : 1;
+      pc.maxHp = newMax;
+      pc.hp = Math.max(1, Math.min(newMax, Math.round(newMax * ratio)));
+      eventBus.emit(GameEvent.PLAYER_HP_CHANGE, pc.hp, pc.maxHp);
+    }
+
+    // 攻击五行看武器，防御五行看防具 —— 战斗中靠快速换装来生克
+    const prevAtk = pc.attackWuxing?.wuxing;
+    pc.attackWuxing = getAttackWuxing(eq);
+    pc.defenseWuxing = getDefenseWuxing(eq);
+    if (pc.attackWuxing?.wuxing !== prevAtk || !this.statsSynced) {
+      this.statsSynced = true;
+      this.startWuxingParticles(pc.attackWuxing?.wuxing);
+    }
+
+    const tint = pc.attackWuxing ? WX_TINT[pc.attackWuxing.wuxing] : SPIRIT_TINT;
+    this.playerAura?.setTint(tint);
+    this.rangeRing?.setTint(tint);
+
+    this.combat?.setSkills(getEquippedAoeSkills());
+  }
+
+  // ───────────────────────── 主循环 ─────────────────────────
+
+  update(_time: number, delta: number): void {
+    if (this.phase === 'over' || !this.combat) return;
+    // 灵囊开启时世界静止
+    if (this.scene.isActive('InventoryScene')) {
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      this.physics.world.isPaused || this.physics.world.pause();
+      return;
+    }
+    if (this.physics.world.isPaused && this.phase !== 'victory') this.physics.world.resume();
+    if (this.phase === 'victory') return;
+
+    delta = Math.min(delta, 50);
+    this.backdrop.update(delta);
+
+    const moving = this.movePlayer(delta);
+    this.enemyAI.update(delta, this.player);
+    this.combat.update(delta, moving);
+    this.updatePlayerVisuals(moving);
+    this.updateOrbs(delta);
+    this.updateShaping(delta);
+    this.updateRound(delta);
+    this.updateIndicator();
+
+    this.stateTick = (this.stateTick + 1) % 6;
+    if (this.stateTick === 0) this.emitWorldState();
+  }
+
+  // ───────────────────────── 残魂操控 ─────────────────────────
+
+  private movePlayer(delta: number): boolean {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
     let vx = inputManager.moveX;
     let vy = inputManager.moveY;
 
-    if (this.cursors) {
-      if (this.cursors.left?.isDown) vx = -1;
-      else if (this.cursors.right?.isDown) vx = 1;
-      if (this.cursors.up?.isDown) vy = -1;
-      else if (this.cursors.down?.isDown) vy = 1;
+    const k = this.keys;
+    if (k) {
+      const kx = (k.D.isDown || k.RIGHT.isDown ? 1 : 0) - (k.A.isDown || k.LEFT.isDown ? 1 : 0);
+      const ky = (k.S.isDown || k.DOWN.isDown ? 1 : 0) - (k.W.isDown || k.UP.isDown ? 1 : 0);
+      if (kx !== 0 || ky !== 0) {
+        const len = Math.sqrt(kx * kx + ky * ky);
+        vx = kx / len; vy = ky / len;
+      }
     }
 
-    const moving = Math.abs(vx) > 0.05 || Math.abs(vy) > 0.05;
+    const mag = Math.sqrt(vx * vx + vy * vy);
+    const moving = mag > 0.05;
+    if (moving) {
+      this.facingX = vx / mag;
+      this.facingY = vy / mag;
+    }
 
-    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(
-      vx * PLAYER_SPEED,
-      vy * PLAYER_SPEED
-    );
+    // ---- 遁 ----
+    this.dashCd = Math.max(0, this.dashCd - delta);
+    if (inputManager.consumeDash() && this.dashCd <= 0 && this.dashTimer <= 0) {
+      this.dashTimer = DASH_DURATION;
+      this.dashCd = DASH_COOLDOWN;
+      this.dashDirX = this.facingX;
+      this.dashDirY = this.facingY;
+      this.dashGhostTimer = 0;
+      this.combat.setInvulnerable(DASH_INVULN);
+      const tint = this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT;
+      this.fx.ring(this.player.x, this.player.y, 90, tint, 260);
+      this.fx.burst(this.player.x, this.player.y, tint, 10);
+    }
 
-    if (vx < 0) this.player.setFlipX(true);
-    else if (vx > 0) this.player.setFlipX(false);
+    if (this.dashTimer > 0) {
+      this.dashTimer -= delta;
+      body.setVelocity(this.dashDirX * DASH_SPEED, this.dashDirY * DASH_SPEED);
+      this.dashGhostTimer -= delta;
+      if (this.dashGhostTimer <= 0) {
+        this.dashGhostTimer = 28;
+        this.fx.afterimage(this.player, this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT);
+      }
+      this.player.setFlipX(this.dashDirX < 0);
+      return true;
+    }
 
-    // 攻击动画优先级最高，播放期间不允许被移动动画覆盖
-    if (this.textures.exists(PLAYER_ATLAS) && !this.combatSystem.isAttackAnimActive()) {
-      const currentAnim = this.player.anims.currentAnim?.key;
+    const speed = PLAYER_SPEED * this.combat.getPlayerSpeedMul();
+    body.setVelocity(vx * speed, vy * speed);
+
+    // 朝向：移动时看移动方向；站定时看目标
+    if (moving) {
+      if (Math.abs(vx) > 0.15) this.player.setFlipX(vx < 0);
+    } else {
+      const t = this.combat.getTarget();
+      if (t) this.player.setFlipX(t.sprite.x < this.player.x);
+    }
+
+    // 动画：跑动永远即时响应；出手动作只在站定时播放
+    if (this.textures.exists(PLAYER_ATLAS)) {
+      const cur = this.player.anims.currentAnim?.key;
       const runKey = `${PLAYER_ATLAS}_run`;
       const idleKey = `${PLAYER_ATLAS}_idle`;
-      const magicKey = `${PLAYER_ATLAS}_magic`;
       if (moving) {
-        if (currentAnim !== runKey) this.player.play(runKey, true);
-      } else if (this.isChanneling) {
-        if (currentAnim !== magicKey) this.player.play(magicKey, true);
-      } else {
-        if (currentAnim !== idleKey) this.player.play(idleKey, true);
+        if (cur !== runKey) { this.player.play(runKey, true); this.player.anims.timeScale = 1.25; }
+      } else if (!this.combat.isAttackAnimActive()) {
+        if (cur !== idleKey) { this.player.play(idleKey, true); this.player.anims.timeScale = 1; }
       }
+    }
+    return moving;
+  }
+
+  private updatePlayerVisuals(moving: boolean): void {
+    const p = this.player;
+    const footY = p.y + 307 * PLAYER_SCALE * 0.36;
+
+    // 尾迹：移动时脚下散落灵光，遁时更浓；濒死时身上逸散血色残焰
+    const tint = this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT;
+    this.trailTick = (this.trailTick + 1) % 3;
+    if (this.dashTimer > 0) {
+      this.fx.trail(p.x + (Math.random() - 0.5) * 30, p.y + (Math.random() - 0.5) * 60, tint, 4);
+    } else if (moving && this.trailTick === 0) {
+      this.fx.trail(p.x + (Math.random() - 0.5) * 24, footY - 8, tint, 1);
+    }
+    if (this.trailTick === 0 && this.pc.hp < this.pc.maxHp * 0.3) {
+      this.fx.ember(p.x, p.y, 0xff4a4a, 1, 30);
+    }
+    p.setDepth(footY);
+    this.playerShadow.setPosition(p.x, footY);
+    this.playerAura.setPosition(p.x, footY - 10);
+    this.rangeRing.setPosition(p.x, p.y);
+
+    // 无敌帧微微透明
+    p.setAlpha(this.combat.isInvulnerable() && this.dashTimer <= 0 ? 0.7 : 1);
+
+    // 锁定标记
+    const t = this.combat.getTarget();
+    if (t && !t.dying) {
+      const ty = t.sprite.y + 307 * t.baseScale * 0.36;
+      this.targetMark.setVisible(true).setPosition(t.sprite.x, ty)
+        .setScale(t.baseScale * 1.7, t.baseScale * 0.7);
+    } else {
+      this.targetMark.setVisible(false);
     }
   }
 
-  private updateEnemies(delta: number): void {
-    const playerX = this.player.x;
-    const playerY = this.player.y;
-    const DETECT_RANGE = 300;
-    // 妖异进入 attack 状态的范围（略大于实际攻击判定，让妖异缓慢接近）
-    const ATTACK_STATE_RANGE = ENEMY_ATTACK_RANGE + 60; // 140
-    const PATROL_SPEED = 60;
-    const CHASE_SPEED = 110;
+  // ───────────────────────── 五行能量 ─────────────────────────
 
-    this.entityManager.getAlive().forEach(entity => {
-      const { sprite } = entity;
-      const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, playerX, playerY);
-
-      if (dist < ATTACK_STATE_RANGE) {
-        entity.state = 'attack';
-      } else if (dist < DETECT_RANGE) {
-        entity.state = 'chase';
-      } else {
-        entity.state = 'patrol';
-      }
-
-      const body = sprite.body as Phaser.Physics.Arcade.Body;
-
-      if (entity.state === 'chase' || entity.state === 'attack') {
-        // 攻击动画播放中：停止移动
-        if (entity.attackPhase === 'attacking') {
-          body.setVelocity(0, 0);
-        } else {
-          const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
-          // 减速状态：移速降低 50%
-          const isSlowed = this.combatSystem?.isEnemySlowed(entity.combatant.id) ?? false;
-          const baseSpeed = entity.state === 'attack' ? CHASE_SPEED * 0.3 : CHASE_SPEED;
-          const speed = isSlowed ? baseSpeed * 0.5 : baseSpeed;
-          body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-        }
-        sprite.setFlipX(playerX < sprite.x);
-      } else {
-        entity.patrolTimer -= delta;
-        if (entity.patrolTimer <= 0) {
-          entity.patrolTimer = Phaser.Math.Between(2000, 4000);
-          const dx = sprite.x - entity.patrolCenterX;
-          const dy = sprite.y - entity.patrolCenterY;
-          const distFromCenter = Math.sqrt(dx * dx + dy * dy);
-          if (distFromCenter > 200) {
-            const backAngle = Math.atan2(entity.patrolCenterY - sprite.y, entity.patrolCenterX - sprite.x);
-            body.setVelocity(Math.cos(backAngle) * PATROL_SPEED, Math.sin(backAngle) * PATROL_SPEED);
-          } else {
-            const angle = Math.random() * Math.PI * 2;
-            body.setVelocity(Math.cos(angle) * PATROL_SPEED, Math.sin(angle) * PATROL_SPEED);
-          }
-        }
-      }
-
-      if (entity.atlasKey) {
-        const isMoving = Math.abs(body.velocity.x) > 5 || Math.abs(body.velocity.y) > 5;
-        const runKey  = `${entity.atlasKey}_run`;
-        const idleKey = `${entity.atlasKey}_idle`;
-        const atkKey  = `${entity.atlasKey}_atk`;
-        const hurtKey = `${entity.atlasKey}_hurt`;
-        const cur = sprite.anims.currentAnim?.key;
-        // 攻击/受击动画优先：播放中不允许被移动动画覆盖
-        const isBusy = sprite.anims.isPlaying && (cur === atkKey || cur === hurtKey);
-        if (!isBusy) {
-          if (isMoving && cur !== runKey && this.anims.exists(runKey)) sprite.play(runKey, true);
-          else if (!isMoving && cur !== idleKey && this.anims.exists(idleKey)) sprite.play(idleKey, true);
-        }
-      }
-
-      if (entity.hpBar && entity.hpBarBg) {
-        entity.hpBar.setPosition(sprite.x, sprite.y);
-        entity.hpBarBg.setPosition(sprite.x, sprite.y);
-      }
-    });
-  }
-
-  // ---- 攻击范围指示器（在玩家周围显示可攻击圆圈） ----
-  private updateAttackRangeIndicator(): void {
-    const g = this.attackRangeIndicator;
-    g.clear();
-
-    const alive = this.entityManager.getAlive();
-    if (alive.length === 0) return;
-
-    // 有敌人在攻击范围内才显示
-    const hasInRange = alive.some(e =>
-      Phaser.Math.Distance.Between(this.player.x, this.player.y, e.sprite.x, e.sprite.y) < AUTO_ATTACK_RANGE
-    );
-    if (!hasInRange) return;
-
-    // 细蓝白圆圈标注攻击范围
-    g.lineStyle(1.5, 0xadd8e6, 0.5);
-    g.strokeCircle(this.player.x, this.player.y, AUTO_ATTACK_RANGE);
-  }
-
-  // ---- 最近妖异方向指示器 ----
-  private updateEnemyIndicator(): void {
-    const g = this.enemyIndicator;
-    g.clear();
-
-    const alive = this.entityManager.getAlive();
-    if (alive.length === 0) return;
-
-    // 画面内有妖异时隐藏指示器
-    const camView = this.cameras.main.worldView;
-    const anyVisible = alive.some(e => camView.contains(e.sprite.x, e.sprite.y));
-    if (anyVisible) return;
-
-    // 找最近妖异
-    let nearest = alive[0];
-    let minDist = Phaser.Math.Distance.Between(
-      this.player.x, this.player.y, nearest.sprite.x, nearest.sprite.y
-    );
-    for (let i = 1; i < alive.length; i++) {
-      const d = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y
-      );
-      if (d < minDist) { minDist = d; nearest = alive[i]; }
-    }
-
-    const angle = Math.atan2(
-      nearest.sprite.y - this.player.y,
-      nearest.sprite.x - this.player.x
-    );
-
-    const R = 36;
-    const cx = this.player.x + Math.cos(angle) * R;
-    const cy = this.player.y + Math.sin(angle) * R;
-
-    const arrowLen = 12;
-    const arrowW = 6;
-    const tipX = cx + Math.cos(angle) * arrowLen;
-    const tipY = cy + Math.sin(angle) * arrowLen;
-    const leftX = cx + Math.cos(angle + Math.PI * 0.7) * arrowW;
-    const leftY = cy + Math.sin(angle + Math.PI * 0.7) * arrowW;
-    const rightX = cx + Math.cos(angle - Math.PI * 0.7) * arrowW;
-    const rightY = cy + Math.sin(angle - Math.PI * 0.7) * arrowW;
-
-    g.fillStyle(0xf85149, 0.9);
-    g.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY);
-
-    g.lineStyle(1.5, 0xf85149, 0.4);
-    g.strokeCircle(this.player.x, this.player.y, R);
-  }
-
-  // ---- 五行能量掉落 ----
-  private createLootDrop(x: number, y: number, wuxing: Wuxing, level: number): void {
-    const color = WUXING_COLORS[wuxing];
-    const wuxingName = WUXING_NAMES[wuxing] ?? '元';
-
-    const g = this.add.graphics().setDepth(8);
-    g.fillStyle(color, 0.85);
-    g.fillCircle(0, 0, 10);
-    g.lineStyle(2, 0xffffff, 0.7);
-    g.strokeCircle(0, 0, 10);
-    g.setPosition(x, y);
-
-    this.tweens.add({
-      targets: g,
-      scaleX: 1.35,
-      scaleY: 1.35,
-      alpha: 0.65,
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    const label = this.add.text(x, y - 18, `${wuxingName}能 Lv${level}`, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: '#' + color.toString(16).padStart(6, '0'),
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(9);
-
-    this.lootDrops.push({ graphics: g, label, x, y, wuxing, level, collected: false });
-  }
-
-  private updateLootDrops(): void {
-    // 背包已满时不触发塑型
-    if (gameState.isInventoryFull()) return;
-    if (this.isChanneling) return;
-
-    // 移动中不触发塑型（停止后才重新开始）
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    if (Math.abs(body.velocity.x) > 10 || Math.abs(body.velocity.y) > 10) return;
-
-    // 收集范围内所有可塑型的能量，按距离从近到远排序
-    const candidates = this.lootDrops
-      .filter(d => !d.collected)
-      .map(d => ({
-        drop: d,
-        dist: Phaser.Math.Distance.Between(this.player.x, this.player.y, d.x, d.y),
-      }))
-      .filter(({ dist }) => dist < AUTO_ATTACK_RANGE)
-      .sort((a, b) => a.dist - b.dist);
-
-    for (const { drop } of candidates) {
-      // 能量附近有妖异时跳过
-      const nearbyEnemy = this.entityManager.getAlive().some(e =>
-        Phaser.Math.Distance.Between(drop.x, drop.y, e.sprite.x, e.sprite.y) < 150
-      );
-      if (nearbyEnemy) continue;
-
-      const idx = this.lootDrops.indexOf(drop);
-      if (idx !== -1) this.lootDrops.splice(idx, 1);
-      this.startChanneling(drop);
-      break;
-    }
-  }
-
-  private startChanneling(drop: LootDrop): void {
-    this.isChanneling = true;
-    this.channelingTimer = CHANNEL_DURATION;
-    this.channelingTarget = drop;
-    this.combatSystem.setPlayerChanneling(true);
-
-    // 飘字：仅显示五行关系字符（生/助/泄/克/耗），无属性时不显示
-    const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
-    const { rel, rate } = calcWuxingResult(defWuxing, drop.wuxing);
-    if (rel !== '无属') {
-      const relColor = rate >= 0.45 ? 0x3fb950 : rate >= 0.38 ? 0xd4a853 : rate >= 0.32 ? 0xeab308 : 0xf85149;
-      const relColorHex = '#' + relColor.toString(16).padStart(6, '0');
-      const floatTxt = this.add.text(drop.x, drop.y - 20, rel, {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: '22px',
-        color: relColorHex,
-        stroke: '#000000',
-        strokeThickness: 3,
-      }).setOrigin(0.5).setDepth(30);
-      this.tweens.add({
-        targets: floatTxt,
-        y: drop.y - 60,
-        alpha: 0,
-        duration: 900,
-        ease: 'Power2',
-        onComplete: () => floatTxt.destroy(),
-      });
-    }
-  }
-
-  private updateChanneling(delta: number): void {
-    if (!this.isChanneling || !this.channelingTarget) return;
-
-    // 移动打断塑型
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    if (Math.abs(body.velocity.x) > 10 || Math.abs(body.velocity.y) > 10) {
-      this.cancelChanneling();
+  /** 妖异溃散：变异意志消散，纯净的五行能量留在原地 */
+  private dropLoot(x: number, y: number, wuxing: Wuxing, level: number, tier: EnemyTier): void {
+    if (tier === 'boss') {
+      for (let i = 0; i < 3; i++) this.createOrb(x, y, wuxing, level, true);
       return;
     }
-
-    this.channelingTimer -= delta;
-
-    // 绘制进度弧（围绕器物，金色圆弧，顺时针填充）
-    const g = this.channelingIndicator;
-    g.clear();
-    const progress = 1 - Math.max(0, this.channelingTimer) / CHANNEL_DURATION;
-    if (progress > 0) {
-      const tx = this.channelingTarget.x;
-      const ty = this.channelingTarget.y;
-      const endAngle = -Math.PI / 2 + Math.PI * 2 * progress;
-      // 背景圆（灰色）
-      g.lineStyle(4, 0x30363d, 0.6);
-      g.strokeCircle(tx, ty, 20);
-      // 进度弧（金色）
-      g.lineStyle(4, 0xd4a853, 1.0);
-      g.beginPath();
-      g.arc(tx, ty, 20, -Math.PI / 2, endAngle, false, 0.02);
-      g.strokePath();
+    if (tier === 'elite') {
+      this.createOrb(x, y, wuxing, level, true);
+      this.createOrb(x, y, wuxing, level, false);
+      return;
     }
-
-    if (this.channelingTimer <= 0) {
-      this.resolveChanneling();
-    }
-  }
-
-  private cancelChanneling(): void {
-    if (!this.isChanneling || !this.channelingTarget) return;
-    this.isChanneling = false;
-    this.channelingIndicator.clear();
-    this.combatSystem.setPlayerChanneling(false);
-    // 将能量放回可拾取列表，停下后可重新触发
-    const drop = this.channelingTarget;
-    this.channelingTarget = undefined;
-    this.lootDrops.push(drop);
-  }
-
-  private resolveChanneling(): void {
-    this.isChanneling = false;
-    this.channelingIndicator.clear();
-    this.combatSystem.setPlayerChanneling(false);
-
-    const target = this.channelingTarget;
-    this.channelingTarget = undefined;
-    if (!target) return;
-
-    target.graphics.destroy();
-    target.label.destroy();
-
-    // 五行关系决定成功率（加上累计补偿）
-    const defWuxing = this.playerCombatant.defenseWuxing?.wuxing;
-    const { rel, rate } = calcWuxingResult(defWuxing, target.wuxing);
-    const effectiveRate = Math.min(0.95, rate + this.channelingBonus);
-
-    if (Math.random() < effectiveRate) {
-      this.channelingBonus = 0;
-      const items = generateSimpleLoot('normal', 1, 1.0);
-      items.forEach(eq => gameState.addToInventory(eq as Equipment));
-      this.showLootText(target.x, target.y, `塑型成功【${rel}】`, 0x3fb950);
+    // 普通妖异约三成留下能量；连续 4 只没掉则第 5 只必掉
+    if (Math.random() < 0.3 || this.dryKills >= 4) {
+      this.dryKills = 0;
+      this.createOrb(x, y, wuxing, level, false);
     } else {
-      this.channelingBonus = Math.min(0.70, this.channelingBonus + 0.05);
-      this.showLootText(target.x, target.y, `塑型失败【${rel}】 补偿+5%`, 0xf85149);
+      this.dryKills++;
+    }
+  }
+
+  private createOrb(x: number, y: number, wuxing: Wuxing, level: number, highQuality: boolean): void {
+    const tint = WX_TINT[wuxing];
+    const glow = this.add.image(x, y, 'fx_glow').setTint(tint)
+      .setBlendMode(Phaser.BlendModes.ADD).setScale(highQuality ? 0.5 : 0.34).setDepth(FX_DEPTH - 6);
+    const core = this.add.image(x, y, 'fx_dot').setScale(highQuality ? 1.5 : 1.05).setDepth(FX_DEPTH - 5);
+    this.tweens.add({
+      targets: glow, scale: glow.scale * 1.3, alpha: 0.7,
+      duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+    const a = Math.random() * Math.PI * 2;
+    const v = 160 + Math.random() * 160;
+    this.orbs.push({
+      glow, core, wuxing, level, highQuality,
+      life: 45000, speed: 0,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+    });
+  }
+
+  private destroyOrb(orb: Orb): void {
+    this.tweens.killTweensOf(orb.glow);
+    orb.glow.destroy();
+    orb.core.destroy();
+  }
+
+  private updateOrbs(delta: number): void {
+    const dt = delta / 1000;
+    const px = this.player.x, py = this.player.y;
+    // 调息阶段全图能量自动飞来
+    const magnet = this.phase === 'rest' ? 99999 : ORB_MAGNET_RANGE;
+
+    for (let i = this.orbs.length - 1; i >= 0; i--) {
+      const o = this.orbs[i];
+      o.life -= delta;
+      const dx = px - o.core.x, dy = py - o.core.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      if (dist < magnet) {
+        // 被残魂牵引，越来越快
+        o.speed = Math.min(1500, o.speed + 3200 * dt);
+        o.core.x += (dx / dist) * o.speed * dt;
+        o.core.y += (dy / dist) * o.speed * dt;
+        this.fx.trail(o.core.x, o.core.y, WX_TINT[o.wuxing], 2);
+      } else {
+        o.speed = 0;
+        // 落地弹开后减速停下
+        o.core.x += o.vx * dt;
+        o.core.y += o.vy * dt;
+        o.vx *= 0.9; o.vy *= 0.9;
+        // 静置时偶尔逸出一点灵光
+        if (Math.random() < 0.05) this.fx.ember(o.core.x, o.core.y, WX_TINT[o.wuxing], 1, 14);
+      }
+      o.core.x = Phaser.Math.Clamp(o.core.x, 30, WORLD_SIZE - 30);
+      o.core.y = Phaser.Math.Clamp(o.core.y, 30, WORLD_SIZE - 30);
+      o.glow.setPosition(o.core.x, o.core.y);
+
+      if (dist < 42) {
+        this.absorbOrb(o);
+        this.destroyOrb(o);
+        this.orbs.splice(i, 1);
+      } else if (o.life <= 0) {
+        this.destroyOrb(o);
+        this.orbs.splice(i, 1);
+      }
+    }
+  }
+
+  private absorbOrb(o: Orb): void {
+    const tint = WX_TINT[o.wuxing];
+    this.fx.burst(this.player.x, this.player.y - 10, tint, 10);
+    this.fx.ember(this.player.x, this.player.y, tint, 6, 30);
+    if (gameState.isInventoryFull()) {
+      // 灵囊已满：能量直接归元，化为己用
+      this.combat.healPlayer(Math.ceil(this.pc.maxHp * (o.highQuality ? 0.06 : 0.02)));
+      this.fx.floatText(this.player.x, this.player.y - 120, '灵囊已满 · 归元', '#d4a853', 22, 50, 900);
+      return;
+    }
+    this.shapeQueue.push({ wuxing: o.wuxing, level: o.level, highQuality: o.highQuality });
+    if (this.shapeQueue.length === 1) this.shapeTimer = SHAPE_DURATION;
+  }
+
+  // ───────────────────────── 塑型 ─────────────────────────
+
+  /** 将吸纳的能量逐份凝练成器物；全程不影响移动与攻击 */
+  private updateShaping(delta: number): void {
+    const g = this.shapeGfx;
+    g.clear();
+    if (this.shapeQueue.length === 0) return;
+
+    this.shapeTimer -= delta;
+    const job = this.shapeQueue[0];
+    const progress = 1 - Math.max(0, this.shapeTimer) / SHAPE_DURATION;
+    const px = this.player.x, py = this.player.y - 118;
+    const tint = WX_TINT[job.wuxing];
+
+    g.lineStyle(6, 0x000000, 0.45);
+    g.strokeCircle(px, py, 20);
+    g.lineStyle(6, tint, 1);
+    g.beginPath();
+    g.arc(px, py, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress, false);
+    g.strokePath();
+    g.fillStyle(tint, 0.9);
+    g.fillCircle(px, py, 8);
+    // 凝练中的能量向核心汇聚
+    if (Math.random() < 0.5) {
+      const a = Math.random() * Math.PI * 2;
+      this.fx.trail(px + Math.cos(a) * 26, py + Math.sin(a) * 26, tint, 1);
+    }
+
+    if (this.shapeTimer <= 0) {
+      this.shapeQueue.shift();
+      this.resolveShaping(job);
+      if (this.shapeQueue.length > 0) this.shapeTimer = SHAPE_DURATION;
+    }
+  }
+
+  private resolveShaping(job: ShapeJob): void {
+    const px = this.player.x, py = this.player.y - 130;
+    if (gameState.isInventoryFull()) {
+      this.combat.healPlayer(Math.ceil(this.pc.maxHp * 0.02));
+      return;
+    }
+    const { rel, rate } = shapingRate(this.pc.defenseWuxing?.wuxing, job.wuxing);
+    // 魁首与核心的精纯能量更易成形
+    const effective = Math.min(0.95, rate + this.shapingBonus + (job.highQuality ? 0.35 : 0));
+    const relTag = rel === '无属' ? '' : `【${rel}】`;
+
+    if (Math.random() < effective) {
+      this.shapingBonus = 0;
+      // 优先补齐该五行还没有的武器 / 防具，让五行快换尽早成型
+      const want = !ownsGear(EquipmentType.WEAPON, job.wuxing) ? EquipmentType.WEAPON
+        : !ownsGear(EquipmentType.ARMOR, job.wuxing) ? EquipmentType.ARMOR
+        : null;
+      let item = generateWuxingEquipment(job.wuxing, this.round, job.highQuality);
+      for (let tries = 0; want && item.type !== want && tries < 12; tries++) {
+        item = generateWuxingEquipment(job.wuxing, this.round, job.highQuality);
+      }
+      gameState.addToInventory(item);
+      const worn = this.autoEquipIfSlotFree(item);
+      this.fx.floatText(px, py, `塑型成功${relTag} ${item.name}${worn ? ' · 已穿戴' : ''}`, RARITY_COLOR[item.rarity] ?? '#ffffff', 26, 90, 1300);
+      this.fx.ring(this.player.x, this.player.y, 110, WX_TINT[job.wuxing], 380);
+      this.fx.burst(this.player.x, py + 12, WX_TINT[job.wuxing], 16);
+      this.fx.ember(this.player.x, this.player.y, WX_TINT[job.wuxing], 14, 50);
+      eventBus.emit(GameEvent.INVENTORY_CHANGED);
+    } else {
+      this.shapingBonus = Math.min(0.70, this.shapingBonus + 0.05);
+      gameState.addFragment();
+      this.fx.burst(this.player.x, py + 12, 0x6e7681, 8);
+      this.fx.floatText(px, py, `塑型失败${relTag} 碎片+1`, '#8b949e', 22, 70, 1000);
     }
     this.emitBuffs();
   }
 
-  /** 向 HUDScene 广播当前 buff 列表 */
+  /**
+   * 对应的装备位有空就直接穿上：灵器栏未满，或武器 / 防具位为空
+   * @returns 是否已自动穿戴
+   */
+  private autoEquipIfSlotFree(item: Equipment): boolean {
+    const idx = gameState.getInventory().indexOf(item);
+    if (idx < 0) return false;
+    const eq = gameState.getPlayerState().equipment;
+    let ok = false;
+    if (item.type === EquipmentType.TREASURE) {
+      if (eq.treasures.length < MAX_TREASURES) ok = gameState.equipTreasure(idx);
+    } else if (item.type === EquipmentType.WEAPON) {
+      if (!eq.weapon) ok = gameState.equipWeapon(idx);
+    } else if (item.type === EquipmentType.ARMOR) {
+      if (!eq.armor) ok = gameState.equipArmor(idx);
+    }
+    if (ok) eventBus.emit(GameEvent.STATS_CHANGED);
+    return ok;
+  }
+
   private emitBuffs(): void {
-    const buffs: { label: string; color: number }[] = [];
-    if (this.channelingBonus > 0) {
+    const buffs: { label: string; color: number; description?: string }[] = [];
+    if (this.shapingBonus > 0) {
       buffs.push({
-        label: `塑型补偿 +${Math.round(this.channelingBonus * 100)}%`,
+        label: `塑型补偿 +${Math.round(this.shapingBonus * 100)}%`,
         color: 0xd4a853,
+        description: `塑型补偿：下次塑型成功率 +${Math.round(this.shapingBonus * 100)}%（成功后清零）`,
       });
     }
     eventBus.emit(GameEvent.BUFF_UPDATE, buffs);
   }
 
-  private clearLootDrops(): void {
-    if (this.isChanneling) {
-      this.isChanneling = false;
-      this.channelingIndicator.clear();
-      this.channelingTarget?.graphics.destroy();
-      this.channelingTarget?.label.destroy();
-      this.channelingTarget = undefined;
-      this.combatSystem?.setPlayerChanneling(false);
-    }
-    this.lootDrops.forEach(drop => {
-      drop.graphics.destroy();
-      drop.label.destroy();
-    });
-    this.lootDrops = [];
-  }
+  // ───────────────────────── 轮次 ─────────────────────────
 
-  private showLootText(x: number, y: number, msg: string, color: number): void {
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const text = this.add.text(x, y - 20, msg, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: colorHex,
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({
-      targets: text,
-      y: y - 50,
-      alpha: 0,
-      duration: 1200,
-      ease: 'Power2',
-      onComplete: () => text.destroy(),
-    });
-  }
+  private startRound(round: number): void {
+    this.round = round;
+    this.phase = 'fight';
+    this.roundTimer = getRoundDuration(round) * 1000;
+    this.roundKills = 0;
+    this.boss = null;
+    this.enemyAI.setRound(round);
+    this.combat.resetRoundFlags();
 
-  /** 妖异死亡时：更新剩余数量，若全部消灭则触发轮次结束 */
-  private onEnemyDied(): void {
-    if (this.isGameOver) return;
-    const remaining = this.entityManager.getAlive().length;
-    this.enemyCountText?.setText(`剩余妖异 ${remaining}`);
-    eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, remaining);
+    const bossRound = isBossRound(round);
+    const perZone = bossRound ? Math.min(6, 2 + Math.floor(round / 5)) : Math.min(12, 3 + round);
+    let quota = 0;
+    ZONES.forEach((_z, i) => { quota += this.spawnSystem.spawnZonePack(i, perZone, round); });
 
-    if (remaining === 0 && !this.roundTransitioning) {
-      this.triggerRoundEnd();
-    }
-  }
+    // 离残魂最远的阵眼
+    const farthest = () => {
+      let best = 0, bestD = -1;
+      ZONES.forEach((z, i) => {
+        const d = Phaser.Math.Distance.Between(z.x, z.y, this.player.x, this.player.y);
+        if (d > bestD) { bestD = d; best = i; }
+      });
+      return best;
+    };
 
-  /** 触发本轮结束（超时或全灭均调用此方法） */
-  private triggerRoundEnd(): void {
-    if (this.roundTransitioning || this.isGameOver) return;
-    this.roundTransitioning = true;
-    this.roundTransitionTimer = 10000; // 10 秒过渡
-
-    // 非阻塞式顶部横幅（setScrollFactor(0) 固定在视口，不遮挡中央视野）
-    const { width } = this.cameras.main;
-    const bannerW = Math.min(width * 0.80, 380);
-    const bannerH = uiConfig.fontLG + uiConfig.fontSM + 24;
-    const bannerX = (width - bannerW) / 2;
-    const bannerY = 44;
-
-    const bg = this.add.graphics().setDepth(200).setScrollFactor(0);
-    bg.fillStyle(0x0d1117, 0.88);
-    bg.fillRoundedRect(bannerX, bannerY, bannerW, bannerH, 8);
-    bg.lineStyle(1.5, 0xd4a853, 0.7);
-    bg.strokeRoundedRect(bannerX, bannerY, bannerW, bannerH, 8);
-
-    const titleTxt = this.add.text(width / 2, bannerY + 8, `第 ${this.currentRound} 轮结束`, {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#d4a853',
-    }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
-
-    const countdownTxt = this.add.text(width / 2, bannerY + 8 + uiConfig.fontLG + 6, '10 秒后进入下一轮...', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5, 0).setDepth(201).setScrollFactor(0);
-
-    this.roundBannerObjects = [bg, titleTxt, countdownTxt];
-  }
-
-  /** 过渡完成后，清场并开始下一轮 */
-  private startNextRound(): void {
-    this.currentRound++;
-    this.roundTimer = getRoundDuration(this.currentRound) * 1000;
-    this.roundTransitioning = false;
-
-    // 销毁横幅
-    this.roundBannerObjects.forEach(o => (o as Phaser.GameObjects.GameObject).destroy());
-    this.roundBannerObjects = [];
-
-    // 清除残余怪物和能量掉落，生成新一波
-    this.spawnSystem.clearAll();
-    this.clearLootDrops();
-    this.spawnSystem.spawnEnemies(WORLD_W, WORLD_H, this.currentRound);
-
-    const newCount = this.entityManager.getAlive().length;
-    this.enemyCountText?.setText(`剩余妖异 ${newCount}`);
-    const dur = getRoundDuration(this.currentRound);
-    this.roundTimerText?.setText(`第${this.currentRound}轮 ${dur}s`).setColor('#8b949e');
-    eventBus.emit(GameEvent.ENEMY_COUNT_UPDATE, newCount);
-  }
-
-  /** 游戏失败：停止逻辑，并直接触发 HUDScene 显示失败覆盖 */
-  private onGameOver(): void {
-    if (this.isGameOver) return;
-    this.isGameOver = true;
-    // 直接调用 HUDScene（双路触发，防止 eventBus 时序问题）
-    if (this.scene.isActive('HUDScene')) {
-      (this.scene.get('HUDScene') as any)?.showGameOverOverlay?.();
-    }
-  }
-
-  // ---- 五行所属系统 ----
-
-  /** 为每个五行预先生成粒子纹理 */
-  private generateWuxingParticleTextures(): void {
-    Object.values(Wuxing).forEach(wx => {
-      const key = `wx_particle_${wx}`;
-      if (this.textures.exists(key)) return;
-      const color = WUXING_COLORS[wx as Wuxing];
-      const g = this.add.graphics();
-      g.fillStyle(color, 1);
-      g.fillCircle(4, 4, 4);
-      g.generateTexture(key, 8, 8);
-      g.setVisible(false);
-      g.destroy();
-    });
-  }
-
-  /** 五行所属改变时触发：更新战斗属性、粒子特效 */
-  private onWuxingChosen(wuxing: Wuxing | undefined): void {
-    // 更新战斗属性
-    if (wuxing) {
-      this.playerCombatant.attackWuxing = { wuxing, level: 1 };
-      this.playerCombatant.defenseWuxing = { wuxing, level: 1 };
-      this.triggerWuxingBurst(wuxing);
+    if (bossRound) {
+      const zi = farthest();
+      this.boss = this.spawnSystem.spawnBoss(zi, round);
+      this.roundQuota = 1;
+      eventBus.emit(GameEvent.BANNER, {
+        title: `第 ${round} 轮 · 病变核心`,
+        sub: `${WUXING_NAMES[ZONES[zi].wuxing]}之阵眼已彻底病变，击溃它`,
+        color: 0xc084fc,
+      });
     } else {
-      this.playerCombatant.attackWuxing = null;
-      this.playerCombatant.defenseWuxing = null;
+      const elites = round >= 6 ? 2 : round >= 2 ? 1 : 0;
+      const used = new Set<number>();
+      for (let k = 0; k < elites; k++) {
+        let zi = Math.floor(Math.random() * 5);
+        while (used.has(zi)) zi = (zi + 1) % 5;
+        used.add(zi);
+        this.spawnSystem.spawnElite(zi, round);
+        quota++;
+      }
+      this.roundQuota = quota;
+      eventBus.emit(GameEvent.BANNER, {
+        title: `第 ${round} 轮`,
+        sub: round === 1 ? '妖异盘踞于五行阵眼，夺回五行之力' : elites > 0 ? '阵眼之中有魁首现身' : '净化妖异，稳固气脉',
+        color: 0xd4a853,
+      });
     }
-    this.startWuxingParticles(wuxing);
+
+    this.hunterTimer = 7000;
+    this.emitWorldState();
   }
 
-  /** 爆发粒子特效（五行变化瞬间） */
-  private triggerWuxingBurst(wuxing: Wuxing): void {
-    const key = `wx_particle_${wuxing}`;
-    if (!this.textures.exists(key)) return;
-    const burst = this.add.particles(this.player.x, this.player.y, key, {
-      lifespan: 900,
-      speed: { min: 60, max: 200 },
-      scale: { start: 1.2, end: 0 },
-      alpha: { start: 1, end: 0 },
-      quantity: 1,
-      emitting: false,
-    }).setDepth(20);
-    burst.explode(50, this.player.x, this.player.y);
-    this.time.delayedCall(1200, () => burst.destroy());
+  private updateRound(delta: number): void {
+    if (this.phase === 'rest') {
+      this.restTimer -= delta;
+      if (this.restTimer <= 0) this.startRound(this.round + 1);
+      return;
+    }
+    if (this.phase !== 'fight') return;
+
+    this.roundTimer -= delta;
+
+    // 侵袭：游荡的妖异循着本源气息而来
+    this.hunterTimer -= delta;
+    if (this.hunterTimer <= 0) {
+      this.hunterTimer = Math.max(3000, 7500 - this.round * 500);
+      if (this.roundTimer > 6000) {
+        const n = Math.min(8, 2 + this.round);
+        this.spawnSystem.spawnHunters(this.player.x, this.player.y, n, this.round);
+      }
+    }
+
+    if (this.roundTimer <= 0) this.roundTimeout();
   }
 
-  /** 启动（或停止）跟随玩家的持续粒子特效 */
+  private onEnemyDied(entity: WorldEntity): void {
+    if (this.phase !== 'fight') return;
+    this.roundKills++;
+
+    if (entity.tier === 'boss') {
+      this.onBossDefeated();
+      return;
+    }
+    if (!this.boss && this.roundKills >= this.roundQuota) this.roundCleared();
+  }
+
+  /** 净化达标：气脉暂稳 */
+  private roundCleared(): void {
+    const heal = Math.ceil(this.pc.maxHp * 0.15);
+    this.combat.healPlayer(heal);
+    this.fx.celebrate(this.player.x, this.player.y - 40, ZONES.map(z => WX_TINT[z.wuxing]));
+    eventBus.emit(GameEvent.BANNER, {
+      title: `第 ${this.round} 轮 · 气脉暂稳`,
+      sub: `残余妖异消散，本源回复 ${heal} 点生命`,
+      color: 0x4ade80,
+    });
+    this.beginRest(true);
+  }
+
+  /** 进入轮间调息：清场、能量自动汇聚 */
+  private beginRest(dissolve: boolean): void {
+    this.phase = 'rest';
+    this.restTimer = REST_DURATION;
+    if (this.physics.world.isPaused) this.physics.world.resume();
+    if (dissolve) this.spawnSystem.dissolveAll();
+    this.combat.clearProjectiles();
+    this.emitWorldState();
+  }
+
+  /** 超时：五行失衡加剧，残余妖异狂暴并滞留到下一轮 */
+  private roundTimeout(): void {
+    const left = this.entityManager.getAlive();
+    left.forEach(e => {
+      if (e.enraged) return;
+      e.enraged = true;
+      e.aggro = true;
+      e.combatant.attack += 1;
+      this.combat.refreshTint(e);
+    });
+    if (this.boss && !this.boss.dying) {
+      // 核心未破：时间重置，妖异继续涌来
+      this.roundTimer = getRoundDuration(this.round) * 1000;
+      eventBus.emit(GameEvent.BANNER, {
+        title: '五行失衡加剧',
+        sub: '病变核心仍在壮大，妖异陷入狂暴',
+        color: 0xf85149,
+      });
+      this.fx.shake(0.01, 300);
+      return;
+    }
+    this.fx.shake(0.01, 300);
+    eventBus.emit(GameEvent.BANNER, {
+      title: '五行失衡加剧',
+      sub: left.length > 0 ? `${left.length} 只妖异陷入狂暴，滞留至下一轮` : '新的妖异正在滋生',
+      color: 0xf85149,
+    });
+    this.startRound(this.round + 1);
+  }
+
+  private onBossDefeated(): void {
+    this.boss = null;
+    this.phase = 'victory';
+    this.fx.celebrate(this.player.x, this.player.y - 40, [...ZONES.map(z => WX_TINT[z.wuxing]), 0xffe9a8, 0xffffff]);
+    this.spawnSystem.dissolveAll();
+    this.combat.clearProjectiles();
+    this.combat.healPlayer(Math.ceil(this.pc.maxHp * 0.5));
+    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    this.emitWorldState();
+    // 留出核心溃散的演出时间
+    this.time.delayedCall(1400, () => {
+      eventBus.emit(GameEvent.VICTORY, { round: this.round, kills: this.combat.getKills() });
+    });
+  }
+
+  private onGameOver(): void {
+    if (this.phase === 'over') return;
+    this.phase = 'over';
+    this.combat.stop();
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    this.physics.world.pause();
+    const dieKey = `${PLAYER_ATLAS}_die`;
+    if (this.anims.exists(dieKey)) this.player.play(dieKey, true);
+    this.player.clearTint().setAlpha(1);
+    this.fx.burst(this.player.x, this.player.y, SPIRIT_TINT, 50);
+    this.fx.ring(this.player.x, this.player.y, 300, SPIRIT_TINT, 800);
+    this.cameras.main.shake(300, 0.012);
+    this.emitWorldState();
+    (this.scene.get('HUDScene') as unknown as { showGameOverOverlay?: (r: number, k: number) => void })
+      ?.showGameOverOverlay?.(this.round, this.combat.getKills());
+  }
+
+  // ───────────────────────── HUD 数据 / 指示 ─────────────────────────
+
+  private emitWorldState(): void {
+    this.zoneAlive = [0, 0, 0, 0, 0];
+    const alive = this.entityManager.getAlive();
+    for (let i = 0; i < alive.length; i++) {
+      const z = alive[i].zoneIndex;
+      if (z >= 0) this.zoneAlive[z]++;
+    }
+    ZONES.forEach((_z, i) => this.backdrop.setZoneActive(i, this.zoneAlive[i] > 0));
+
+    const boss = this.boss && !this.boss.dying
+      ? { name: this.boss.combatant.name, hp: this.boss.combatant.hp, maxHp: this.boss.combatant.maxHp, wuxing: this.boss.wuxing }
+      : null;
+
+    eventBus.emit(GameEvent.WORLD_STATE, {
+      round: this.round,
+      phase: this.phase,
+      secsLeft: Math.max(0, Math.ceil((this.phase === 'rest' ? this.restTimer : this.roundTimer) / 1000)),
+      kills: this.roundKills,
+      quota: this.roundQuota,
+      totalKills: this.combat.getKills(),
+      enemies: alive.length,
+      combo: this.combat.getCombo(),
+      dashPct: this.dashCd / DASH_COOLDOWN,
+      skillTimers: this.combat.getSkillTimers(),
+      skillMax: this.combat.getSkillMaxTimers(),
+      zones: this.zoneAlive,
+      px: this.player.x / WORLD_SIZE,
+      py: this.player.y / WORLD_SIZE,
+      boss,
+      bossZone: this.boss && !this.boss.dying ? this.boss.zoneIndex : -1,
+      threat: this.findThreatWuxing(),
+      atkWuxing: this.pc.attackWuxing?.wuxing ?? null,
+      defWuxing: this.pc.defenseWuxing?.wuxing ?? null,
+      fragments: gameState.getFragmentCount(),
+      bagFull: gameState.isInventoryFull(),
+    });
+  }
+
+  /** 当前最需要应对的妖异五行：优先锁定目标，其次 700 范围内最近的 */
+  private findThreatWuxing(): Wuxing | null {
+    const t = this.combat.getTarget();
+    if (t && !t.dying) return t.wuxing;
+    let best: WorldEntity | null = null;
+    let bestD = 700 * 700;
+    const alive = this.entityManager.getAlive();
+    for (let i = 0; i < alive.length; i++) {
+      const d = Phaser.Math.Distance.Squared(this.player.x, this.player.y, alive[i].sprite.x, alive[i].sprite.y);
+      if (d < bestD) { bestD = d; best = alive[i]; }
+    }
+    return best ? best.wuxing : null;
+  }
+
+  /** 视野内没有妖异时，在残魂身边指出最近妖异 / 魁首 / 核心的方向 */
+  private updateIndicator(): void {
+    const g = this.indicator;
+    g.clear();
+    if (this.phase !== 'fight') return;
+    const alive = this.entityManager.getAlive();
+    if (alive.length === 0) return;
+
+    const view = this.cameras.main.worldView;
+    const px = this.player.x, py = this.player.y;
+    let nearest: WorldEntity | null = null;
+    let nearestD = Infinity;
+    let anyVisible = false;
+    const special: WorldEntity[] = [];
+
+    for (let i = 0; i < alive.length; i++) {
+      const e = alive[i];
+      const vis = view.contains(e.sprite.x, e.sprite.y);
+      if (vis) anyVisible = true;
+      if (e.tier !== 'normal' && !vis) special.push(e);
+      const d = Phaser.Math.Distance.Squared(px, py, e.sprite.x, e.sprite.y);
+      if (d < nearestD) { nearestD = d; nearest = e; }
+    }
+
+    const arrow = (e: WorldEntity, radius: number, size: number, alpha: number) => {
+      const a = Math.atan2(e.sprite.y - py, e.sprite.x - px);
+      const cx = px + Math.cos(a) * radius, cy = py + Math.sin(a) * radius;
+      g.fillStyle(WX_TINT[e.wuxing], alpha);
+      g.fillTriangle(
+        cx + Math.cos(a) * size, cy + Math.sin(a) * size,
+        cx + Math.cos(a + 2.4) * size * 0.75, cy + Math.sin(a + 2.4) * size * 0.75,
+        cx + Math.cos(a - 2.4) * size * 0.75, cy + Math.sin(a - 2.4) * size * 0.75,
+      );
+    };
+
+    if (!anyVisible && nearest) arrow(nearest, 120, 20, 0.9);
+    special.forEach(e => arrow(e, 160, e.tier === 'boss' ? 34 : 26, 1));
+  }
+
+  // ───────────────────────── 五行所属粒子 ─────────────────────────
+
   private startWuxingParticles(wuxing: Wuxing | undefined): void {
-    // 停止旧的发射器
     if (this.wuxingEmitter) {
       this.wuxingEmitter.stop();
       this.wuxingEmitter.destroy();
       this.wuxingEmitter = undefined;
     }
     if (!wuxing) return;
-
-    const key = `wx_particle_${wuxing}`;
-    if (!this.textures.exists(key)) return;
-
-    this.wuxingEmitter = this.add.particles(0, 0, key, {
-      lifespan: 700,
-      speed: { min: 15, max: 50 },
-      scale: { start: 0.6, end: 0 },
-      alpha: { start: 0.8, end: 0 },
-      quantity: 1,
-      frequency: 120,
+    this.wuxingEmitter = this.add.particles(0, 0, 'fx_dot', {
+      lifespan: 800,
+      speed: { min: 20, max: 70 },
+      scale: { start: 1.0, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      tint: WX_TINT[wuxing],
+      frequency: 70,
+      blendMode: Phaser.BlendModes.ADD,
       follow: this.player,
-      followOffset: { x: 0, y: -8 },
-      angle: { min: 0, max: 360 },
-    }).setDepth(11);
+      followOffset: { x: 0, y: 10 },
+      angle: { min: 200, max: 340 },
+    }).setDepth(FX_DEPTH - 8);
   }
-
-  /** WorldScene 停止时（死亡/返回菜单）清理子场景和事件 */
-  shutdown(): void {
-    this.scene.stop('HUDScene');
-    this.scene.stop('InventoryScene');
-    eventBus.clear();
-  }
-
-  /** 供 CombatSystem 调用 */
-  getPlayer(): Phaser.Physics.Arcade.Sprite { return this.player; }
-  getPlayerCombatant(): Combatant { return this.playerCombatant; }
-  getEntityManager(): EntityManager { return this.entityManager; }
-  getSpawnSystem(): SpawnSystem { return this.spawnSystem; }
-  getActiveSkillIds(): AttributeSkillId[] { return this.activeSkillIds; }
 }

@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
-import { generateEnemies, Combatant, WUXING_COLORS, Wuxing } from '@xiyou/shared';
-import { EntityManager, WorldEntity } from './EntityManager.js';
-import { gameState } from '../GameStateManager.js';
+import { Combatant, NORMAL_ENEMIES, Wuxing } from '@xiyou/shared';
+import { EntityManager, WorldEntity, EnemyTier } from './EntityManager.js';
+import {
+  ZONES, ZoneDef, ZONE_RADIUS, WORLD_SIZE, WX_TINT,
+  ENEMY_SCALE, ELITE_SCALE, BOSS_SCALE, STAT_SCALE,
+} from '../../config/worldConfig.js';
+import { Fx } from '../fx/Fx.js';
 
 const MONSTER_ATLAS_MAP: Record<string, string> = {
   '树妖':   'monster_tree_demon',
@@ -19,38 +23,38 @@ const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
   monster_stone_spirit: { json: 'assets/monsters/石头精/atlas.json',  image: 'assets/monsters/石头精/atlas.png' },
 };
 
-/** 5 波次 → 5 种五行，固定在地图各个区域 */
-const WAVE_DEFINITIONS = [
-  { wuxing: Wuxing.METAL, relX: 0.18, relY: 0.18 }, // 左上 - 金
-  { wuxing: Wuxing.WOOD,  relX: 0.82, relY: 0.18 }, // 右上 - 木
-  { wuxing: Wuxing.WATER, relX: 0.18, relY: 0.82 }, // 左下 - 水
-  { wuxing: Wuxing.FIRE,  relX: 0.82, relY: 0.82 }, // 右下 - 火
-  { wuxing: Wuxing.EARTH, relX: 0.50, relY: 0.10 }, // 上中 - 土
-];
+/** 各类妖异的基础移速 */
+const KIND_SPEED = { charger: 175, swift: 270, caster: 170, brute: 150, slammer: 135 } as const;
+
+/** 场上妖异数量上限（保证移动端帧率） */
+export const MAX_ENEMIES = 70;
 
 export class SpawnSystem {
   private scene: Phaser.Scene;
   private entityManager: EntityManager;
   private enemyGroup: Phaser.Physics.Arcade.Group;
+  private fx: Fx;
+  private seq: number = 0;
 
-  constructor(scene: Phaser.Scene, entityManager: EntityManager) {
+  constructor(scene: Phaser.Scene, entityManager: EntityManager, fx: Fx) {
     this.scene = scene;
     this.entityManager = entityManager;
+    this.fx = fx;
     this.enemyGroup = scene.physics.add.group();
   }
 
   /** 预加载所有怪物图集（在 preload() 中调用） */
-  preloadAtlases(): void {
+  static preloadAtlases(scene: Phaser.Scene): void {
     Object.entries(MONSTER_ATLAS_PATHS).forEach(([key, paths]) => {
-      if (!this.scene.textures.exists(key)) {
-        this.scene.load.atlas(key, paths.image, paths.json);
+      if (!scene.textures.exists(key)) {
+        scene.load.atlas(key, paths.image, paths.json);
       }
     });
   }
 
   /** 创建怪物动画（在 create() 中调用） */
   createAnims(): void {
-    const animTypes = ['idle', 'run', 'atk', 'hurt', 'die'];
+    const animTypes = ['idle', 'run', 'atk', 'hurt', 'magic', 'die'];
     Object.keys(MONSTER_ATLAS_PATHS).forEach(atlasKey => {
       if (!this.scene.textures.exists(atlasKey)) return;
       animTypes.forEach(anim => {
@@ -75,116 +79,251 @@ export class SpawnSystem {
     });
   }
 
-  /**
-   * 每轮生成 5 波敌人，每波固定位置、固定五行属性，每波数量 = 轮数
-   */
-  spawnEnemies(worldW: number, worldH: number, round: number = 1): void {
-    const playerState = gameState.getPlayerState();
-    const scaling = playerState.monsterScaling ?? 0.3;
-    const enemiesPerWave = round;
+  // ───────────────────────── 生成 ─────────────────────────
 
-    WAVE_DEFINITIONS.forEach((waveDef, waveIdx) => {
-      const centerX = worldW * waveDef.relX;
-      const centerY = worldH * waveDef.relY;
-      const wuxingColor = WUXING_COLORS[waveDef.wuxing];
+  /** 构造一只妖异的战斗数据（数值随轮次成长） */
+  private buildCombatant(zone: ZoneDef, round: number, tier: EnemyTier): Combatant {
+    const tpl = NORMAL_ENEMIES.find(e => e.name === zone.monster) ?? NORMAL_ENEMIES[0];
+    // 器物数值是 1~10 的小数，战斗中统一 ×STAT_SCALE
+    const grow = 1 + (round - 1) * 0.45;
+    let hp = tpl.hp * 1.4 * grow * STAT_SCALE;
+    let attack = (tpl.attack + 1.5 + (round - 1) * 1.2) * STAT_SCALE;
+    let defense = (tpl.defense + (round - 1) * 0.4) * STAT_SCALE;
+    if (zone.kind === 'brute') hp *= 1.5;
 
-      // 生成足够的怪物模板
-      const templates = generateEnemies('normal', round, scaling, 0);
+    let name = tpl.name;
+    if (tier === 'elite') {
+      hp = hp * 5 + 6 * STAT_SCALE;
+      attack *= 1.35;
+      defense += STAT_SCALE;
+      name = `${tpl.name}·魁`;
+    } else if (tier === 'boss') {
+      hp = (60 * grow + 40) * STAT_SCALE;
+      attack *= 1.6;
+      defense += 1.5 * STAT_SCALE;
+      name = '病变核心';
+    }
+    hp = Math.ceil(hp);
+    attack = Math.round(attack);
+    defense = Math.round(defense);
 
-      for (let i = 0; i < enemiesPerWave; i++) {
-        const base = templates[i % templates.length];
-
-        // 克隆并赋予唯一 ID + 强制五行属性
-        const combatant: Combatant = {
-          ...base,
-          id: `${base.id}_w${waveIdx}_${i}_r${round}`,
-          attackWuxing:  { wuxing: waveDef.wuxing, level: round },
-          defenseWuxing: { wuxing: waveDef.wuxing, level: round },
-        };
-
-        // 在波次中心周围均匀散布（环形排布）
-        const angle = (i / enemiesPerWave) * Math.PI * 2;
-        const radius = 120 + i * 20; // 小半径聚拢，避免叠在一起
-        const x = Math.max(200, Math.min(worldW - 200, centerX + Math.cos(angle) * radius));
-        const y = Math.max(200, Math.min(worldH - 200, centerY + Math.sin(angle) * radius));
-
-        this.spawnEnemy(combatant, x, y, centerX, centerY, wuxingColor);
-      }
-    });
+    this.seq++;
+    return {
+      id: `${tpl.id}_${tier}_${round}_${this.seq}`,
+      name,
+      hp,
+      maxHp: hp,
+      attack,
+      defense,
+      speed: tpl.speed,
+      isPlayer: false,
+      attackWuxing: { wuxing: zone.wuxing, level: Math.min(10, round) },
+      defenseWuxing: { wuxing: zone.wuxing, level: Math.min(10, round) },
+      frozen: false,
+    };
   }
 
-  /** 清除地图上所有剩余敌人（换轮时调用） */
-  clearAll(): void {
-    this.entityManager.getAll().forEach(entity => {
-      entity.hpBar?.destroy();
-      entity.hpBarBg?.destroy();
-      if (entity.sprite.active) entity.sprite.destroy();
-    });
-    this.entityManager.clear();
-    this.enemyGroup.clear(); // 清空引用（不重复 destroy）
+  /** 在阵眼内滋生 count 只妖异，返回实际生成数量 */
+  spawnZonePack(zoneIndex: number, count: number, round: number): number {
+    const zone = ZONES[zoneIndex];
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.entityManager.getAlive().length >= MAX_ENEMIES) break;
+      const a = Math.random() * Math.PI * 2;
+      const r = 60 + Math.random() * (ZONE_RADIUS - 110);
+      this.spawnEnemy(zone, zoneIndex, zone.x + Math.cos(a) * r, zone.y + Math.sin(a) * r, round, 'normal', false);
+      spawned++;
+    }
+    return spawned;
+  }
+
+  /** 阵眼之魁（精英） */
+  spawnElite(zoneIndex: number, round: number): WorldEntity {
+    const zone = ZONES[zoneIndex];
+    return this.spawnEnemy(zone, zoneIndex, zone.x, zone.y, round, 'elite', false);
+  }
+
+  /** 病变核心 */
+  spawnBoss(zoneIndex: number, round: number): WorldEntity {
+    const zone = ZONES[zoneIndex];
+    return this.spawnEnemy(zone, zoneIndex, zone.x, zone.y, round, 'boss', true);
+  }
+
+  /**
+   * 侵袭：一小队妖异在视野外凝聚成形，直扑残魂
+   * @returns 实际生成数量
+   */
+  spawnHunters(px: number, py: number, count: number, round: number, wuxing?: Wuxing): number {
+    const zone = wuxing
+      ? ZONES.find(z => z.wuxing === wuxing)!
+      : ZONES[Math.floor(Math.random() * ZONES.length)];
+    // 在玩家视野外找一个落点
+    let cx = px, cy = py;
+    for (let tries = 0; tries < 8; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 880 + Math.random() * 160;
+      cx = Phaser.Math.Clamp(px + Math.cos(a) * d, 120, WORLD_SIZE - 120);
+      cy = Phaser.Math.Clamp(py + Math.sin(a) * d, 120, WORLD_SIZE - 120);
+      if (Phaser.Math.Distance.Between(cx, cy, px, py) > 700) break;
+    }
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.entityManager.getAlive().length >= MAX_ENEMIES) break;
+      const a = (i / count) * Math.PI * 2;
+      this.spawnEnemy(zone, -1, cx + Math.cos(a) * 70, cy + Math.sin(a) * 70, round, 'normal', true);
+      spawned++;
+    }
+    return spawned;
+  }
+
+  /** 病变核心召唤的爪牙（贴身生成） */
+  spawnMinions(x: number, y: number, count: number, round: number, wuxing: Wuxing): void {
+    const zone = ZONES.find(z => z.wuxing === wuxing)!;
+    for (let i = 0; i < count; i++) {
+      if (this.entityManager.getAlive().length >= MAX_ENEMIES) break;
+      const a = (i / count) * Math.PI * 2 + Math.random();
+      this.spawnEnemy(zone, -1, x + Math.cos(a) * 150, y + Math.sin(a) * 150, round, 'normal', true);
+    }
   }
 
   private spawnEnemy(
-    combatant: Combatant,
-    x: number,
-    y: number,
-    patrolCenterX: number,
-    patrolCenterY: number,
-    tintColor: number,
-  ): void {
-    const atlasKey = MONSTER_ATLAS_MAP[combatant.name];
-    let sprite: Phaser.Physics.Arcade.Sprite;
+    zone: ZoneDef, zoneIndex: number,
+    x: number, y: number,
+    round: number, tier: EnemyTier, aggro: boolean,
+  ): WorldEntity {
+    const s = this.scene;
+    const combatant = this.buildCombatant(zone, round, tier);
+    const atlasKey = MONSTER_ATLAS_MAP[zone.monster];
+    const hasAtlas = !!atlasKey && s.textures.exists(atlasKey);
+    const tint = WX_TINT[zone.wuxing];
 
-    if (atlasKey && this.scene.textures.exists(atlasKey)) {
-      sprite = this.scene.physics.add.sprite(x, y, atlasKey, 'character_idle_0');
-      sprite.play(`${atlasKey}_idle`);
-    } else {
-      sprite = this.scene.physics.add.sprite(x, y, '__DEFAULT');
-    }
+    x = Phaser.Math.Clamp(x, 80, WORLD_SIZE - 80);
+    y = Phaser.Math.Clamp(y, 80, WORLD_SIZE - 80);
 
-    // 用五行颜色染色，使每波视觉上统一
-    sprite.setTint(tintColor);
-    sprite.setScale(0.13);
-    sprite.setDepth(9);
+    const sprite = hasAtlas
+      ? s.physics.add.sprite(x, y, atlasKey, 'character_idle_0')
+      : s.physics.add.sprite(x, y, '__DEFAULT');
+    if (hasAtlas) sprite.play(`${atlasKey}_idle`);
+
+    const baseScale = tier === 'boss' ? BOSS_SCALE : tier === 'elite' ? ELITE_SCALE : ENEMY_SCALE;
+    sprite.setScale(baseScale);
     sprite.setCollideWorldBounds(true);
-    if (sprite.body) {
-      (sprite.body as Phaser.Physics.Arcade.Body).setSize(200, 260).setOffset(54, 24);
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    body.setCircle(62, 92, 130);
+    if (tier === 'boss') {
+      body.setImmovable(true);
+      sprite.setTint(0xc9a0ff);
     }
 
-    const hpBarBg = this.scene.add.graphics();
-    hpBarBg.fillStyle(0x1c2128, 1);
-    hpBarBg.fillRect(-20, -25, 40, 5);
-    hpBarBg.setDepth(20);
+    const footY = y + 307 * baseScale * 0.36;
+    const shadow = s.add.image(x, footY, 'fx_shadow').setScale(baseScale * 3.1).setDepth(-20);
+    const ring = s.add.image(x, footY, 'fx_ring').setTint(tint)
+      .setScale(baseScale * 1.25, baseScale * 0.5).setAlpha(tier === 'normal' ? 0.55 : 0.95).setDepth(-19);
+    if (tier !== 'normal') ring.setBlendMode(Phaser.BlendModes.ADD);
 
-    const hpBar = this.scene.add.graphics();
-    hpBar.setDepth(21);
-    this.updateEnemyHpBar(hpBar, combatant.hp, combatant.maxHp);
+    const barW = tier === 'boss' ? 200 : tier === 'elite' ? 110 : 64;
+    const hpBg = s.add.rectangle(x, y, barW + 4, 10, 0x000000, 0.7).setVisible(false);
+    const hpFill = s.add.rectangle(x, y, barW, 6, tint, 1).setOrigin(0, 0.5).setVisible(false);
 
     const entity: WorldEntity = {
-      sprite,
-      combatant,
-      hpBar,
-      hpBarBg,
-      patrolCenterX,
-      patrolCenterY,
-      state: 'patrol',
-      patrolTimer: 0,
-      attackPhase: 'ready',
-      attackPhaseTimer: 0,
-      attackCurrentInterval: 1000,
-      atlasKey: atlasKey || '',
+      sprite, combatant,
+      atlasKey: hasAtlas ? atlasKey : '',
+      kind: zone.kind,
+      tier,
+      wuxing: zone.wuxing,
+      zoneIndex,
+      shadow, ring, hpBg, hpFill,
+      homeX: zone.x, homeY: zone.y,
+      aggro,
+      patrolTimer: Math.random() * 1500,
+      phase: 'idle',
+      phaseTimer: 0,
+      phaseDuration: 0,
+      cooldown: 200 + Math.random() * 600,
+      dirX: 1, dirY: 0,
+      strikeHit: false,
+      knockX: 0, knockY: 0, knockTimer: 0,
+      stunTimer: 0,
+      regenTimer: 3000,
+      bossBurstTimer: 3500,
+      bossSummonTimer: 9000,
+      baseScale,
+      moveSpeed: KIND_SPEED[zone.kind] * (tier === 'elite' ? 1.1 : tier === 'boss' ? 0.75 : 1) * (0.92 + Math.random() * 0.16),
+      enraged: false,
+      dying: false,
+      flashTimer: 0,
     };
+
+    // 凝聚成形：从五行光点中显现
+    sprite.setAlpha(0).setScale(baseScale * 0.4);
+    s.tweens.add({ targets: sprite, alpha: 1, scale: baseScale, duration: 320, ease: 'Back.easeOut' });
+    this.fx.flashGlow(x, y, tier === 'normal' ? 90 : 220, tint, 420, 0.7);
 
     this.entityManager.add(combatant.id, entity);
     this.enemyGroup.add(sprite);
+    return entity;
   }
 
-  updateEnemyHpBar(hpBar: Phaser.GameObjects.Graphics, hp: number, maxHp: number): void {
-    hpBar.clear();
-    const pct = Math.max(0, hp / maxHp);
-    const color = pct > 0.5 ? 0x3fb950 : pct > 0.25 ? 0xeab308 : 0xf85149;
-    hpBar.fillStyle(color, 1);
-    hpBar.fillRect(-20, -25, 40 * pct, 5);
+  // ───────────────────────── 显示同步 ─────────────────────────
+
+  /** 每帧同步阴影 / 五行环 / 血条位置与深度 */
+  syncVisuals(entity: WorldEntity): void {
+    const { sprite, baseScale } = entity;
+    const footY = sprite.y + 307 * baseScale * 0.36;
+    sprite.setDepth(footY);
+    entity.shadow.setPosition(sprite.x, footY);
+    entity.ring.setPosition(sprite.x, footY);
+    if (entity.hpBg.visible) {
+      const top = sprite.y - 307 * baseScale * 0.42;
+      entity.hpBg.setPosition(sprite.x, top).setDepth(footY + 1);
+      entity.hpFill.setPosition(sprite.x - (entity.hpBg.width - 4) / 2, top).setDepth(footY + 2);
+    }
+  }
+
+  updateHpBar(entity: WorldEntity): void {
+    const pct = Phaser.Math.Clamp(entity.combatant.hp / entity.combatant.maxHp, 0, 1);
+    // 病变核心的血条显示在屏幕上方
+    const show = entity.tier !== 'boss' && (pct < 1 || entity.tier === 'elite');
+    entity.hpBg.setVisible(show);
+    entity.hpFill.setVisible(show);
+    entity.hpFill.width = (entity.hpBg.width - 4) * pct;
+  }
+
+  /** 销毁一只妖异的全部显示对象 */
+  destroyEntity(entity: WorldEntity): void {
+    entity.shadow.destroy();
+    entity.ring.destroy();
+    entity.hpBg.destroy();
+    entity.hpFill.destroy();
+    entity.tele?.destroy();
+    entity.tele = undefined;
+    if (entity.sprite.active) entity.sprite.destroy();
+    this.entityManager.remove(entity.combatant.id);
+  }
+
+  /** 让剩余妖异消散（不掉落），用于气脉暂稳 */
+  dissolveAll(): void {
+    this.entityManager.getAll().forEach(entity => {
+      if (entity.dying) return;
+      entity.dying = true;
+      entity.combatant.hp = 0;
+      (entity.sprite.body as Phaser.Physics.Arcade.Body | null)?.setEnable(false);
+      entity.tele?.setVisible(false);
+      this.fx.burst(entity.sprite.x, entity.sprite.y, WX_TINT[entity.wuxing], 6);
+      this.scene.tweens.add({
+        targets: [entity.sprite, entity.shadow, entity.ring],
+        alpha: 0, duration: 500,
+        onComplete: () => this.destroyEntity(entity),
+      });
+    });
+    this.entityManager.markDirty();
+  }
+
+  /** 立即清场（重开时调用） */
+  clearAll(): void {
+    this.entityManager.getAll().forEach(entity => this.destroyEntity(entity));
+    this.entityManager.clear();
+    this.enemyGroup.clear();
   }
 
   getEnemyGroup(): Phaser.Physics.Arcade.Group {

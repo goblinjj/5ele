@@ -2,710 +2,854 @@ import Phaser from 'phaser';
 import { VirtualJoystick } from '../systems/input/VirtualJoystick.js';
 import { inputManager } from '../systems/input/InputManager.js';
 import { eventBus, GameEvent } from '../core/EventBus.js';
-import { uiConfig, LAYOUT } from '../config/uiConfig.js';
+import { LAYOUT } from '../config/uiConfig.js';
 import {
-  AttributeSkillId, getAllAttributeSkills, Wuxing, WUXING_COLORS, WUXING_NAMES,
-  getAllEquipmentSkills, getWuxingPassiveStatuses, STATUS_DEFINITIONS,
+  Wuxing, WUXING_NAMES, EquipmentType,
+  getAllEquipmentSkills,
 } from '@xiyou/shared';
 import { gameState } from '../systems/GameStateManager.js';
+import { AOE_CONFIG } from '../systems/combat/CombatSystem.js';
+import { getEquippedAoeSkills, quickSwapGear } from './WorldScene.js';
+import { Fx } from '../systems/fx/Fx.js';
+import { wrapCJK } from '../systems/fx/ItemIcon.js';
+import {
+  ZONES, WORLD_SIZE, WORLD_CENTER, WX_TINT, WX_ORDER, isBossRound,
+  relationOf, bestAttackAgainst, bestDefenseAgainst,
+} from '../config/worldConfig.js';
 
-/** 与 CombatSystem 保持一致 */
-const AOE_SKILL_IDS = new Set([
-  AttributeSkillId.LIEKONGZHAN,
-  AttributeSkillId.HANCHAO,
-  AttributeSkillId.JINGJI,
-  AttributeSkillId.FENTIAN,
-  AttributeSkillId.DILIE,
-]);
+const SERIF = '"Noto Serif SC", "Songti SC", serif';
+const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
+const GOLD = 0xd4a853;
 
-const AOE_SKILL_META: Record<string, { label: string; color: number }> = {
-  [AttributeSkillId.LIEKONGZHAN]: { label: '裂空斩', color: 0xd4a853 },
-  [AttributeSkillId.HANCHAO]:     { label: '寒潮',   color: 0x58a6ff },
-  [AttributeSkillId.JINGJI]:      { label: '荆棘',   color: 0x3fb950 },
-  [AttributeSkillId.FENTIAN]:     { label: '焚天',   color: 0xf85149 },
-  [AttributeSkillId.DILIE]:       { label: '地裂',   color: 0xa16946 },
-};
+interface WorldState {
+  round: number;
+  phase: 'fight' | 'rest' | 'victory' | 'over';
+  secsLeft: number;
+  kills: number;
+  quota: number;
+  totalKills: number;
+  enemies: number;
+  combo: number;
+  dashPct: number;
+  skillTimers: number[];
+  skillMax: number[];
+  zones: number[];
+  px: number;
+  py: number;
+  boss: { name: string; hp: number; maxHp: number; wuxing: Wuxing } | null;
+  bossZone: number;
+  fragments: number;
+  bagFull: boolean;
+  threat: Wuxing | null;
+  atkWuxing: Wuxing | null;
+  defWuxing: Wuxing | null;
+}
 
+interface RoundButton {
+  x: number;
+  y: number;
+  r: number;
+  objs: Phaser.GameObjects.GameObject[];
+  cd: Phaser.GameObjects.Graphics;
+  cdText: Phaser.GameObjects.Text;
+  label: Phaser.GameObjects.Text;
+}
+
+const hex = (c: number) => '#' + c.toString(16).padStart(6, '0');
+
+/**
+ * 战斗 HUD：覆盖在全屏世界之上。
+ *  上方：生命 / 攻防速 / 轮次与净化进度 / 灵囊 / 五行阵图
+ *  下方：浮动摇杆（左）、遁 + 范围技能（右下弧形）、五行所属（右侧竖列）
+ */
 export class HUDScene extends Phaser.Scene {
   private joystick!: VirtualJoystick;
-  private playerHpBar!: Phaser.GameObjects.Graphics;
-  private playerHpText!: Phaser.GameObjects.Text;
-  private playerMaxHp: number = 100;
-  private playerHp: number = 100;
-  /** AOE 技能按钮的 CD 覆盖层和文字 */
-  private aoeSkillCdOverlays: Phaser.GameObjects.Graphics[] = [];
-  private aoeSkillCdTexts: Phaser.GameObjects.Text[] = [];
-  private buffArea!: Phaser.GameObjects.Container;
-  /** AOE 技能按钮区（buff 栏下方） */
-  private aoeSkillArea!: Phaser.GameObjects.Container;
-  /** 属性/技能/状态容器（装备变化时整体重建） */
-  private infoArea!: Phaser.GameObjects.Container;
-  private panelY: number = 0;
-  /** 五行直列按钮容器（持久显示，无需点击展开） */
-  private wuxingDirectContainer!: Phaser.GameObjects.Container;
-  /** 持久化弹窗（scene 级别对象，非 Container，避免 setVisible 不级联的问题） */
-  private popupBg!: Phaser.GameObjects.Graphics;
-  private popupTitle!: Phaser.GameObjects.Text;
-  private popupDesc!: Phaser.GameObjects.Text;
-  private popupHit!: Phaser.GameObjects.Rectangle;
-  /** 当前展示的 pill key，用于 toggle 判断 */
-  private popupKey: string = '';
-  /** 上一次 buff 数据（供合并弹框使用） */
+
+  // 生命
+  private hpBar!: Phaser.GameObjects.Graphics;
+  private hpText!: Phaser.GameObjects.Text;
+  private hp: number = 1;
+  private maxHp: number = 1;
+  private hpLag: number = 1;
+
+  // 顶部信息
+  private statObjs: Phaser.GameObjects.GameObject[] = [];
+  private buffText!: Phaser.GameObjects.Text;
+  private roundText!: Phaser.GameObjects.Text;
+  private timerText!: Phaser.GameObjects.Text;
+  private progressBar!: Phaser.GameObjects.Graphics;
+  private progressText!: Phaser.GameObjects.Text;
+  private minimap!: Phaser.GameObjects.Graphics;
+  private bossBar!: Phaser.GameObjects.Graphics;
+  private bossText!: Phaser.GameObjects.Text;
+  private comboText!: Phaser.GameObjects.Text;
+  private bagBadge!: Phaser.GameObjects.Text;
+  private lastCombo: number = 0;
+  private lastFragments: number = 0;
+
+  // 操控
+  private dashBtn!: RoundButton;
+  private skillBtns: RoundButton[] = [];
+  private wuxingObjs: Phaser.GameObjects.GameObject[] = [];
+  private swapMarks: Array<{ type: EquipmentType; wuxing: Wuxing; mark: Phaser.GameObjects.Text; owned: boolean; equipped: boolean }> = [];
+  private lastThreat: Wuxing | null = null;
+  private controlObjs: Phaser.GameObjects.GameObject[] = [];
+
+  // 横幅
+  private bannerObjs: Phaser.GameObjects.GameObject[] = [];
+
+  // 灵囊开启时的下方效果面板
+  private infoPanelObjs: Phaser.GameObjects.GameObject[] = [];
+  private infoPanelText!: Phaser.GameObjects.Text;
+  private inventoryOpen: boolean = false;
   private lastBuffs: { label: string; color: number; description?: string }[] = [];
-  /** 游戏失败覆盖是否已显示（防止重复创建） */
-  private gameOverShown: boolean = false;
+
+  private overlayShown: boolean = false;
+  private lastState?: WorldState;
 
   constructor() {
     super({ key: 'HUDScene' });
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
-    const panelH = height * LAYOUT.PANEL_RATIO;
-    const panelY = height * LAYOUT.VIEWPORT_RATIO;
-    this.panelY = panelY;
-    this.gameOverShown = false;
+    const { width, height } = this.scale;
+    Fx.ensureTextures(this);
+    this.makeShadeTexture();
 
-    // 操控面板背景
-    const panelBg = this.add.graphics();
-    panelBg.fillStyle(0x0d1117, 0.92);
-    panelBg.fillRect(0, panelY, width, panelH);
-    panelBg.lineStyle(1, 0xd4a853, 0.3);
-    panelBg.lineBetween(0, panelY, width, panelY);
-    // 摇杆区分割线：上方 45% 为内容展示区，下方 55% 为摇杆区
-    panelBg.lineStyle(1, 0xd4a853, 0.18);
-    panelBg.lineBetween(0, panelY + panelH * 0.45, width, panelY + panelH * 0.45);
+    this.statObjs = [];
+    this.skillBtns = [];
+    this.wuxingObjs = [];
+    this.controlObjs = [];
+    this.bannerObjs = [];
+    this.infoPanelObjs = [];
+    this.inventoryOpen = false;
+    this.overlayShown = false;
+    this.lastCombo = 0;
+    this.lastFragments = gameState.getFragmentCount();
+    this.lastBuffs = [];
+    this.lastState = undefined;
+    this.lastThreat = null;
+    this.swapMarks = [];
 
-    // ── 左上：HP 条 + 属性/技能/状态 ──
-    this.createPlayerHpBar(width, panelY);
+    // 上下压暗，保证文字与按钮可读
+    this.add.image(width / 2, 0, 'hud_shade').setOrigin(0.5, 0).setDisplaySize(width, 260).setFlipY(true).setAlpha(0.85);
+    this.add.image(width / 2, height, 'hud_shade').setOrigin(0.5, 1).setDisplaySize(width, 560).setAlpha(0.8);
 
-    // 属性/技能/状态展示区（HP条正下方，留出足够间距）
-    this.infoArea = this.add.container(0, panelY + 62).setDepth(51);
-    this.refreshInfoArea();
+    this.createTopBar(width);
+    this.createControls(width, height);
+    this.createInfoPanel(width, height);
 
-    // Buff 展示区（技能/状态条下方）
-    this.buffArea = this.add.container(0, panelY + 144).setDepth(51);
+    this.refreshStats();
+    this.refreshSkillButtons();
+    this.refreshWuxingButtons();
 
-    // AOE 技能按钮区：位于分割线（上方45%区域最底部）正上方
-    const dividerY = panelY + panelH * 0.45;
-    const aoeSkillH = Math.ceil(uiConfig.btnSizeLarge / 2);
-    this.aoeSkillArea = this.add.container(0, dividerY - aoeSkillH).setDepth(51);
-    this.refreshAoeSkillButtons();
-
-    // ── 右上：灵囊 + 五行直列按钮 ──
-    this.createInventoryButton(width, panelY);
-    this.createWuxingDirectButtons(width, panelY);
-
-    // ── 虚拟摇杆：面板下方 55% 全宽可用 ──
-    const joystickMinY = panelY + panelH * 0.45; // 分割线以下全给摇杆
-    const joystickX = width * 0.5;
-    const joystickY = panelY + panelH * 0.725;   // 摇杆基点在摇杆区中央
-    this.joystick = new VirtualJoystick(this, joystickX, joystickY, Math.min(width * 0.14, 90), joystickMinY);
-
-    // ── 事件监听 ──
+    // ── 事件 ──
     eventBus.on(GameEvent.PLAYER_HP_CHANGE, (hp: unknown, maxHp: unknown) => {
-      this.playerHp = hp as number;
-      this.playerMaxHp = maxHp as number;
-      this.updateHpBar();
+      this.hp = hp as number;
+      this.maxHp = maxHp as number;
+      this.drawHp();
     });
-
-    eventBus.on(GameEvent.SKILL_CD_UPDATE, (timers: unknown, maxTimers: unknown) => {
-      this.updateAoeSkillCds(timers as number[], maxTimers as number[]);
-    });
-
+    eventBus.on(GameEvent.WORLD_STATE, (s: unknown) => this.onWorldState(s as WorldState));
     eventBus.on(GameEvent.BUFF_UPDATE, (buffs: unknown) => {
-      this.renderBuffs(buffs as { label: string; color: number }[]);
+      this.lastBuffs = (buffs as typeof this.lastBuffs) ?? [];
+      this.buffText.setText(this.lastBuffs.map(b => b.label).join('  '));
     });
-
-    eventBus.on(GameEvent.WUXING_CHOSEN, () => {
-      this.refreshWuxingDirectButtons();
-    });
-
+    eventBus.on(GameEvent.INVENTORY_CHANGED, () => this.refreshWuxingButtons());
     eventBus.on(GameEvent.STATS_CHANGED, () => {
-      this.refreshInfoArea();
-      this.refreshAoeSkillButtons();
-      this.refreshWuxingDirectButtons();
+      this.refreshStats();
+      this.refreshSkillButtons();
+      this.refreshWuxingButtons();
+      if (this.inventoryOpen) this.infoPanelText.setText(this.buildEffectsText());
+    });
+    eventBus.on(GameEvent.BANNER, (b: unknown) => {
+      const d = b as { title: string; sub?: string; color?: number };
+      this.showBanner(d.title, d.sub ?? '', d.color ?? GOLD);
+    });
+    eventBus.on(GameEvent.VICTORY, (d: unknown) => {
+      const v = d as { round: number; kills: number };
+      this.showVictoryOverlay(v.round, v.kills);
     });
 
-    eventBus.on(GameEvent.GAME_OVER, () => {
-      this.showGameOverOverlay();
-    });
+    this.input.keyboard?.on('keydown-I', () => this.toggleInventory());
+    this.input.keyboard?.on('keydown-B', () => this.toggleInventory());
 
-    this.createPersistentInfoPopup();
-
-    // 技能/状态/Buff 区域单击 → 显示合并弹框（场景级监听，可靠触控）
-    const maxWuxing = 5;
-    const invBtnSize = uiConfig.btnSizeLarge;         // 灵囊 80px
-    const wuxingBtnSize = uiConfig.btnSizePrimary;    // 五行 40px
-    const wuxingGap = 8;
-    const wuxingRightMargin = 12;
-    // 留出灵囊 + 最多5个五行按钮的空间
-    const effectsX2 = width - wuxingRightMargin - invBtnSize - wuxingGap - maxWuxing * (wuxingBtnSize + wuxingGap);
-    const effectsY1 = panelY + 22;
-    const effectsY2 = panelY + 178;
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x <= effectsX2 &&
-          pointer.y >= effectsY1 && pointer.y <= effectsY2) {
-        this.toggleInfoPopup('当前效果', this.buildAllEffectsText(), 0xd4a853);
-      }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.joystick?.destroy();
+      inputManager.reset();
     });
   }
 
-  /** 测试方法B（保留供内部调用，无入口） */
-  private createPlayerHpBar(width: number, panelY: number): void {
-    // HP 条宽度：左侧 60%，右侧留给赋能+灵囊按钮
-    const barW = width * 0.50;
-    const barH = 16;
-    const barX = width * 0.05;
-    const barY = panelY + 10;
-
-    const bg = this.add.graphics();
-    bg.fillStyle(0x1c2128, 1);
-    bg.fillRoundedRect(barX - 2, barY - 2, barW + 4, barH + 4, 4);
-
-    this.playerHpBar = this.add.graphics();
-    this.updateHpBar();
-
-    this.playerHpText = this.add.text(barX + barW / 2, barY + barH / 2, '', {
-      fontFamily: 'monospace',
-      fontSize: `${uiConfig.fontSM}px`,
-      color: '#ffffff',
-    }).setOrigin(0.5).setDepth(10);
-
+  private makeShadeTexture(): void {
+    if (this.textures.exists('hud_shade')) return;
+    const c = this.textures.createCanvas('hud_shade', 8, 256)!;
+    const ctx = c.getContext();
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.6, 'rgba(0,0,0,0.5)');
+    g.addColorStop(1, 'rgba(0,0,0,0.9)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 8, 256);
+    c.refresh();
   }
 
-  private updateHpBar(): void {
-    if (!this.playerHpBar) return;
-    const { width, height } = this.cameras.main;
-    const panelY = height * LAYOUT.VIEWPORT_RATIO;
-    const barW = width * 0.50;
-    const barH = 16;
-    const barX = width * 0.05;
-    const barY = panelY + 10;
+  // ───────────────────────── 顶部 ─────────────────────────
 
-    const pct = Math.max(0, this.playerHp / this.playerMaxHp);
+  private readonly HP = { x: 24, y: 30, w: 310, h: 32 };
+
+  private createTopBar(width: number): void {
+    const { x, y, w, h } = this.HP;
+
+    // 生命条
+    const frame = this.add.graphics();
+    frame.fillStyle(0x05080b, 0.85);
+    frame.fillRoundedRect(x - 4, y - 4, w + 8, h + 8, 8);
+    frame.lineStyle(2, GOLD, 0.7);
+    frame.strokeRoundedRect(x - 4, y - 4, w + 8, h + 8, 8);
+    this.hpBar = this.add.graphics();
+    this.hpText = this.add.text(x + w / 2, y + h / 2, '', {
+      fontFamily: SERIF, fontSize: '22px', fontStyle: 'bold', color: '#ffffff',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5);
+
+    this.buffText = this.add.text(x, y + 104, '', {
+      fontFamily: SANS, fontSize: '18px', color: hex(GOLD), stroke: '#000000', strokeThickness: 3,
+    });
+
+    // 轮次 + 计时
+    const cx = 478;
+    this.roundText = this.add.text(cx, 28, '', {
+      fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: hex(GOLD),
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5, 0);
+    this.timerText = this.add.text(cx, 64, '', {
+      fontFamily: SERIF, fontSize: '24px', color: '#c9d1d9', stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5, 0);
+    this.progressBar = this.add.graphics();
+    this.progressText = this.add.text(cx, 113, '', {
+      fontFamily: SANS, fontSize: '17px', color: '#ffffff', stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5);
+
+    // 灵囊按钮
+    const bx = width - 66, by = 72, bs = 88;
+    const bag = this.add.graphics();
+    const drawBag = (down: boolean) => {
+      bag.clear();
+      bag.fillStyle(0x0d1117, down ? 0.6 : 0.88);
+      bag.fillRoundedRect(bx - bs / 2, by - bs / 2, bs, bs, 14);
+      bag.lineStyle(2.5, GOLD, down ? 1 : 0.75);
+      bag.strokeRoundedRect(bx - bs / 2, by - bs / 2, bs, bs, 14);
+    };
+    drawBag(false);
+    this.add.text(bx, by - 2, '灵囊', {
+      fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: hex(GOLD),
+    }).setOrigin(0.5);
+    this.bagBadge = this.add.text(bx + bs / 2 - 4, by - bs / 2 + 2, '满', {
+      fontFamily: SANS, fontSize: '18px', fontStyle: 'bold', color: '#ffffff',
+      backgroundColor: '#c94a4a', padding: { x: 5, y: 2 },
+    }).setOrigin(1, 0).setVisible(false);
+    const bagHit = this.add.rectangle(bx, by, bs + 12, bs + 12, 0xffffff, 0).setInteractive();
+    bagHit.on('pointerdown', () => drawBag(true));
+    bagHit.on('pointerout', () => drawBag(false));
+    bagHit.on('pointerup', () => { drawBag(false); this.toggleInventory(); });
+
+    // 五行阵图（小地图）
+    this.minimap = this.add.graphics();
+
+    // 病变核心血条
+    this.bossBar = this.add.graphics();
+    this.bossText = this.add.text(width / 2, 262, '', {
+      fontFamily: SERIF, fontSize: '22px', fontStyle: 'bold', color: '#e9d5ff',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setVisible(false);
+
+    // 连斩
+    this.comboText = this.add.text(36, 330, '', {
+      fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066',
+      stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0, 0.5).setVisible(false);
+  }
+
+  private drawHp(): void {
+    const { x, y, w, h } = this.HP;
+    const pct = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
+    if (pct > this.hpLag) this.hpLag = pct;
     const color = pct > 0.5 ? 0x3fb950 : pct > 0.25 ? 0xeab308 : 0xf85149;
-
-    this.playerHpBar.clear();
-    this.playerHpBar.fillStyle(color, 1);
-    this.playerHpBar.fillRoundedRect(barX, barY, barW * pct, barH, 3);
-
-    if (this.playerHpText) {
-      this.playerHpText.setText(`${this.playerHp}/${this.playerMaxHp}`);
+    const g = this.hpBar;
+    g.clear();
+    // 受击残影
+    if (this.hpLag > pct) {
+      g.fillStyle(0xffffff, 0.75);
+      g.fillRoundedRect(x, y, Math.max(8, w * this.hpLag), h, 5);
     }
+    if (pct > 0) {
+      g.fillStyle(color, 1);
+      g.fillRoundedRect(x, y, Math.max(8, w * pct), h, 5);
+      g.fillStyle(0xffffff, 0.22);
+      g.fillRoundedRect(x, y, Math.max(8, w * pct), h * 0.4, 5);
+    }
+    this.hpText.setText(`${Math.ceil(this.hp)} / ${this.maxHp}`);
   }
 
-  /** 重建 AOE 技能按钮区（buff 栏下方，所有已拥有的范围技能） */
-  private refreshAoeSkillButtons(): void {
-    this.aoeSkillArea.removeAll(true);
-    this.aoeSkillCdOverlays = [];
-    this.aoeSkillCdTexts = [];
-
-    const playerState = gameState.getPlayerState();
-    const allSkills = getAllEquipmentSkills(playerState.equipment);
-    const activeSkills = allSkills.filter(s => AOE_SKILL_IDS.has(s.id));
-    if (activeSkills.length === 0) return;
-
-    const { width } = this.cameras.main;
-    const totalSkills = activeSkills.length;
-    const btnW = uiConfig.btnSizeLarge;
-    const btnH = uiConfig.btnSizeLarge;
-    const gap = 8;
-    const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
-    let x = (width - totalRowW) / 2;
-
-    activeSkills.forEach((skill, i) => {
-      const meta = AOE_SKILL_META[skill.id] ?? { label: skill.name, color: 0x8b949e };
-      const color = meta.color;
-      // 关键：用 const 捕获当前迭代的 x 值，避免闭包引用变量污染
-      const btnX = x;
-
-      const bg = this.add.graphics();
-      bg.fillStyle(color, 0.2);
-      bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-      bg.lineStyle(1.5, color, 0.8);
-      bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-      this.aoeSkillArea.add(bg);
-
-      const lbl = this.add.text(btnX + btnW / 2, 0, meta.label, {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${uiConfig.fontSM}px`,
-        color: '#ffffff',
-      }).setOrigin(0.5);
-      this.aoeSkillArea.add(lbl);
-
-      const cdOverlay = this.add.graphics();
-      this.aoeSkillArea.add(cdOverlay);
-      this.aoeSkillCdOverlays.push(cdOverlay);
-
-      const cdText = this.add.text(btnX + btnW / 2, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: `${uiConfig.fontXS}px`,
-        color: '#ffff88',
-      }).setOrigin(0.5).setAlpha(0);
-      this.aoeSkillArea.add(cdText);
-      this.aoeSkillCdTexts.push(cdText);
-
-      const hit = this.add.rectangle(btnX + btnW / 2, 0, btnW, btnH, 0xffffff, 0).setInteractive();
-      this.aoeSkillArea.add(hit);
-
-      const idx = i;
-      hit.on('pointerdown', () => {
-        bg.clear();
-        bg.fillStyle(color, 0.55);
-        bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-        bg.lineStyle(1.5, color, 1);
-        bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-        inputManager.pressSkill(idx);
-      });
-      hit.on('pointerup', () => {
-        bg.clear();
-        bg.fillStyle(color, 0.2);
-        bg.fillRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-        bg.lineStyle(1.5, color, 0.8);
-        bg.strokeRoundedRect(btnX, -btnH / 2, btnW, btnH, 4);
-        inputManager.releaseSkill(idx);
-      });
-      hit.on('pointerout', () => inputManager.releaseSkill(idx));
-
-      x += btnW + gap;
-    });
-  }
-
-  private updateAoeSkillCds(timers: number[], maxTimers: number[]): void {
-    timers.forEach((t, i) => {
-      const overlay = this.aoeSkillCdOverlays[i];
-      const cdText = this.aoeSkillCdTexts[i];
-      if (!overlay || !cdText) return;
-      overlay.clear();
-      if (t > 0 && maxTimers[i] > 0) {
-        const pct = t / maxTimers[i];
-        const { width } = this.cameras.main;
-        const totalSkills = this.aoeSkillCdOverlays.length;
-        const btnW = uiConfig.btnSizeLarge;
-        const btnH = uiConfig.btnSizeLarge;
-        const gap = 8;
-        const totalRowW = totalSkills * btnW + (totalSkills - 1) * gap;
-        const x = (width - totalRowW) / 2 + i * (btnW + gap);
-        overlay.fillStyle(0x000000, 0.6 * pct);
-        overlay.fillRoundedRect(x, -btnH / 2, btnW, btnH, 4);
-        cdText.setText(`${(t / 1000).toFixed(1)}s`).setAlpha(1);
-      } else {
-        cdText.setText('').setAlpha(0);
-      }
-    });
-  }
-
-  /** 灵囊按钮：右上角 */
-  private createInventoryButton(width: number, panelY: number): void {
-    const btnSize = uiConfig.btnSizeLarge;
-    const rightMargin = 12;
-    const btnX = width - rightMargin - btnSize / 2;
-    const btnY = panelY + 10 + btnSize / 2; // 顶部对齐 HP 条
-
-    const container = this.add.container(btnX, btnY).setDepth(52);
-    const bg = this.add.graphics();
-    const drawBg = (active: boolean) => {
-      bg.clear();
-      bg.fillStyle(0x1c2128, active ? 0.5 : 0.9);
-      bg.fillRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-      bg.lineStyle(1.5, 0xd4a853, active ? 1 : 0.6);
-      bg.strokeRoundedRect(-btnSize / 2, -btnSize / 2, btnSize, btnSize, 8);
-    };
-    drawBg(false);
-    const icon = this.add.text(0, -4, '灵', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: `${uiConfig.fontLG}px`, color: '#d4a853',
-    }).setOrigin(0.5);
-    const sub = this.add.text(0, uiConfig.fontLG * 0.7, '囊', {
-      fontFamily: '"Noto Serif SC", serif', fontSize: `${uiConfig.fontSM}px`, color: '#8b949e',
-    }).setOrigin(0.5);
-    container.add([bg, icon, sub]);
-    container.setSize(btnSize, btnSize).setInteractive();
-    container.on('pointerdown', () => drawBg(true));
-    container.on('pointerout', () => drawBg(false));
-    container.on('pointerup', () => {
-      drawBg(false);
-      this.openInventory();
-    });
-  }
-
-  /** 创建五行直列按钮区（持久显示，无需展开，点击即选） */
-  private createWuxingDirectButtons(width: number, panelY: number): void {
-    void width; void panelY;
-    this.wuxingDirectContainer = this.add.container(0, 0).setDepth(52);
-    this.refreshWuxingDirectButtons();
-  }
-
-  /** 刷新五行直列按钮（装备变化 / 五行选择变化时调用） */
-  private refreshWuxingDirectButtons(): void {
-    this.wuxingDirectContainer.removeAll(true);
-    const { width } = this.cameras.main;
-
-    const available = gameState.getAvailableWuxing();
-    if (available.length === 0) return;
-
-    const currentWuxing = gameState.getChosenWuxing();
-    const rightMargin = 12;
-    const invBtnSize = uiConfig.btnSizeLarge; // 灵囊按钮宽度
-    const gap = 8;
-    const pillW = uiConfig.btnSizePrimary;
-    const pillH = uiConfig.btnSizePrimary;
-    // 基准 Y：与灵囊按钮同行（panelY + 10 + invBtnSize/2）
-    const cy = this.panelY + 10 + invBtnSize / 2;
-    // 从右向左排列：灵囊在最右，五行按钮依次向左
-    available.forEach((wx, i) => {
-      const isSelected = wx === currentWuxing;
-      const color = WUXING_COLORS[wx];
-      const cx = width - rightMargin - invBtnSize - gap - i * (pillW + gap) - pillW / 2;
-
-      const bg = this.add.graphics();
-      bg.fillStyle(color, isSelected ? 0.35 : 0.08);
-      bg.fillRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 8);
-      bg.lineStyle(isSelected ? 2 : 1, color, isSelected ? 0.9 : 0.35);
-      bg.strokeRoundedRect(cx - pillW / 2, cy - pillH / 2, pillW, pillH, 8);
-      this.wuxingDirectContainer.add(bg);
-
-      const lbl = this.add.text(cx, cy, WUXING_NAMES[wx], {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: `${isSelected ? uiConfig.fontMD : uiConfig.fontSM}px`,
-        color: '#' + color.toString(16).padStart(6, '0'),
-      }).setOrigin(0.5);
-      this.wuxingDirectContainer.add(lbl);
-
-      const hit = this.add.rectangle(cx, cy, pillW, pillH, 0, 0).setInteractive();
-      hit.on('pointerup', () => {
-        const next = isSelected ? undefined : wx;
-        gameState.setChosenWuxing(next);
-        eventBus.emit(GameEvent.WUXING_CHOSEN, next);
-      });
-      this.wuxingDirectContainer.add(hit);
-    });
-  }
-
-  /** 重建属性/技能/状态显示（装备/五行变化时调用） */
-  private refreshInfoArea(): void {
-    this.infoArea.removeAll(true);
-    const { width } = this.cameras.main;
-    const eq = {
-      weapon: gameState.getWeapon(),
-      armor: gameState.getArmor(),
-      treasures: gameState.getTreasures(),
-    };
-
-    // ── 第一行：ATK / DEF / SPD 彩色徽章 ──
-    const atk = gameState.getTotalAttack();
-    const def = gameState.getTotalDefense();
-    const spd = gameState.getTotalSpeed();
-    const statDefs = [
-      { label: '攻', value: atk, color: 0xe56040 },
-      { label: '防', value: def, color: 0x58a6ff },
-      { label: '速', value: spd, color: 0x3fb950 },
+  /** 攻 / 防 / 速 徽章 + 碎片 */
+  private refreshStats(): void {
+    this.statObjs.forEach(o => o.destroy());
+    this.statObjs = [];
+    const defs = [
+      { label: '攻', value: gameState.getTotalAttack(), color: 0xff7a5c },
+      { label: '防', value: gameState.getTotalDefense(), color: 0x58a6ff },
+      { label: '速', value: gameState.getTotalSpeed(), color: 0x4ade80 },
+      { label: '碎片', value: gameState.getFragmentCount(), color: GOLD },
     ];
-    const badgeH = Math.round(uiConfig.fontLG * 1.5);
-    const badgePadX = 12;
-    let bx = width * 0.05;
-    for (const stat of statDefs) {
-      const colorHex = '#' + stat.color.toString(16).padStart(6, '0');
-      const tmp = this.add.text(0, -9999, `${stat.label} ${stat.value}`, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontLG}px`,
-      });
-      const badgeW = tmp.width + badgePadX * 2;
-      tmp.destroy();
+    let x = this.HP.x - 4;
+    const y = this.HP.y + this.HP.h + 30;
+    defs.forEach(d => {
+      const t = this.add.text(0, y, `${d.label} ${d.value}`, {
+        fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', color: hex(d.color),
+      }).setOrigin(0, 0.5);
+      const bw = t.width + 18;
       const bg = this.add.graphics();
-      bg.fillStyle(stat.color, 0.12);
-      bg.fillRoundedRect(bx, -badgeH / 2, badgeW, badgeH, 6);
-      bg.lineStyle(1.5, stat.color, 0.65);
-      bg.strokeRoundedRect(bx, -badgeH / 2, badgeW, badgeH, 6);
-      this.infoArea.add(bg);
-      this.infoArea.add(this.add.text(bx + badgeW / 2, 0, `${stat.label} ${stat.value}`, {
-        fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: `${uiConfig.fontLG}px`,
-        color: colorHex,
-        fontStyle: 'bold',
-      }).setOrigin(0.5));
-      bx += badgeW + 8;
-    }
-
-    // ── 第二行（+30px）：技能 pills ──
-    const skills = getAllEquipmentSkills(eq);
-    let x = width * 0.05;
-    const row2Y = 30;
-    const pillH = 18;
-    const pillMaxX = width * 0.58;
-    if (skills.length === 0) {
-      this.infoArea.add(this.add.text(x, row2Y, '技能: 暂无', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
-      }).setOrigin(0, 0.5));
-    } else {
-      this.infoArea.add(this.add.text(x, row2Y, '技能', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
-      }).setOrigin(0, 0.5));
-      x += 30;
-      for (const skill of skills) {
-        const label = `${skill.name} Lv${skill.level}`;
-        const desc = skill.description;
-        const pill = this.createInfoPill(x, row2Y, label, 0xd4a853, pillH, desc);
-        this.infoArea.add(pill);
-        x += pill.width + 5;
-        if (x > pillMaxX) break;
-      }
-    }
-
-    // ── 第三行（+56px）：五行被动状态 pills ──
-    const statuses = getWuxingPassiveStatuses(eq);
-    x = width * 0.05;
-    const row3Y = 56;
-    if (statuses.length > 0) {
-      this.infoArea.add(this.add.text(x, row3Y, '状态', {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: '#484f58',
-      }).setOrigin(0, 0.5));
-      x += 30;
-      for (const st of statuses) {
-        const def2 = STATUS_DEFINITIONS[st.type];
-        if (!def2) continue;
-        const label = `${def2.name} Lv${st.level}`;
-        const color = parseInt(def2.color.replace('#', ''), 16);
-        const pill = this.createInfoPill(x, row3Y, label, color, pillH, def2.description ?? '');
-        this.infoArea.add(pill);
-        x += pill.width + 5;
-        if (x > pillMaxX) break;
-      }
-    }
-  }
-
-  private createInfoPill(
-    x: number, y: number, label: string, color: number, pillH: number, description: string = ''
-  ): Phaser.GameObjects.Text {
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const txt = this.add.text(x, y, label, {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontXS}px`,
-      color: colorHex,
-      backgroundColor: colorHex + '22',
-      padding: { x: 5, y: 3 },
-    }).setOrigin(0, 0.5);
-    void pillH;
-
-    void description; // 描述由区域级合并弹框统一展示
-    return txt;
-  }
-
-  private renderBuffs(buffs: { label: string; color: number; description?: string }[]): void {
-    this.lastBuffs = buffs ? [...buffs] : [];
-    this.buffArea.removeAll(true);
-    if (!buffs || buffs.length === 0) return;
-
-    const pillH = 22;
-    const gap = 6;
-    let x = this.cameras.main.width * 0.05;
-
-    buffs.forEach(({ label, color, description }) => {
-      const colorHex = '#' + color.toString(16).padStart(6, '0');
-      const tmp = this.add.text(0, -9999, label, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: colorHex,
-      });
-      const pillW = tmp.width + 16;
-      tmp.destroy();
-
-      const bg = this.add.graphics();
-      bg.fillStyle(color, 0.18);
-      bg.fillRoundedRect(x, -pillH / 2, pillW, pillH, 4);
-      bg.lineStyle(1, color, 0.7);
-      bg.strokeRoundedRect(x, -pillH / 2, pillW, pillH, 4);
-      this.buffArea.add(bg);
-
-      const lbl = this.add.text(x + pillW / 2, 0, label, {
-        fontFamily: '"Noto Sans SC", sans-serif', fontSize: `${uiConfig.fontXS}px`, color: colorHex,
-      }).setOrigin(0.5);
-      this.buffArea.add(lbl);
-
-      x += pillW + gap;
+      bg.fillStyle(0x05080b, 0.8);
+      bg.fillRoundedRect(x, y - 16, bw, 32, 8);
+      bg.lineStyle(1.5, d.color, 0.6);
+      bg.strokeRoundedRect(x, y - 16, bw, 32, 8);
+      t.setX(x + 9).setDepth(1);
+      this.statObjs.push(bg, t);
+      x += bw + 8;
     });
   }
 
-  /** 创建持久弹窗（scene 级别，非 Container，避免 Phaser 3.80 Container.setVisible 不级联输入的问题） */
-  private createPersistentInfoPopup(): void {
-    const { width } = this.cameras.main;
-    const popupW = width * 0.90;
+  // ───────────────────────── 操控区 ─────────────────────────
 
-    this.popupBg = this.add.graphics().setDepth(300).setVisible(false);
+  private createControls(width: number, height: number): void {
+    // 浮动摇杆：屏幕下半任意空白处按下即可
+    this.joystick = new VirtualJoystick(this, 176, height - 250, 92, height * 0.40);
 
-    this.popupTitle = this.add.text(width / 2, 0, '', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.font2XL}px`,
-      color: '#d4a853',
-    }).setOrigin(0.5, 0).setDepth(300).setVisible(false);
-
-    const popupLeft = width / 2 - popupW / 2 + 12;
-    this.popupDesc = this.add.text(popupLeft, 0, '', {
-      fontFamily: '"Noto Sans SC", sans-serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#c9d1d9',
-      wordWrap: { width: popupW - 24 },
-      align: 'left',
-    }).setOrigin(0, 0).setDepth(300).setVisible(false);
-
-    // hit rect 初始时不可见且不可交互，显示后再激活
-    this.popupHit = this.add.rectangle(width / 2, 0, popupW, 80, 0xffffff, 0)
-      .setDepth(300).setVisible(false);
-    this.popupHit.on('pointerup', () => this.hideInfoPopup());
+    // 遁
+    this.dashBtn = this.makeRoundButton(width - 128, height - 200, 70, '遁', 0x9fd8ff, 46, () => inputManager.pressDash());
+    this.controlObjs.push(...this.dashBtn.objs);
   }
 
-  private showInfoPopup(title: string, description: string, color: number): void {
-    const { width } = this.cameras.main;
-    const colorHex = '#' + color.toString(16).padStart(6, '0');
-    const popupW = width * 0.90;
-    const popupX = width / 2;
+  /** 圆形按钮（带冷却扇形遮罩） */
+  private makeRoundButton(
+    x: number, y: number, r: number, label: string, color: number, fontSize: number,
+    onPress: () => void,
+  ): RoundButton {
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0b1016, 0.72);
+    bg.fillCircle(x, y, r);
+    bg.fillStyle(color, 0.16);
+    bg.fillCircle(x, y, r);
+    bg.lineStyle(3, color, 0.9);
+    bg.strokeCircle(x, y, r);
+    bg.lineStyle(1.5, color, 0.35);
+    bg.strokeCircle(x, y, r - 8);
 
-    // 先设置文字内容（以便测量高度）
-    this.popupTitle.setText(title).setColor(colorHex).setX(popupX);
-    this.popupDesc.setWordWrapWidth(popupW - 24);
-    this.popupDesc.setText(description).setX(popupX - popupW / 2 + 12);
+    const glow = this.add.image(x, y, 'fx_glow').setTint(color).setBlendMode(Phaser.BlendModes.ADD)
+      .setScale((r * 2.6) / 256).setAlpha(0);
+    const txt = this.add.text(x, y, label, {
+      fontFamily: SERIF, fontSize: `${fontSize}px`, fontStyle: 'bold', color: '#ffffff',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5);
+    const cd = this.add.graphics();
+    const cdText = this.add.text(x, y, '', {
+      fontFamily: SERIF, fontSize: `${Math.round(fontSize * 0.8)}px`, fontStyle: 'bold', color: '#ffe066',
+      stroke: '#000000', strokeThickness: 5,
+    }).setOrigin(0.5).setVisible(false);
 
-    const totalH = Math.max(100, 44 + this.popupDesc.height + 20);
-    const topY = Math.max(10, this.panelY - 8 - totalH);
+    const hit = this.add.circle(x, y, r + 8, 0xffffff, 0).setInteractive();
+    hit.on('pointerdown', () => {
+      onPress();
+      glow.setAlpha(0.9);
+      this.tweens.add({ targets: glow, alpha: 0, duration: 260 });
+    });
 
-    // 绘制背景
-    this.popupBg.clear();
-    this.popupBg.fillStyle(0x1c2128, 0.97);
-    this.popupBg.fillRoundedRect(popupX - popupW / 2, topY, popupW, totalH, 8);
-    this.popupBg.lineStyle(1.5, color, 0.8);
-    this.popupBg.strokeRoundedRect(popupX - popupW / 2, topY, popupW, totalH, 8);
+    return { x, y, r, cd, cdText, label: txt, objs: [bg, glow, txt, cd, cdText, hit] };
+  }
 
-    // 定位文字
-    this.popupTitle.setY(topY + 10);
-    this.popupDesc.setY(topY + uiConfig.font2XL + 16);
+  private setCooldown(btn: RoundButton, remainMs: number, pct: number): void {
+    btn.cd.clear();
+    // 冷却中淡化技能名，让倒计时数字清晰
+    btn.label.setAlpha(pct > 0.001 ? 0.18 : 1);
+    if (pct > 0.001) {
+      btn.cd.fillStyle(0x000000, 0.66);
+      btn.cd.slice(btn.x, btn.y, btn.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct, false);
+      btn.cd.fillPath();
+      btn.cdText.setText(remainMs >= 1000 ? `${Math.ceil(remainMs / 1000)}` : (remainMs / 1000).toFixed(1));
+      btn.cdText.setVisible(btn.cd.visible);
+    } else {
+      btn.cdText.setVisible(false);
+    }
+  }
 
-    // 定位并激活 hit rect
-    this.popupHit.setPosition(popupX, topY + totalH / 2).setSize(popupW, totalH);
-    if (!this.popupHit.input) {
-      this.popupHit.setInteractive({ useHandCursor: true });
+  /** 范围技能：围绕「遁」按钮的弧形排布 */
+  private refreshSkillButtons(): void {
+    this.skillBtns.forEach(b => b.objs.forEach(o => o.destroy()));
+    this.skillBtns = [];
+    const ids = getEquippedAoeSkills();
+    const cx = this.dashBtn.x, cy = this.dashBtn.y;
+    ids.forEach((id, i) => {
+      const cfg = AOE_CONFIG[id];
+      if (!cfg) return;
+      const a = Phaser.Math.DegToRad(170 + i * 31);
+      const btn = this.makeRoundButton(
+        cx + Math.cos(a) * 178, cy + Math.sin(a) * 178, 44,
+        cfg.label.slice(0, 2), WX_TINT[cfg.wuxing], 26,
+        () => inputManager.pressSkill(i),
+      );
+      this.skillBtns.push(btn);
+    });
+    this.applyControlVisibility();
+  }
+
+  /**
+   * 五行快换：两列按钮，左列换武器（进攻五行），右列换防具（防守五行）。
+   * 灵囊里有该五行的器物才可点；当前穿戴的高亮。
+   * 按钮角标提示面对眼前妖异的最佳选择：武器「克」、防具「御」，被克的防具标「危」。
+   */
+  private refreshWuxingButtons(): void {
+    this.wuxingObjs.forEach(o => o.destroy());
+    this.wuxingObjs = [];
+    this.swapMarks = [];
+    const { width, height } = this.scale;
+    const eq = gameState.getPlayerState().equipment;
+    const inv = gameState.getInventory();
+    const r = 31;
+    const stepY = 70;
+    const baseY = height - 478;
+
+    const columns: Array<{ type: EquipmentType.WEAPON | EquipmentType.ARMOR; x: number; title: string; current?: Wuxing }> = [
+      { type: EquipmentType.WEAPON, x: width - 124, title: '兵', current: eq.weapon?.wuxing },
+      { type: EquipmentType.ARMOR, x: width - 50, title: '甲', current: eq.armor?.wuxing },
+    ];
+
+    columns.forEach(col => {
+      const head = this.add.text(col.x, baseY - WX_ORDER.length * stepY + 22, col.title, {
+        fontFamily: SERIF, fontSize: '22px', fontStyle: 'bold', color: hex(GOLD),
+        stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5);
+      this.wuxingObjs.push(head);
+
+      WX_ORDER.forEach((wx, i) => {
+        const y = baseY - (WX_ORDER.length - 1 - i) * stepY;
+        const color = WX_TINT[wx];
+        const equipped = col.current === wx;
+        const owned = equipped || inv.some(it => it?.type === col.type && it.wuxing === wx);
+
+        const g = this.add.graphics();
+        g.fillStyle(0x0b1016, owned ? 0.8 : 0.45);
+        g.fillCircle(col.x, y, r);
+        if (owned) {
+          g.fillStyle(color, equipped ? 0.6 : 0.14);
+          g.fillCircle(col.x, y, r);
+        }
+        g.lineStyle(equipped ? 4 : 2, color, equipped ? 1 : owned ? 0.7 : 0.18);
+        g.strokeCircle(col.x, y, r);
+        const t = this.add.text(col.x, y, WUXING_NAMES[wx], {
+          fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold',
+          color: equipped ? '#ffffff' : hex(color), stroke: '#000000', strokeThickness: 4,
+        }).setOrigin(0.5).setAlpha(owned ? 1 : 0.22);
+
+        // 角标（克 / 御 / 危），由 updateSwapMarks 控制显隐
+        const mark = this.add.text(col.x - r + 2, y - r + 2, '', {
+          fontFamily: SANS, fontSize: '18px', fontStyle: 'bold', color: '#0d1117',
+          backgroundColor: '#ffe066', padding: { x: 4, y: 1 },
+        }).setOrigin(0.5).setVisible(false);
+        this.swapMarks.push({ type: col.type, wuxing: wx, mark, owned, equipped });
+
+        this.wuxingObjs.push(g, t, mark);
+        if (owned && !equipped) {
+          const hit = this.add.circle(col.x, y, r + 3, 0xffffff, 0).setInteractive();
+          hit.on('pointerdown', () => {
+            const item = quickSwapGear(col.type, wx);
+            if (!item) return;
+            eventBus.emit(GameEvent.STATS_CHANGED);
+            eventBus.emit(GameEvent.GEAR_SWAPPED, { item });
+          });
+          this.wuxingObjs.push(hit);
+        }
+      });
+    });
+
+    this.applyControlVisibility();
+    this.updateSwapMarks(this.lastState?.threat ?? null);
+  }
+
+  /** 按眼前妖异的五行刷新角标 */
+  private updateSwapMarks(threat: Wuxing | null): void {
+    const show = !this.inventoryOpen && !this.overlayShown;
+    const atkBest = threat ? bestAttackAgainst(threat) : null;
+    const defBest = threat ? bestDefenseAgainst(threat) : null;
+    this.swapMarks.forEach(m => {
+      let label = '';
+      let bg = '#ffe066';
+      if (threat) {
+        if (m.type === EquipmentType.WEAPON) {
+          if (m.wuxing === atkBest && m.owned) label = '克';
+        } else {
+          if (m.wuxing === defBest && m.owned) { label = '御'; bg = '#7dd3fc'; }
+          // 正穿着被眼前妖异所克的防具：危险
+          else if (m.equipped && relationOf(threat, m.wuxing) === 'ke') { label = '危'; bg = '#ff5a5a'; }
+        }
+      }
+      if (label) m.mark.setText(label).setBackgroundColor(bg);
+      m.mark.setVisible(show && label !== '');
+    });
+  }
+
+  private applyControlVisibility(): void {
+    const v = !this.inventoryOpen && !this.overlayShown;
+    const set = (o: Phaser.GameObjects.GameObject) => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(v);
+    this.controlObjs.forEach(set);
+    this.skillBtns.forEach(b => b.objs.forEach(set));
+    this.wuxingObjs.forEach(set);
+    this.joystick?.setEnabled(v);
+    if (v && this.lastState) this.updateCooldowns(this.lastState);
+    this.updateSwapMarks(v ? (this.lastState?.threat ?? null) : null);
+  }
+
+  // ───────────────────────── 世界状态刷新 ─────────────────────────
+
+  private onWorldState(s: WorldState): void {
+    this.lastState = s;
+    const { width } = this.scale;
+
+    // 生命条残影缓慢追上
+    const pct = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
+    if (this.hpLag > pct) {
+      this.hpLag = Math.max(pct, this.hpLag - 0.03);
+      this.drawHp();
     }
 
-    // 全部显示
-    this.popupBg.setVisible(true);
-    this.popupTitle.setVisible(true);
-    this.popupDesc.setVisible(true);
-    this.popupHit.setVisible(true);
+    // 轮次 / 计时 / 净化进度
+    const g = this.progressBar;
+    g.clear();
+    if (s.round <= 0) {
+      this.roundText.setText('');
+      this.timerText.setText('');
+      this.progressText.setText('');
+    } else if (s.phase === 'rest') {
+      this.roundText.setText(`第 ${s.round} 轮`).setColor('#4ade80');
+      this.timerText.setText(`调息 ${s.secsLeft}s`).setColor('#4ade80');
+      this.progressText.setText('');
+    } else {
+      const boss = isBossRound(s.round);
+      this.roundText.setText(`第 ${s.round} 轮`).setColor(boss ? '#c084fc' : hex(GOLD));
+      const tc = s.secsLeft <= 10 ? '#f85149' : s.secsLeft <= 25 ? '#eab308' : '#c9d1d9';
+      this.timerText.setText(`${s.secsLeft}s`).setColor(tc);
+      const bw = 230, bh = 22, bx = 478 - bw / 2, by = 102;
+      g.fillStyle(0x05080b, 0.85);
+      g.fillRoundedRect(bx - 2, by - 2, bw + 4, bh + 4, 6);
+      if (!s.boss) {
+        const p = s.quota > 0 ? Phaser.Math.Clamp(s.kills / s.quota, 0, 1) : 0;
+        if (p > 0) {
+          g.fillStyle(GOLD, 0.95);
+          g.fillRoundedRect(bx, by, Math.max(8, bw * p), bh, 5);
+        }
+        this.progressText.setText(`净化 ${Math.min(s.kills, s.quota)} / ${s.quota}`);
+      } else {
+        g.fillStyle(0xc084fc, 0.5);
+        g.fillRoundedRect(bx, by, bw, bh, 5);
+        this.progressText.setText('击溃病变核心');
+      }
+      g.lineStyle(1.5, GOLD, 0.6);
+      g.strokeRoundedRect(bx - 2, by - 2, bw + 4, bh + 4, 6);
+    }
 
-    this.popupKey = title;
+    // 病变核心血条
+    const bb = this.bossBar;
+    bb.clear();
+    if (s.boss) {
+      const bw = 520, bh = 20, bx = (width - bw) / 2, by = 284;
+      const p = Phaser.Math.Clamp(s.boss.hp / s.boss.maxHp, 0, 1);
+      bb.fillStyle(0x05080b, 0.9);
+      bb.fillRoundedRect(bx - 3, by - 3, bw + 6, bh + 6, 6);
+      bb.fillStyle(0xc084fc, 1);
+      if (p > 0) bb.fillRoundedRect(bx, by, Math.max(8, bw * p), bh, 4);
+      bb.lineStyle(2, 0xe9d5ff, 0.8);
+      bb.strokeRoundedRect(bx - 3, by - 3, bw + 6, bh + 6, 6);
+      this.bossText.setText(`${WUXING_NAMES[s.boss.wuxing]} · ${s.boss.name}`).setVisible(true);
+    } else {
+      this.bossText.setVisible(false);
+    }
+
+    // 连斩
+    if (s.combo >= 2) {
+      this.comboText.setText(`连斩 ×${s.combo}`).setVisible(true);
+      this.comboText.setColor(s.combo >= 8 ? '#ff7a3c' : s.combo >= 3 ? '#ffe066' : '#ffffff');
+      if (s.combo > this.lastCombo) {
+        this.comboText.setScale(1.35);
+        this.tweens.add({ targets: this.comboText, scale: 1, duration: 160, ease: 'Quad.easeOut' });
+      }
+    } else {
+      this.comboText.setVisible(false);
+    }
+    this.lastCombo = s.combo;
+
+    this.bagBadge.setVisible(s.bagFull);
+    if (s.fragments !== this.lastFragments) {
+      this.lastFragments = s.fragments;
+      this.refreshStats();
+    }
+    if (s.threat !== this.lastThreat) {
+      this.lastThreat = s.threat;
+      this.updateSwapMarks(s.threat);
+    }
+    this.drawMinimap(s);
+    this.updateCooldowns(s);
   }
 
-  /** 构建"当前所有效果"合并文本 */
-  private buildAllEffectsText(): string {
-    const eq = {
-      weapon: gameState.getWeapon(),
-      armor: gameState.getArmor(),
-      treasures: gameState.getTreasures(),
-    };
+  private updateCooldowns(s: WorldState): void {
+    if (this.inventoryOpen || this.overlayShown) return;
+    this.setCooldown(this.dashBtn, s.dashPct * 3000, s.dashPct);
+    this.skillBtns.forEach((btn, i) => {
+      const t = s.skillTimers[i] ?? 0;
+      const m = s.skillMax[i] ?? 1;
+      this.setCooldown(btn, t, m > 0 ? t / m : 0);
+    });
+  }
+
+  /** 五行阵图：五个阵眼的妖异数量 + 残魂位置 */
+  private drawMinimap(s: WorldState): void {
+    const g = this.minimap;
+    g.clear();
+    const cx = this.scale.width - 66, cy = 196, R = 58;
+    g.fillStyle(0x05080b, 0.72);
+    g.fillCircle(cx, cy, R);
+    g.lineStyle(2, GOLD, 0.55);
+    g.strokeCircle(cx, cy, R);
+    const k = (R * 2 * 0.86) / WORLD_SIZE;
+    const mx = (wx: number) => cx + (wx - WORLD_CENTER) * k;
+    const my = (wy: number) => cy + (wy - WORLD_CENTER) * k;
+
+    ZONES.forEach((z, i) => {
+      const n = s.zones[i] ?? 0;
+      const zx = mx(z.x), zy = my(z.y);
+      if (n > 0) {
+        g.fillStyle(WX_TINT[z.wuxing], 0.95);
+        g.fillCircle(zx, zy, 5 + Math.min(6, n * 0.7));
+      } else {
+        g.lineStyle(1.5, WX_TINT[z.wuxing], 0.4);
+        g.strokeCircle(zx, zy, 5);
+      }
+      if (i === s.bossZone) {
+        g.lineStyle(2.5, 0xc084fc, 1);
+        g.strokeCircle(zx, zy, 14);
+      }
+    });
+    // 残魂
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(cx + (s.px - 0.5) * R * 2 * 0.86, cy + (s.py - 0.5) * R * 2 * 0.86, 4);
+  }
+
+  // ───────────────────────── 横幅 ─────────────────────────
+
+  private showBanner(title: string, sub: string, color: number): void {
+    this.bannerObjs.forEach(o => o.destroy());
+    this.bannerObjs = [];
+    const { width, height } = this.scale;
+    const y = height * 0.25;
+
+    const band = this.add.graphics();
+    band.fillStyle(0x000000, 0.55);
+    band.fillRect(0, y - 62, width, 132);
+    band.lineStyle(2, color, 0.8);
+    band.lineBetween(0, y - 62, width, y - 62);
+    band.lineBetween(0, y + 70, width, y + 70);
+    const t = this.add.text(width / 2, y - 18, title, {
+      fontFamily: SERIF, fontSize: '50px', fontStyle: 'bold', color: hex(color),
+      stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5);
+    const st = this.add.text(width / 2, y + 36, sub, {
+      fontFamily: SERIF, fontSize: '24px', color: '#f0e6d3', stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5);
+    const objs = [band, t, st];
+    this.bannerObjs = objs;
+    objs.forEach(o => o.setAlpha(0).setDepth(200));
+    t.setScale(1.3);
+    this.tweens.add({ targets: objs, alpha: 1, duration: 220 });
+    this.tweens.add({ targets: t, scale: 1, duration: 300, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: objs, alpha: 0, duration: 450, delay: 2300,
+      onComplete: () => {
+        objs.forEach(o => o.destroy());
+        if (this.bannerObjs === objs) this.bannerObjs = [];
+      },
+    });
+  }
+
+  // ───────────────────────── 灵囊 ─────────────────────────
+
+  private createInfoPanel(width: number, height: number): void {
+    const top = height * LAYOUT.VIEWPORT_RATIO;
+    const bg = this.add.rectangle(width / 2, (top + height) / 2, width, height - top, 0x0d1117, 0.97)
+      .setInteractive().setDepth(300);
+    const line = this.add.graphics().setDepth(301);
+    line.lineStyle(2, GOLD, 0.5);
+    line.lineBetween(0, top, width, top);
+    const title = this.add.text(28, top + 22, '当前效果', {
+      fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: hex(GOLD),
+    }).setDepth(301);
+    const hint = this.add.text(width - 28, top + 30, '灵囊开启时世界静止', {
+      fontFamily: SANS, fontSize: '18px', color: '#8b949e',
+    }).setOrigin(1, 0).setDepth(301);
+    this.infoPanelText = this.add.text(28, top + 76, '', {
+      fontFamily: SANS, fontSize: '21px', color: '#c9d1d9',
+      lineSpacing: 5,
+    }).setDepth(301);
+    this.infoPanelObjs = [bg, line, title, hint, this.infoPanelText];
+    this.infoPanelObjs.forEach(o => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(false));
+  }
+
+  private buildEffectsText(): string {
+    const eq = gameState.getPlayerState().equipment;
     const skills = getAllEquipmentSkills(eq);
-    const statuses = getWuxingPassiveStatuses(eq);
     const parts: string[] = [];
-
+    const wName = eq.weapon?.wuxing ? WUXING_NAMES[eq.weapon.wuxing] : '无';
+    const aName = eq.armor?.wuxing ? WUXING_NAMES[eq.armor.wuxing] : '无';
+    parts.push(
+      `进攻五行（武器）：${wName}　　防守五行（防具）：${aName}`,
+      '五行伤害：克 ×2.5　得生 ×1.5　同属 ×1　受制 ×0.5　泄 ×0.25',
+      '进攻用克制妖异的五行；防守穿妖异所「生」的五行最稳，被克则重创。',
+      '战斗中点右侧「兵 / 甲」两列即可快换灵囊里的器物。',
+    );
     if (skills.length > 0) {
-      parts.push('── 技能 ──');
-      for (const sk of skills) {
-        parts.push(`${sk.name} Lv${sk.level}\n  ${sk.description}`);
-      }
-    }
-    if (statuses.length > 0) {
-      if (parts.length) parts.push('');
-      parts.push('── 状态 ──');
-      for (const st of statuses) {
-        const def = STATUS_DEFINITIONS[st.type];
-        if (def) parts.push(`${def.name} Lv${st.level}\n  ${def.description ?? ''}`);
-      }
+      parts.push('', '── 技能 ──');
+      skills.forEach(sk => {
+        const aoe = AOE_CONFIG[sk.id];
+        parts.push(`${sk.name} Lv${sk.level}　${sk.description}${aoe ? `（冷却${aoe.cd / 1000}秒）` : ''}`);
+      });
     }
     if (this.lastBuffs.length > 0) {
-      if (parts.length) parts.push('');
-      parts.push('── Buff ──');
-      for (const b of this.lastBuffs) {
-        parts.push(b.description ?? b.label);
-      }
+      parts.push('', '── 增益 ──');
+      this.lastBuffs.forEach(b => parts.push(b.description ?? b.label));
     }
-    return parts.length > 0 ? parts.join('\n') : '暂无技能、状态或 Buff';
+    return wrapCJK(parts.join('\n'), this.scale.width - 76, `21px ${SANS}`);
   }
 
-  private hideInfoPopup(): void {
-    this.popupBg?.setVisible(false);
-    this.popupTitle?.setVisible(false);
-    this.popupDesc?.setVisible(false);
-    this.popupHit?.setVisible(false);
-    this.popupKey = '';
-  }
-
-  /** 切换信息弹窗（点击技能/状态/buff pill 时调用） */
-  private toggleInfoPopup(title: string, description: string, color: number): void {
-    if (this.popupBg?.visible && this.popupKey === title) {
-      this.hideInfoPopup();
-    } else {
-      this.showInfoPopup(title, description, color);
-    }
-  }
-
-  /** 游戏失败全屏覆盖（遮盖操控区域） */
-  showGameOverOverlay(): void {
-    if (this.gameOverShown) return;
-    this.gameOverShown = true;
-    const { width, height } = this.cameras.main;
-
-    // 全屏半透明遮罩（阻止所有操控交互）
-    const overlay = this.add.graphics().setDepth(1000);
-    overlay.fillStyle(0x000000, 0.78);
-    overlay.fillRect(0, 0, width, height);
-    overlay.setInteractive(
-      new Phaser.Geom.Rectangle(0, 0, width, height),
-      Phaser.Geom.Rectangle.Contains
-    );
-
-    this.add.text(width / 2, height * 0.3, '游戏失败', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.font3XL}px`,
-      color: '#f85149',
-      stroke: '#000000',
-      strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(1001);
-
-    this.add.text(width / 2, height * 0.3 + uiConfig.font3XL + 16, '残魂已消散于天地之间', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontLG}px`,
-      color: '#8b949e',
-    }).setOrigin(0.5).setDepth(1001);
-
-    const restartBtn = this.add.text(width / 2, height * 0.52, '【 点击重新开始 】', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: `${uiConfig.fontXL}px`,
-      color: '#d4a853',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5).setDepth(1001).setInteractive({ useHandCursor: true });
-
-    restartBtn.on('pointerover', () => restartBtn.setColor('#ffe88a'));
-    restartBtn.on('pointerout',  () => restartBtn.setColor('#d4a853'));
-    restartBtn.on('pointerup', () => {
-      gameState.reset();
-      this.scene.stop('InventoryScene');
-      // 重启 WorldScene（会自动 stop/launch HUDScene）
-      const worldScene = this.scene.get('WorldScene');
-      if (worldScene) {
-        worldScene.scene.restart();
-      }
-    });
-  }
-
-  private openInventory(): void {
+  private toggleInventory(): void {
+    if (this.overlayShown) return;
     if (this.scene.isActive('InventoryScene')) {
       this.scene.stop('InventoryScene');
     } else {
+      inputManager.reset();
       this.scene.launch('InventoryScene');
       this.scene.bringToTop('InventoryScene');
-      // HUDScene 始终保持最上层（弹框不被遮盖）
-      this.scene.bringToTop('HUDScene');
     }
   }
 
-  shutdown(): void {
-    this.joystick?.destroy();
-    this.popupKey = '';
+  update(): void {
+    // 灵囊可能由它自己的关闭按钮关掉，这里统一侦测开关状态
+    const open = this.scene.isActive('InventoryScene');
+    if (open === this.inventoryOpen) return;
+    this.inventoryOpen = open;
+    this.infoPanelObjs.forEach(o => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(open));
+    if (open) {
+      this.infoPanelText.setText(this.buildEffectsText());
+      this.dashBtn.cd.clear();
+      this.skillBtns.forEach(b => b.cd.clear());
+    } else {
+      this.refreshStats();
+    }
+    this.applyControlVisibility();
+  }
+
+  // ───────────────────────── 结算 ─────────────────────────
+
+  private makeOverlay(alpha: number): void {
+    const { width, height } = this.scale;
+    this.overlayShown = true;
+    this.applyControlVisibility();
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0)
+      .setInteractive().setDepth(1000);
+    this.tweens.add({ targets: overlay, fillAlpha: alpha, duration: 500 });
+  }
+
+  private makeTextButton(y: number, label: string, color: string, onClick: () => void): Phaser.GameObjects.Text {
+    const { width } = this.scale;
+    const btn = this.add.text(width / 2, y, `【 ${label} 】`, {
+      fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color,
+      stroke: '#000000', strokeThickness: 5, padding: { x: 30, y: 16 },
+    }).setOrigin(0.5).setDepth(1001).setInteractive({ useHandCursor: true }).setAlpha(0);
+    btn.on('pointerdown', () => btn.setScale(0.94));
+    btn.on('pointerout', () => btn.setScale(1));
+    btn.on('pointerup', () => { btn.setScale(1); onClick(); });
+    this.tweens.add({ targets: btn, alpha: 1, duration: 400, delay: 700 });
+    return btn;
+  }
+
+  private backToMenu(): void {
+    gameState.reset();
+    this.scene.stop('InventoryScene');
+    this.scene.stop('WorldScene');
+    this.scene.start('MenuScene');
+  }
+
+  /** 残魂消散 */
+  showGameOverOverlay(round: number = 1, kills: number = 0): void {
+    if (this.overlayShown) return;
+    const { width, height } = this.scale;
+    this.scene.stop('InventoryScene');
+    this.makeOverlay(0.8);
+
+    const objs: Phaser.GameObjects.Text[] = [];
+    objs.push(this.add.text(width / 2, height * 0.27, '残魂消散', {
+      fontFamily: SERIF, fontSize: '84px', fontStyle: 'bold', color: '#f85149',
+      stroke: '#000000', strokeThickness: 8,
+    }));
+    objs.push(this.add.text(width / 2, height * 0.27 + 100, '这一缕意志散入天地\n新的残魂终将诞生，背负同样的使命', {
+      fontFamily: SERIF, fontSize: '26px', color: '#8b949e', align: 'center', lineSpacing: 10,
+    }));
+    objs.push(this.add.text(width / 2, height * 0.27 + 230, `坚持至第 ${round} 轮　　净化妖异 ${kills}`, {
+      fontFamily: SERIF, fontSize: '30px', color: hex(GOLD),
+    }));
+    objs.forEach((o, i) => {
+      o.setOrigin(0.5).setDepth(1001).setAlpha(0);
+      this.tweens.add({ targets: o, alpha: 1, duration: 500, delay: 200 + i * 200 });
+    });
+
+    this.makeTextButton(height * 0.58, '再入轮回', hex(GOLD), () => {
+      gameState.reset();
+      this.scene.stop('InventoryScene');
+      this.scene.get('WorldScene').scene.restart();
+    });
+    this.makeTextButton(height * 0.58 + 110, '返回', '#8b949e', () => this.backToMenu());
+  }
+
+  /** 病变核心溃散：这片气脉已净化 */
+  private showVictoryOverlay(round: number, kills: number): void {
+    if (this.overlayShown) return;
+    const { width, height } = this.scale;
+    this.scene.stop('InventoryScene');
+    this.makeOverlay(0.72);
+
+    const created: Phaser.GameObjects.GameObject[] = [];
+    const title = this.add.text(width / 2, height * 0.24, '气脉净化', {
+      fontFamily: SERIF, fontSize: '84px', fontStyle: 'bold', color: '#ffe9a8',
+      stroke: '#000000', strokeThickness: 8,
+    });
+    const body = this.add.text(width / 2, height * 0.24 + 150,
+      '病变核心溃散，五行之力重归纯粹。\n\n但这不是终结——\n世界的其他角落，新的病变仍在滋生。', {
+        fontFamily: SERIF, fontSize: '27px', color: '#f0e6d3', align: 'center', lineSpacing: 10,
+      });
+    const stat = this.add.text(width / 2, height * 0.24 + 330, `第 ${round} 轮　　净化妖异 ${kills}`, {
+      fontFamily: SERIF, fontSize: '30px', color: hex(GOLD),
+    });
+    [title, body, stat].forEach((o, i) => {
+      o.setOrigin(0.5).setDepth(1001).setAlpha(0);
+      this.tweens.add({ targets: o, alpha: 1, duration: 500, delay: 200 + i * 250 });
+      created.push(o);
+    });
+
+    const cont = this.makeTextButton(height * 0.62, '继续净化', hex(GOLD), () => {
+      // 关闭结算层，带着现有器物前往更深处
+      this.children.list
+        .filter(o => (o as unknown as { depth: number }).depth >= 1000)
+        .forEach(o => o.destroy());
+      this.overlayShown = false;
+      this.applyControlVisibility();
+      eventBus.emit(GameEvent.CONTINUE_RUN);
+    });
+    const back = this.makeTextButton(height * 0.62 + 110, '回归本源', '#8b949e', () => this.backToMenu());
+    created.push(cont, back);
   }
 }

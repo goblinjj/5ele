@@ -5,11 +5,10 @@ export class InputManager {
   moveX: number = 0;
   moveY: number = 0;
 
-  /** 技能按钮状态：最多 5 个 AOE 技能 */
-  skillActive: boolean[] = [false, false, false, false, false];
-
-  /** 技能触发脉冲（每次按下只触发一次） */
-  skillJustPressed: boolean[] = [false, false, false, false, false];
+  /** 技能触发脉冲（每次按下只触发一次），最多 5 个范围技能 */
+  private skillJustPressed: boolean[] = [false, false, false, false, false];
+  /** 遁（闪避）触发脉冲 */
+  private dashJustPressed: boolean = false;
 
   static getInstance(): InputManager {
     if (!InputManager.instance) {
@@ -18,28 +17,41 @@ export class InputManager {
     return InputManager.instance;
   }
 
-  /** 由 HUDScene 每帧调用，更新移动向量 */
   setMove(x: number, y: number): void {
     this.moveX = x;
     this.moveY = y;
   }
 
-  /** 由 HUDScene 调用，技能按下 */
   pressSkill(index: number): void {
-    this.skillActive[index] = true;
     this.skillJustPressed[index] = true;
   }
 
-  /** 由 HUDScene 调用，技能松开 */
-  releaseSkill(index: number): void {
-    this.skillActive[index] = false;
+  /** 兼容旧接口 */
+  releaseSkill(_index: number): void { /* 脉冲式输入，无需处理松开 */ }
+
+  pressDash(): void {
+    this.dashJustPressed = true;
   }
 
-  /** 由 WorldScene 每帧调用，消费脉冲 */
+  /** 由战斗系统每帧调用，消费技能脉冲 */
   consumeJustPressed(): boolean[] {
-    const copy = [...this.skillJustPressed];
-    this.skillJustPressed = new Array(this.skillJustPressed.length).fill(false);
+    const copy = this.skillJustPressed;
+    this.skillJustPressed = [false, false, false, false, false];
     return copy;
+  }
+
+  consumeDash(): boolean {
+    const v = this.dashJustPressed;
+    this.dashJustPressed = false;
+    return v;
+  }
+
+  /** 清空全部输入（场景切换、打开灵囊时调用） */
+  reset(): void {
+    this.moveX = 0;
+    this.moveY = 0;
+    this.dashJustPressed = false;
+    this.skillJustPressed = [false, false, false, false, false];
   }
 }
 

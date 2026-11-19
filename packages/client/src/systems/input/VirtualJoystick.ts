@@ -1,95 +1,134 @@
 import Phaser from 'phaser';
 import { inputManager } from './InputManager.js';
 
+/**
+ * 浮动虚拟摇杆：
+ *  - 在允许区域内任意位置按下，摇杆底座就出现在手指处
+ *  - 手指拖出底座范围时底座跟随，随时可以反向
+ *  - 带死区与响应曲线：推到 60% 行程即满速
+ */
 export class VirtualJoystick {
   private scene: Phaser.Scene;
-  private baseX: number;
-  private baseY: number;
+  private restX: number;
+  private restY: number;
   private baseRadius: number;
-  private thumbRadius: number;
 
-  private base!: Phaser.GameObjects.Graphics;
-  private thumb!: Phaser.GameObjects.Graphics;
+  private base: Phaser.GameObjects.Graphics;
+  private thumb: Phaser.GameObjects.Graphics;
 
   private pointerId: number = -1;
-  /** 触摸响应的最小 Y 坐标（屏幕坐标），低于此值的触摸不触发摇杆 */
+  private originX: number = 0;
+  private originY: number = 0;
   private minY: number;
+  private enabled: boolean = true;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, baseRadius: number = 70, minY: number = 0) {
+  private onDown: (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => void;
+  private onMove: (p: Phaser.Input.Pointer) => void;
+  private onUp: (p: Phaser.Input.Pointer) => void;
+
+  constructor(scene: Phaser.Scene, restX: number, restY: number, baseRadius: number, minY: number) {
     this.scene = scene;
-    this.baseX = x;
-    this.baseY = y;
+    this.restX = restX;
+    this.restY = restY;
     this.baseRadius = baseRadius;
-    this.thumbRadius = baseRadius * 0.45;
     this.minY = minY;
 
-    this.createGraphics();
-    this.bindInput();
+    this.base = scene.add.graphics().setDepth(100);
+    this.base.fillStyle(0x0d1117, 0.35);
+    this.base.fillCircle(0, 0, baseRadius);
+    this.base.lineStyle(3, 0xd4a853, 0.55);
+    this.base.strokeCircle(0, 0, baseRadius);
+    this.base.lineStyle(1.5, 0xd4a853, 0.25);
+    this.base.strokeCircle(0, 0, baseRadius * 0.6);
+
+    const tr = baseRadius * 0.42;
+    this.thumb = scene.add.graphics().setDepth(101);
+    this.thumb.fillStyle(0xd4a853, 0.75);
+    this.thumb.fillCircle(0, 0, tr);
+    this.thumb.lineStyle(2, 0xfff3c4, 0.8);
+    this.thumb.strokeCircle(0, 0, tr);
+
+    this.toRest();
+
+    this.onDown = (pointer, over) => {
+      if (!this.enabled || this.pointerId !== -1) return;
+      if (over && over.length > 0) return;         // 按在按钮上
+      if (pointer.y < this.minY) return;
+      this.pointerId = pointer.id;
+      this.originX = pointer.x;
+      this.originY = pointer.y;
+      this.base.setPosition(this.originX, this.originY).setAlpha(1);
+      this.thumb.setPosition(this.originX, this.originY).setAlpha(1);
+      inputManager.setMove(0, 0);
+    };
+    this.onMove = (pointer) => {
+      if (pointer.id !== this.pointerId) return;
+      this.track(pointer.x, pointer.y);
+    };
+    this.onUp = (pointer) => {
+      if (pointer.id !== this.pointerId) return;
+      this.release();
+    };
+
+    scene.input.on('pointerdown', this.onDown);
+    scene.input.on('pointermove', this.onMove);
+    scene.input.on('pointerup', this.onUp);
+    scene.input.on('pointerupoutside', this.onUp);
   }
 
-  private createGraphics(): void {
-    this.base = this.scene.add.graphics();
-    this.base.fillStyle(0xffffff, 0.08);
-    this.base.fillCircle(0, 0, this.baseRadius);
-    this.base.lineStyle(2, 0xd4a853, 0.4);
-    this.base.strokeCircle(0, 0, this.baseRadius);
-    this.base.setPosition(this.baseX, this.baseY);
-    this.base.setScrollFactor(0);
-    this.base.setDepth(100);
-
-    this.thumb = this.scene.add.graphics();
-    this.thumb.fillStyle(0xd4a853, 0.5);
-    this.thumb.fillCircle(0, 0, this.thumbRadius);
-    this.thumb.setPosition(this.baseX, this.baseY);
-    this.thumb.setScrollFactor(0);
-    this.thumb.setDepth(101);
+  private toRest(): void {
+    this.base.setPosition(this.restX, this.restY).setAlpha(0.45);
+    this.thumb.setPosition(this.restX, this.restY).setAlpha(0.45);
   }
 
-  private bindInput(): void {
-    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // 只响应 minY 以下的区域（全宽），避免误触上方内容区
-      if (pointer.y >= this.minY && this.pointerId === -1) {
-        this.pointerId = pointer.id;
-        this.update(pointer.x, pointer.y);
-      }
-    });
+  private track(px: number, py: number): void {
+    let dx = px - this.originX;
+    let dy = py - this.originY;
+    let dist = Math.sqrt(dx * dx + dy * dy);
 
-    this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.id === this.pointerId) {
-        this.update(pointer.x, pointer.y);
-      }
-    });
+    // 手指拖出底座：底座跟着手指走，保证随时能反向
+    if (dist > this.baseRadius) {
+      const over = dist - this.baseRadius;
+      this.originX += (dx / dist) * over;
+      this.originY += (dy / dist) * over;
+      this.base.setPosition(this.originX, this.originY);
+      dx = px - this.originX;
+      dy = py - this.originY;
+      dist = this.baseRadius;
+    }
+    this.thumb.setPosition(px, py);
 
-    this.scene.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.id === this.pointerId) {
-        this.pointerId = -1;
-        this.thumb.setPosition(this.baseX, this.baseY);
-        inputManager.setMove(0, 0);
-      }
-    });
+    const raw = dist / this.baseRadius;
+    const DEAD = 0.14;
+    if (raw < DEAD) {
+      inputManager.setMove(0, 0);
+      return;
+    }
+    // 60% 行程即满速
+    const force = Math.min(1, (raw - DEAD) / (0.6 - DEAD));
+    inputManager.setMove((dx / dist) * force, (dy / dist) * force);
   }
 
-  private update(px: number, py: number): void {
-    const dx = px - this.baseX;
-    const dy = py - this.baseY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const clampedDist = Math.min(dist, this.baseRadius);
-    const angle = Math.atan2(dy, dx);
+  private release(): void {
+    this.pointerId = -1;
+    inputManager.setMove(0, 0);
+    this.toRest();
+  }
 
-    const thumbX = this.baseX + Math.cos(angle) * clampedDist;
-    const thumbY = this.baseY + Math.sin(angle) * clampedDist;
-    this.thumb.setPosition(thumbX, thumbY);
-
-    // 归一化向量（0~1）
-    const force = clampedDist / this.baseRadius;
-    inputManager.setMove(
-      Math.cos(angle) * force,
-      Math.sin(angle) * force
-    );
+  setEnabled(v: boolean): void {
+    this.enabled = v;
+    if (!v && this.pointerId !== -1) this.release();
+    this.base.setVisible(v);
+    this.thumb.setVisible(v);
   }
 
   destroy(): void {
+    this.scene.input.off('pointerdown', this.onDown);
+    this.scene.input.off('pointermove', this.onMove);
+    this.scene.input.off('pointerup', this.onUp);
+    this.scene.input.off('pointerupoutside', this.onUp);
     this.base.destroy();
     this.thumb.destroy();
+    inputManager.setMove(0, 0);
   }
 }

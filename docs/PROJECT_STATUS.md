@@ -1,236 +1,62 @@
-# 西游肉鸽策略游戏 - 项目状态
+# 无极 - 项目状态
 
-> 最后更新: 2026-02-01
+> 最后更新: 2026-11-19
+
+竖屏手机网页游戏（Phaser 3 + TypeScript + Vite，pnpm monorepo，部署于 Cloudflare Pages `5ele`）。
+世界观见 `docs/plans/2026-02-03-worldview-design.md`。
 
 ## 快速开始
 
 ```bash
-cd /Volumes/T7/work/fighting
 pnpm install
-pnpm build:shared
-pnpm dev:client
+pnpm build:shared     # 修改 packages/shared 后需要重新构建
+pnpm dev:client       # http://localhost:5173
 ```
 
-游戏运行在 `http://localhost:5173`
+开发模式下浏览器控制台可用 `window.game` 与 `window.__dev`（gameState / eventBus / inputManager）。
 
----
+## 当前玩法（实时动作）
 
-## 项目结构
+流程：`MenuScene → PrologueScene → WorldScene`（并行 `HUDScene`，灵囊为 `InventoryScene`）。
 
-```
-/Volumes/T7/work/fighting/
-├── package.json                 # 根项目配置 (pnpm workspaces)
-├── tsconfig.base.json           # 共享 TypeScript 配置
-├── docker-compose.yml           # Docker 开发环境
-├── docs/
-│   ├── plans/
-│   │   ├── 2026-01-31-西游肉鸽策略游戏设计.md
-│   │   └── 2026-01-31-技术实现规划.md
-│   └── PROJECT_STATUS.md        # 本文件
-│
-├── packages/
-│   ├── shared/                  # 共享类型和数据
-│   │   ├── src/
-│   │   │   ├── types/
-│   │   │   │   ├── Wuxing.ts    # 五行系统
-│   │   │   │   ├── Equipment.ts # 装备和技能定义
-│   │   │   │   ├── Player.ts    # 玩家状态
-│   │   │   │   └── Game.ts      # 游戏节点类型
-│   │   │   ├── data/
-│   │   │   │   └── EquipmentDatabase.ts  # 西游神器和配方
-│   │   │   └── index.ts
-│   │   └── package.json
-│   │
-│   ├── client/                  # Phaser 3 客户端
-│   │   ├── src/
-│   │   │   ├── config/
-│   │   │   │   └── gameConfig.ts
-│   │   │   ├── scenes/
-│   │   │   │   ├── BootScene.ts      # 启动场景
-│   │   │   │   ├── MenuScene.ts      # 主菜单
-│   │   │   │   ├── MapScene.ts       # 地图/节点选择
-│   │   │   │   ├── BattleScene.ts    # 战斗场景
-│   │   │   │   ├── RewardScene.ts    # 奖励三选一
-│   │   │   │   └── InventoryScene.ts # 背包管理
-│   │   │   ├── systems/
-│   │   │   │   ├── GameStateManager.ts  # 游戏状态管理
-│   │   │   │   └── SynthesisSystem.ts   # 合成系统
-│   │   │   └── main.ts
-│   │   ├── index.html
-│   │   ├── vite.config.ts
-│   │   └── package.json
-│   │
-│   └── server/                  # Colyseus 服务器 (待开发)
-│       ├── src/
-│       │   ├── rooms/
-│       │   │   └── GameRoom.ts
-│       │   └── index.ts
-│       └── package.json
-```
+- **地图**：3200×3200 的气脉区域。中央太极八卦阵是出生点，五个五行阵眼按相生顺序环列
+  （木→火→土→金→水），地面刻有相生环与相克星。配置在 `config/worldConfig.ts`。
+- **操控**：浮动摇杆（屏幕下方任意处按下）、「遁」闪避（带无敌帧，3 秒冷却）、
+  范围技能按钮、五行所属切换。键盘：WASD/方向键、空格=遁、1-5=技能、I=灵囊。
+- **战斗**：残魂自动向射程内最近的妖异发射气劲弹，移动中也能攻击。
+  核心是**五行快换**：进攻五行看武器、防守五行看防具，HUD 右侧「兵 / 甲」两列可一键换上灵囊里对应五行的器物，
+  角标提示眼前妖异的最佳选择（克 / 御 / 危）。
+  伤害 = 攻²/(攻+防) × 五行倍率（`worldConfig.WX_MULT`）：克 2.5 / 得生 1.5 / 同属 1 / 受制 0.5 / 泄 0.25。
+  器物数值仍是 1~10，进入战斗时攻防血统一 ×10（`STAT_SCALE`）。
+  解算在 `systems/combat/CombatResolver.ts`，并接入了属性技能（暴击、破甲、闪避、格挡、灼烧、减速、反震、蓄势、逢春等）。
+- **妖异**（`systems/world/EnemyAI.ts`）：每个阵眼滋生对应五行的妖异，打法各异，攻击都有蓄力预警：
+  獠牙怪（金）冲锋、青鳞蛇（水）高速撕咬并减速、赤狐精（火）远程狐火、
+  树妖（木）皮厚回血、石头精（土）大范围震地。另有「魁」（精英）与「病变核心」（每 5 轮的首领）。
+- **塑型**：妖异溃散后约三成留下五行能量（魁首与核心必掉），靠近自动吸附并凝练成同五行的器物（优先补齐该五行缺的武器 / 防具）。
+  成功率以防具五行为「我」：生（能量生我）75% / 比 60% / 耗（我克）50% / 泄（我生）40% / 克（克我）30%，
+  失败 +5% 补偿并得 1 碎片；灵囊（15 格）已满时能量直接归元回血。
+- **轮次**：每轮限时。击杀数达到净化目标 → 气脉暂稳（残敌消散、回复 15% 生命、6 秒调息）；
+  超时 → 五行失衡加剧（残敌狂暴并滞留到下一轮）。期间不断有游荡妖异侵袭。
+  第 5、10…轮击溃病变核心后可选择继续净化或回归本源。
 
----
+## 代码结构（client/src）
 
-## 开发进度
-
-### Phase 1: 基础框架 ✅ 完成
-
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| 项目结构初始化 | ✅ | pnpm workspaces monorepo |
-| Docker 环境配置 | ✅ | docker-compose.yml |
-| Phaser 3 客户端基础 | ✅ | Vite + TypeScript |
-| 五行系统 | ✅ | 相生相克逻辑 |
-| 装备系统 | ✅ | 武器/铠甲/法宝 |
-| 单人战斗系统 | ✅ | 自动战斗 + 五行伤害计算 |
-
-### Phase 2: 功能扩展 (当前进度)
-
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| 带技能的装备 | ✅ | 被动/触发/战斗开始型技能 |
-| 西游神器 | ✅ | 13件传说/史诗装备 |
-| 特殊合成配方 | ✅ | 8个配方 |
-| Boss掉落系统 | ✅ | 5个Boss掉落表 |
-| 战斗飘字效果 | ✅ | 伤害/治疗/技能/状态 |
-| 多人模式 | ❌ | 待开发 |
-| 陷害卡系统 | ❌ | 待开发 |
-| 81难剧情关卡 | ❌ | 待开发 |
-
----
-
-## 核心系统说明
-
-### 五行系统 (`Wuxing.ts`)
-
-```
-相克（伤害加成）: 金→木→土→水→火→金
-相生（治疗敌人）: 金→水→木→火→土→金
-```
-
-- 攻击五行由**武器**决定
-- 防御五行由**铠甲**决定
-- 同属性装备叠加五行等级
-
-### 技能系统 (`SkillTrigger`)
-
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| `PASSIVE` | 始终生效 | 攻击+2, 防御+2 |
-| `ON_HIT` | 攻击时触发 | 30%双倍伤害, 20%吸血 |
-| `ON_DEFEND` | 被攻击时触发 | 30%闪避, 25%缴械 |
-| `BATTLE_START` | 战斗开始时 | 回复2HP, 对敌造成2伤害 |
-
-### 西游神器 (13件)
-
-**武器 (Boss掉落):**
-- 如意金箍棒 - 传说/金 - 30%双倍伤害
-- 九齿钉耙 - 史诗/木 - 20%吸血
-- 降妖宝杖 - 史诗/水 - 被动+2防御
-
-**法宝 (合成/掉落):**
-- 紫金红葫芦 - 传说/火 - 开局伤害2
-- 芭蕉扇 - 史诗/火 - 火五行+2
-- 照妖镜 - 稀有/金 - 无视1点防御
-- 金刚琢 - 传说/金 - 25%缴械
-- 定海神珠 - 传说/水 - 水五行+3
-
-**铠甲 (合成/掉落):**
-- 锦斓袈裟 - 传说/土 - 开局回复2HP
-- 藕丝步云履 - 史诗/水 - 30%闪避
-- 紧箍咒 - 传说/土 - 攻击+4, 每回合自损1HP
-- 玄冰铠 - 史诗/水 - 20%冻结敌人
-- 炎龙剑 - 史诗/火 - 25%灼烧
-
-### 合成配方
-
-| 材料 | 产出 | 成功率 |
-|------|------|--------|
-| 2件史诗火法宝 | 紫金红葫芦 | 100% |
-| 2件火法宝 | 芭蕉扇 | 80% |
-| 2件金法宝 | 照妖镜 | 70% |
-| 2件史诗土铠甲 | 锦斓袈裟 | 100% |
-| 2件水铠甲 | 藕丝步云履 | 70% |
-| 火剑 + 火珠 | 炎龙剑 | 100% |
-| 水甲 + 水镜 | 玄冰铠 | 100% |
-
----
-
-## 游戏流程
-
-```
-主菜单 (MenuScene)
-    ↓
-地图选择 (MapScene) ←──────────────┐
-    ↓                              │
-节点类型:                          │
-  - 普通战斗 → BattleScene         │
-  - 精英战斗 → BattleScene         │
-  - 休整 → 回复HP                  │
-  - 随机事件 → 好/坏事件            │
-  - 西游奇遇 → 剧情 (待开发)        │
-    ↓                              │
-战斗胜利 → 奖励三选一 (RewardScene) │
-    ↓                              │
-背包管理 (InventoryScene, 按I打开)  │
-  - 装备                           │
-  - 合成                           │
-  - 吞噬                           │
-    ↓                              │
-下一轮 ────────────────────────────┘
-    ↓ (6轮后)
-最终Boss战 → 胜利/失败
-```
-
----
-
-## 待开发功能
-
-### Phase 3: 多人模式
-- Colyseus 房间同步
-- 2-4人在线对战
-- 最终Battle Royale式混战
-
-### Phase 4: 陷害卡系统
-- 战斗中随机触发干扰
-- 延迟揭示机制
-
-### Phase 5: 81难剧情
-- 西游记主题故事事件
-- 特殊关卡和Boss
-
-### Phase 6: 微信小游戏
-- 适配微信小游戏平台
-- 触控优化
-
----
-
-## 技术栈
-
-| 层级 | 技术 |
+| 路径 | 说明 |
 |------|------|
-| 客户端 | Phaser 3 + TypeScript + Vite |
-| 服务端 | Colyseus + Node.js |
-| 共享 | TypeScript 类型定义 |
-| 包管理 | pnpm workspaces |
-| 容器化 | Docker + Docker Compose |
+| `scenes/WorldScene.ts` | 世界主循环：操控、能量与塑型、轮次流程 |
+| `scenes/HUDScene.ts` | 全屏覆盖的战斗 HUD 与结算界面 |
+| `scenes/InventoryScene.ts` | 灵囊（穿戴 / 重组 / 归元），占屏幕上方 60% |
+| `systems/combat/` | `CombatSystem`（普攻弹道、技能、状态、受击）、`CombatResolver` |
+| `systems/world/` | `SpawnSystem`、`EnemyAI`、`EntityManager`、`WorldBackdrop`（程序化地表） |
+| `systems/fx/Fx.ts` | 程序化特效贴图、火花、冲击波、飘字对象池 |
+| `systems/input/` | `InputManager`、浮动 `VirtualJoystick` |
+| `config/worldConfig.ts` | 地图 / 阵眼 / 五行色 / 数值常量 |
 
----
+`packages/shared` 提供五行、装备、技能、掉落等规则数据。
 
-## 命令参考
+## 已知遗留
 
-```bash
-# 安装依赖
-pnpm install
-
-# 构建共享包
-pnpm build:shared
-
-# 启动客户端开发服务器
-pnpm dev:client
-
-# 启动服务器 (多人模式)
-pnpm dev:server
-
-# Docker 启动
-docker-compose up -d
-```
+- `MapScene` / `BattleScene` / `RewardScene` 是早期回合制玩法的代码，当前流程已不可达。
+- 五行被动（`wuxing.MD` 中的破金、生机、寒息等）只在回合制 `BattleEngine` 中实现，实时战斗尚未接入。
+- 数值（妖异成长、掉率、技能倍率）只经过自动脚本粗测，需要真机试玩后再调。
+- `packages/server`（Colyseus 多人）仍是骨架。

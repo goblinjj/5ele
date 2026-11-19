@@ -111,7 +111,7 @@ export const METAL_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.HANFENG,
     name: '寒锋',
-    description: '暴击时{value}%概率使目标减速1回合',
+    description: '暴击时{value}%概率使目标减速',
     wuxing: Wuxing.METAL,
     trigger: SkillTrigger.AFTER_ATTACK,
     values: [10, 15, 20, 25, 30, 36, 42, 48, 55, 65],
@@ -119,7 +119,7 @@ export const METAL_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.LIEKONGZHAN,
     name: '裂空斩',
-    description: '{value}%概率触发群攻，对所有敌人造成70%伤害',
+    description: '主动：斩击四周妖异，造成160%伤害，威力+{value}%',
     wuxing: Wuxing.METAL,
     trigger: SkillTrigger.AOE_ATTACK,
     values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
@@ -173,7 +173,7 @@ export const WATER_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.HANCHAO,
     name: '寒潮',
-    description: '{value}%概率触发群攻，对所有敌人造成50%伤害并减速',
+    description: '主动：寒气席卷四周，造成伤害并减速，威力+{value}%',
     wuxing: Wuxing.WATER,
     trigger: SkillTrigger.AOE_ATTACK,
     values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
@@ -195,7 +195,7 @@ export const WOOD_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.SHENGJI,
     name: '生机',
-    description: '每回合回复{value}%最大生命',
+    description: '每3秒回复{value}%最大生命',
     wuxing: Wuxing.WOOD,
     trigger: SkillTrigger.TURN_START,
     values: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
@@ -211,7 +211,7 @@ export const WOOD_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.FENGCHUN,
     name: '逢春',
-    description: '受到致命伤害时，{value}%概率保留1点生命（每场限1次）',
+    description: '受到致命伤害时，{value}%概率保留1点生命（每轮限1次）',
     wuxing: Wuxing.WOOD,
     trigger: SkillTrigger.ON_LOW_HP,
     values: [5, 8, 11, 14, 17, 21, 25, 29, 34, 40],
@@ -227,7 +227,7 @@ export const WOOD_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.JINGJI,
     name: '荆棘',
-    description: '{value}%概率触发群攻，对所有敌人造成50%伤害并吸取生命',
+    description: '主动：荆棘丛生，造成伤害并吸取30%生命，威力+{value}%',
     wuxing: Wuxing.WOOD,
     trigger: SkillTrigger.AOE_ATTACK,
     values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
@@ -281,7 +281,7 @@ export const FIRE_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.FENTIAN,
     name: '焚天',
-    description: '{value}%概率触发群攻，对所有敌人施加灼烧',
+    description: '主动：烈焰焚尽四周，造成伤害并灼烧，威力+{value}%',
     wuxing: Wuxing.FIRE,
     trigger: SkillTrigger.AOE_ATTACK,
     values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],
@@ -335,7 +335,7 @@ export const EARTH_SKILLS: AttributeSkillDef[] = [
   {
     id: AttributeSkillId.DILIE,
     name: '地裂',
-    description: '{value}%概率触发群攻，对所有敌人造成60%伤害（敌人越多伤害越高）',
+    description: '主动：震裂大地，造成伤害并震晕（妖异越多伤害越高），威力+{value}%',
     wuxing: Wuxing.EARTH,
     trigger: SkillTrigger.AOE_ATTACK,
     values: [6, 10, 14, 18, 24, 30, 36, 44, 52, 60],

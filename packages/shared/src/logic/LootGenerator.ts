@@ -251,3 +251,14 @@ function generateName(type: EquipmentType, wuxing: Wuxing, rarity: Rarity): stri
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+
+/**
+ * 以指定五行生成一件器物（沙盒模式塑型用：能量是什么五行，塑出的器物就是什么五行）
+ */
+export function generateWuxingEquipment(
+  wuxing: Wuxing,
+  round: number = 1,
+  highQuality: boolean = false
+): Equipment {
+  return generateRandomEquipment(highQuality, round, wuxing);
+}

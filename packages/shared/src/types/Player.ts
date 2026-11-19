@@ -10,7 +10,7 @@ export const BASE_PLAYER_HP = 10;
 /**
  * 背包容量
  */
-export const INVENTORY_SIZE = 10;
+export const INVENTORY_SIZE = 15;
 
 /**
  * 最大法宝数量
