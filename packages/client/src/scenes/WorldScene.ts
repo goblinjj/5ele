@@ -34,6 +34,7 @@ import {
   getRoundDuration, isBossRound, relationOf, STAT_SCALE,
 } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 
@@ -202,11 +203,12 @@ export class WorldScene extends Phaser.Scene {
     inputManager.reset();
     this.resetState();
 
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     // ---- 相机：全屏，残魂略偏上，给下方操控区留出视野 ----
+    // 画布按物理像素创建，相机用 zoom 把逻辑坐标映射上去（以中心缩放，跟随目标保持居中）
     const cam = this.cameras.main;
-    cam.setViewport(0, 0, width, height);
+    applyRenderScale(this, true);
     cam.setBounds(-260, -260, WORLD_SIZE + 520, WORLD_SIZE + 520);
     cam.setBackgroundColor('#020406');
     this.physics.world.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
@@ -214,7 +216,6 @@ export class WorldScene extends Phaser.Scene {
     // ---- 世界 ----
     this.fx = new Fx(this);
     this.backdrop = new WorldBackdrop(this);
-    this.createAtmosphere(width, height);
 
     // ---- 残魂 ----
     this.createPlayer();
@@ -284,26 +285,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   // ───────────────────────── 搭建 ─────────────────────────
-
-  /** 漂浮的灵气微尘 + 暗角 */
-  private createAtmosphere(width: number, height: number): void {
-    this.add.particles(0, 0, 'fx_dot', {
-      x: { min: 0, max: width },
-      y: { min: 0, max: height },
-      lifespan: 4200,
-      speedY: { min: -38, max: -10 },
-      speedX: { min: -14, max: 14 },
-      scale: { start: 0.55, end: 0 },
-      alpha: { start: 0.55, end: 0 },
-      tint: [0x9fd8ff, 0xd4a853, 0xffffff],
-      frequency: 170,
-      blendMode: Phaser.BlendModes.ADD,
-    }).setScrollFactor(0).setDepth(FX_DEPTH - 20);
-
-    this.add.image(width / 2, height / 2, 'fx_vignette')
-      .setDisplaySize(width * 1.25, height * 1.12)
-      .setScrollFactor(0).setDepth(FX_DEPTH + 60);
-  }
 
   private createPlayer(): void {
     const ps = gameState.getPlayerState();

@@ -4,6 +4,7 @@ import { gameState } from '../systems/GameStateManager.js';
 import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
 import { WX_ORDER, WX_TINT, SPIRIT_TINT } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", "STSong", serif';
 const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
@@ -33,7 +34,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
+    applyRenderScale(this);
     WorldBackdrop.ensureTextures(this);
     this.orbs = [];
     this.orbitAngle = 0;

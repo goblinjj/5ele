@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { uiConfig } from '../config/uiConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 /**
  * 序幕场景 - 显示游戏开场白
@@ -36,7 +37,8 @@ export class PrologueScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
+    applyRenderScale(this);
 
     this.createBackground();
     this.createSkipButton();
@@ -49,7 +51,7 @@ export class PrologueScene extends Phaser.Scene {
   }
 
   private createBackground(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     const bgGraphics = this.add.graphics();
     bgGraphics.fillStyle(this.colors.bgDark, 1);
@@ -66,7 +68,7 @@ export class PrologueScene extends Phaser.Scene {
   }
 
   private createSkipButton(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     this.skipButton = this.add.container(width * 0.88, height * 0.05);
 
@@ -102,7 +104,7 @@ export class PrologueScene extends Phaser.Scene {
   }
 
   private showAllLines(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     // 计算文字位置 - 居中显示
     const totalLines = this.textLines.length;
@@ -140,7 +142,7 @@ export class PrologueScene extends Phaser.Scene {
   }
 
   private showContinueHint(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     const hint = this.add.text(width / 2, height * 0.90, '— 点击继续 —', {
       fontFamily: '"Noto Sans SC", sans-serif',
@@ -167,7 +169,7 @@ export class PrologueScene extends Phaser.Scene {
 
   private startGame(): void {
     // 淡出所有文字
-    const { width, height } = this.cameras.main;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0);
 

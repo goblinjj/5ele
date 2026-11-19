@@ -14,6 +14,7 @@ import { Fx } from '../systems/fx/Fx.js';
 import { wrapCJK } from '../systems/fx/ItemIcon.js';
 import { ZONES, WORLD_SIZE, WORLD_CENTER, WX_TINT, WX_ORDER, isBossRound } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", serif';
 const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
@@ -107,7 +108,8 @@ export class HUDScene extends Phaser.Scene {
   }
 
   create(): void {
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
+    applyRenderScale(this);
     Fx.ensureTextures(this);
     this.makeShadeTexture();
 
@@ -123,6 +125,22 @@ export class HUDScene extends Phaser.Scene {
     this.lastFragments = gameState.getFragmentCount();
     this.lastBuffs = [];
     this.lastState = undefined;
+
+    // 屏幕空间的氛围层（画在世界之上、HUD 元素之下）：漂浮的灵气微尘 + 暗角
+    this.add.particles(0, 0, 'fx_dot', {
+      x: { min: 0, max: width },
+      y: { min: 0, max: height },
+      lifespan: 4200,
+      speedY: { min: -38, max: -10 },
+      speedX: { min: -14, max: 14 },
+      scale: { start: 0.55, end: 0 },
+      alpha: { start: 0.55, end: 0 },
+      tint: [0x9fd8ff, 0xd4a853, 0xffffff],
+      frequency: 170,
+      blendMode: Phaser.BlendModes.ADD,
+    }).setDepth(-6);
+    this.add.image(width / 2, height / 2, 'fx_vignette')
+      .setDisplaySize(width * 1.25, height * 1.12).setDepth(-5);
 
     // 上下压暗，保证文字与按钮可读
     this.add.image(width / 2, 0, 'hud_shade').setOrigin(0.5, 0).setDisplaySize(width, 260).setFlipY(true).setAlpha(0.85);
@@ -407,7 +425,7 @@ export class HUDScene extends Phaser.Scene {
   private refreshWuxingButtons(): void {
     this.wuxingObjs.forEach(o => o.destroy());
     this.wuxingObjs = [];
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     const eq = gameState.getPlayerState().equipment;
     const inv = gameState.getInventory();
     const r = 31;
@@ -477,7 +495,7 @@ export class HUDScene extends Phaser.Scene {
 
   private onWorldState(s: WorldState): void {
     this.lastState = s;
-    const { width } = this.scale;
+    const width = GAME_WIDTH;
 
     // 生命条残影缓慢追上
     const pct = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
@@ -575,7 +593,7 @@ export class HUDScene extends Phaser.Scene {
   private drawMinimap(s: WorldState): void {
     const g = this.minimap;
     g.clear();
-    const cx = this.scale.width - 66, cy = 196, R = 58;
+    const cx = GAME_WIDTH - 66, cy = 196, R = 58;
     g.fillStyle(0x05080b, 0.72);
     g.fillCircle(cx, cy, R);
     g.lineStyle(2, GOLD, 0.55);
@@ -609,7 +627,7 @@ export class HUDScene extends Phaser.Scene {
   private showBanner(title: string, sub: string, color: number): void {
     this.bannerObjs.forEach(o => o.destroy());
     this.bannerObjs = [];
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     const y = height * 0.25;
 
     const band = this.add.graphics();
@@ -688,7 +706,7 @@ export class HUDScene extends Phaser.Scene {
       parts.push('', '── 增益 ──');
       this.lastBuffs.forEach(b => parts.push(b.description ?? b.label));
     }
-    return wrapCJK(parts.join('\n'), this.scale.width - 76, `21px ${SANS}`);
+    return wrapCJK(parts.join('\n'), GAME_WIDTH - 76, `21px ${SANS}`);
   }
 
   private toggleInventory(): void {
@@ -722,7 +740,7 @@ export class HUDScene extends Phaser.Scene {
   // ───────────────────────── 结算 ─────────────────────────
 
   private makeOverlay(alpha: number): void {
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     this.overlayShown = true;
     this.applyControlVisibility();
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0)
@@ -731,7 +749,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   private makeTextButton(y: number, label: string, color: string, onClick: () => void): Phaser.GameObjects.Text {
-    const { width } = this.scale;
+    const width = GAME_WIDTH;
     const btn = this.add.text(width / 2, y, `【 ${label} 】`, {
       fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color,
       stroke: '#000000', strokeThickness: 5, padding: { x: 30, y: 16 },
@@ -753,7 +771,7 @@ export class HUDScene extends Phaser.Scene {
   /** 残魂消散 */
   showGameOverOverlay(round: number = 1, kills: number = 0): void {
     if (this.overlayShown) return;
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     this.scene.stop('InventoryScene');
     this.makeOverlay(0.8);
 
@@ -784,7 +802,7 @@ export class HUDScene extends Phaser.Scene {
   /** 病变核心溃散：这片气脉已净化 */
   private showVictoryOverlay(round: number, kills: number): void {
     if (this.overlayShown) return;
-    const { width, height } = this.scale;
+    const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     this.scene.stop('InventoryScene');
     this.makeOverlay(0.72);
 

@@ -1,11 +1,21 @@
 /// <reference types="vite/client" />
 import Phaser from 'phaser';
-import { gameConfig } from './config/gameConfig.js';
+import { gameConfig, GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE } from './config/gameConfig.js';
 import { uiConfig } from './config/uiConfig.js';
 import { gameState } from './systems/GameStateManager.js';
 import { eventBus, GameEvent } from './core/EventBus.js';
 import { inputManager } from './systems/input/InputManager.js';
 import { installAudioUnlock } from './systems/audio/Sfx.js';
+
+// 文字在自己的画布上栅格化后再贴到屏幕上；默认按 1 倍栅格化，放大后会发糊。
+// 这里把所有 this.add.text 的默认分辨率提到渲染倍率，保证文字锐利。
+Phaser.GameObjects.GameObjectFactory.prototype.text = function (
+  this: Phaser.GameObjects.GameObjectFactory,
+  x: number, y: number, text: string | string[], style?: Phaser.Types.GameObjects.Text.TextStyle,
+) {
+  const t = new Phaser.GameObjects.Text(this.scene, x, y, text, { resolution: RENDER_SCALE, ...(style ?? {}) });
+  return this.displayList.add(t) as Phaser.GameObjects.Text;
+};
 
 // 创建游戏实例
 const game = new Phaser.Game(gameConfig);
@@ -14,8 +24,8 @@ const game = new Phaser.Game(gameConfig);
 installAudioUnlock();
 
 // 监听游戏缩放变化，更新 UI 配置
-game.scale.on('resize', (gameSize: Phaser.Structs.Size) => {
-  uiConfig.init(gameSize.width, gameSize.height);
+game.scale.on('resize', () => {
+  uiConfig.init(GAME_WIDTH, GAME_HEIGHT);
 });
 
 // 监听窗口大小变化，触发游戏重新布局

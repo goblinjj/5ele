@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { inputManager } from './InputManager.js';
+import { RENDER_SCALE } from '../../config/gameConfig.js';
 
 /**
  * 浮动虚拟摇杆：
@@ -53,17 +54,17 @@ export class VirtualJoystick {
     this.onDown = (pointer, over) => {
       if (!this.enabled || this.pointerId !== -1) return;
       if (over && over.length > 0) return;         // 按在按钮上
-      if (pointer.y < this.minY) return;
+      if (pointer.y / RENDER_SCALE < this.minY) return;
       this.pointerId = pointer.id;
-      this.originX = pointer.x;
-      this.originY = pointer.y;
+      this.originX = pointer.x / RENDER_SCALE;
+      this.originY = pointer.y / RENDER_SCALE;
       this.base.setPosition(this.originX, this.originY).setAlpha(1);
       this.thumb.setPosition(this.originX, this.originY).setAlpha(1);
       inputManager.setMove(0, 0);
     };
     this.onMove = (pointer) => {
       if (pointer.id !== this.pointerId) return;
-      this.track(pointer.x, pointer.y);
+      this.track(pointer.x / RENDER_SCALE, pointer.y / RENDER_SCALE);
     };
     this.onUp = (pointer) => {
       if (pointer.id !== this.pointerId) return;

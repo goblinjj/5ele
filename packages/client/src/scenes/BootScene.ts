@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { uiConfig } from '../config/uiConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
 
 const PLAYER_ATLAS = 'player_spirit';
@@ -14,7 +15,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    uiConfig.init(this.cameras.main.width, this.cameras.main.height);
+    uiConfig.init(GAME_WIDTH, GAME_HEIGHT);
     if (import.meta.env.DEV) {
       (window as any).uiConfig = uiConfig;
     }

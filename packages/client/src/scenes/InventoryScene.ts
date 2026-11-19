@@ -17,6 +17,7 @@ import { eventBus, GameEvent } from '../core/EventBus.js';
 import { createItemIcon, slotHintGlyph, wrapCJK } from '../systems/fx/ItemIcon.js';
 import { WX_TINT } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 interface SlotInfo {
   type: 'inventory' | 'weapon' | 'armor' | 'treasure';
@@ -79,10 +80,17 @@ export class InventoryScene extends Phaser.Scene {
     super({ key: 'InventoryScene' });
   }
 
+  /** 灵囊占屏幕上方的逻辑尺寸 */
+  private get view(): { width: number; height: number } {
+    return { width: GAME_WIDTH, height: Math.floor(GAME_HEIGHT * LAYOUT.VIEWPORT_RATIO) };
+  }
+
   create(): void {
-    const { width, height: fullH } = this.cameras.main;
-    const vpH = Math.floor(fullH * LAYOUT.VIEWPORT_RATIO);
-    this.cameras.main.setViewport(0, 0, width, vpH);
+    const width = GAME_WIDTH;
+    const vpH = this.view.height;
+    // 视口以物理像素计，布局仍用逻辑坐标
+    applyRenderScale(this);
+    this.cameras.main.setViewport(0, 0, Math.round(width * RENDER_SCALE), Math.round(vpH * RENDER_SCALE));
 
     this.slotGeometries = [];
     this.isDragging = false;
@@ -119,7 +127,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createHeader(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     const headerHeight = height * 0.08;
 
     // 标题背景
@@ -140,7 +148,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createEquipmentAndDetailLayout(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     const headerH = height * 0.08;
     const pad = 8;
 
@@ -396,7 +404,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createInventorySection(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     const pad = 8;
     // 使用实例变量（由 createEquipmentAndDetailLayout 设置），避免重复计算
     const sectionY = this.detailPanelY + this.detailPanelH + pad;
@@ -514,15 +522,15 @@ export class InventoryScene extends Phaser.Scene {
     this.closeContextMenu();
     // 记录拖拽起点
     this.dragSourceSlot = slotInfo;
-    this.dragStart = { x: pointer.x, y: pointer.y };
+    this.dragStart = { x: (pointer.x / RENDER_SCALE), y: (pointer.y / RENDER_SCALE) };
     this.isDragging = false;
   }
 
   private onGlobalPointerMove(pointer: Phaser.Input.Pointer): void {
     if (!this.dragSourceSlot) return;
 
-    const dx = pointer.x - this.dragStart.x;
-    const dy = pointer.y - this.dragStart.y;
+    const dx = (pointer.x / RENDER_SCALE) - this.dragStart.x;
+    const dy = (pointer.y / RENDER_SCALE) - this.dragStart.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (!this.isDragging && dist > 12) {
@@ -532,7 +540,7 @@ export class InventoryScene extends Phaser.Scene {
     }
 
     if (this.isDragging && this.dragContainer) {
-      this.dragContainer.setPosition(pointer.x, pointer.y);
+      this.dragContainer.setPosition((pointer.x / RENDER_SCALE), (pointer.y / RENDER_SCALE));
     }
   }
 
@@ -540,7 +548,7 @@ export class InventoryScene extends Phaser.Scene {
     if (!this.dragSourceSlot) return;
 
     if (this.isDragging) {
-      const dropSlot = this.findSlotAtPosition(pointer.x, pointer.y);
+      const dropSlot = this.findSlotAtPosition((pointer.x / RENDER_SCALE), (pointer.y / RENDER_SCALE));
       this.endDrag(pointer, dropSlot);
     } else {
       const src = this.dragSourceSlot;
@@ -589,7 +597,7 @@ export class InventoryScene extends Phaser.Scene {
 
   private createDragVisual(pointer: Phaser.Input.Pointer): void {
     if (!this.dragSourceSlot?.equipment) return;
-    this.dragContainer = this.add.container(pointer.x, pointer.y).setDepth(200);
+    this.dragContainer = this.add.container((pointer.x / RENDER_SCALE), (pointer.y / RENDER_SCALE)).setDepth(200);
     this.dragContainer.add(createItemIcon(this, this.dragSourceSlot.equipment, 96));
     this.dragContainer.setAlpha(0.9);
   }
@@ -636,7 +644,7 @@ export class InventoryScene extends Phaser.Scene {
 
     // 背包格拖到另一背包格（有物品）→ 上下文菜单
     if (source.type === 'inventory' && dropSlot.type === 'inventory' && dropSlot.equipment) {
-      this.showContextMenu(pointer.x, pointer.y, source, dropSlot);
+      this.showContextMenu((pointer.x / RENDER_SCALE), (pointer.y / RENDER_SCALE), source, dropSlot);
       return;
     }
 
@@ -647,7 +655,7 @@ export class InventoryScene extends Phaser.Scene {
 
   private showContextMenu(x: number, y: number, sourceSlot: SlotInfo, targetSlot: SlotInfo): void {
     this.closeContextMenu();
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     this.contextMenuUseFragments = false;
 
     const menuW = 440;
@@ -852,7 +860,7 @@ export class InventoryScene extends Phaser.Scene {
   // ---- 特殊合成通知 ----
 
   private showSpecialSynthesisNotification(equipment: Equipment): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
 
     this.specialNotification = this.add.container(width / 2, height / 2);
 
@@ -976,7 +984,7 @@ export class InventoryScene extends Phaser.Scene {
   private showTopMessage(message: string, color: string = '#f0e6d3', autoHide: boolean = true): void {
     this.closeTopMessage();
 
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     const msgWidth = Math.max(400, Math.min(650, width * 0.55));
     const msgHeight = Math.max(50, Math.min(60, height * 0.085));
 
@@ -1055,7 +1063,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   private createCloseButton(): void {
-    const { width, height } = this.cameras.main;
+    const { width, height } = this.view;
     const headerHeight = height * 0.08;
 
     const btnSize = Math.max(44, headerHeight * 0.9);
