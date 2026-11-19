@@ -45,7 +45,7 @@ export class WorldBackdrop {
       const s = 512;
       const c = tx.createCanvas('bg_ground', s, s)!;
       const ctx = c.getContext();
-      ctx.fillStyle = '#101c21';
+      ctx.fillStyle = '#12222a';
       ctx.fillRect(0, 0, s, s);
       // 平铺安全的斑驳：每个斑点在四周各画一份
       const blot = (x: number, y: number, r: number, col: string) => {
@@ -235,7 +235,7 @@ export class WorldBackdrop {
       const dark = rnd.frac() < 0.6;
       s.add.image(rnd.between(0, WORLD_SIZE), rnd.between(0, WORLD_SIZE), 'fx_glow')
         .setTint(dark ? 0x000000 : 0x2f5a62)
-        .setAlpha(dark ? rnd.realInRange(0.35, 0.6) : rnd.realInRange(0.25, 0.45))
+        .setAlpha(dark ? rnd.realInRange(0.3, 0.5) : rnd.realInRange(0.08, 0.18))
         .setScale(rnd.realInRange(2.4, 5.5), rnd.realInRange(1.8, 4.5))
         .setRotation(rnd.realInRange(0, Math.PI))
         .setBlendMode(dark ? Phaser.BlendModes.NORMAL : Phaser.BlendModes.ADD)
@@ -243,16 +243,16 @@ export class WorldBackdrop {
     }
 
     // 中央本源之光
-    s.add.image(C, C, 'fx_glow').setTint(0x9fd8ff).setAlpha(0.20)
+    s.add.image(C, C, 'fx_glow').setTint(0x9fd8ff).setAlpha(0.10)
       .setScale(1500 / 256).setBlendMode(Phaser.BlendModes.ADD).setDepth(D_GLOW);
 
     // 五行阵眼光晕
     ZONES.forEach(z => {
-      const glow = s.add.image(z.x, z.y, 'fx_glow').setTint(WX_TINT[z.wuxing]).setAlpha(0.34)
+      const glow = s.add.image(z.x, z.y, 'fx_glow').setTint(WX_TINT[z.wuxing]).setAlpha(0.2)
         .setScale((ZONE_RADIUS * 3.4) / 256).setBlendMode(Phaser.BlendModes.ADD).setDepth(D_GLOW);
       this.zoneGlows.push(glow);
       s.tweens.add({
-        targets: glow, alpha: 0.22, duration: 2600 + Math.random() * 1200,
+        targets: glow, alpha: 0.12, duration: 2600 + Math.random() * 1200,
         yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
       });
     });

@@ -24,7 +24,8 @@ function computeRenderScale(): number {
   // 横屏设备（桌面）按高度适配，竖屏按宽度适配
   const fit = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);
   const s = fit * dpr;
-  return Math.max(1, Math.min(3, Math.round(s * 4) / 4));
+  // 精确匹配物理像素（保留两位小数），避免浏览器再做一次缩放而发虚
+  return Math.max(1, Math.min(3, Math.round(s * 100) / 100));
 }
 export const RENDER_SCALE = computeRenderScale();
 

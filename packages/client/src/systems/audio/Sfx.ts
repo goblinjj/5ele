@@ -321,6 +321,29 @@ class SfxEngine {
     this.tone({ freq: 90, to: 40, dur: 0.25, gain: 0.3, type: 'sine' });
   }
 
+  /** 进入子弹时间：声音被"拉长"下坠 */
+  slowmoIn(): void {
+    if (!this.ready()) return;
+    this.tone({ freq: 880, to: 110, dur: 0.7, gain: 0.2, type: 'sine' });
+    this.tone({ freq: 440, to: 55, dur: 0.9, gain: 0.16, type: 'triangle' });
+    this.noise({ dur: 0.8, gain: 0.14, filter: 'lowpass', freq: 3000, to: 200 });
+  }
+
+  /** 子弹时间结束：回弹 */
+  slowmoOut(): void {
+    if (!this.ready()) return;
+    this.tone({ freq: 110, to: 660, dur: 0.28, gain: 0.14, type: 'sine' });
+    this.noise({ dur: 0.25, gain: 0.1, filter: 'bandpass', freq: 300, to: 2400 });
+  }
+
+  /** 连击中的一击 */
+  flurry(step: number): void {
+    if (!this.ready()) return;
+    const f = PENTA[step % PENTA.length];
+    this.tone({ freq: f * 2, to: f, dur: 0.1, gain: 0.12, type: 'triangle' });
+    this.noise({ dur: 0.05, gain: 0.08, filter: 'highpass', freq: 3500 });
+  }
+
   /** 遁 */
   dash(): void {
     if (!this.ready()) return;

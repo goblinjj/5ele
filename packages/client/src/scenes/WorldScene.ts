@@ -139,10 +139,6 @@ export class WorldScene extends Phaser.Scene {
   private targetMark!: Phaser.GameObjects.Image;
   private guardRing!: Phaser.GameObjects.Image;
   private playerGlow?: Phaser.FX.Glow;
-  /** 帧率看门狗：开局几秒内若明显掉帧，自动关掉最吃性能的泛光 */
-  private bloomOn: boolean = false;
-  private perfTimer: number = 0;
-  private perfFrames: number = 0;
   private guardGlow!: Phaser.GameObjects.Image;
   private pc!: Combatant;
 
@@ -186,6 +182,10 @@ export class WorldScene extends Phaser.Scene {
   private indicator!: Phaser.GameObjects.Graphics;
   private wuxingEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private stateTick: number = 0;
+  /** 当前世界流速（子弹时间 < 1） */
+  private worldScale: number = 1;
+  private slowTint!: Phaser.GameObjects.Rectangle;
+  private wasSlow: boolean = false;
   private trailTick: number = 0;
   /** 连续多少只普通妖异没有留下能量（掉落保底用） */
   private dryKills: number = 0;
@@ -227,13 +227,6 @@ export class WorldScene extends Phaser.Scene {
     this.createPlayerAnims();
     cam.startFollow(this.player, true, 0.14, 0.14, 0, -height * 0.07);
     cam.fadeIn(600, 0, 0, 0);
-    // 泛光：让气劲、技能、阵眼这些发光体真正"发光"
-    if (cam.postFX) {
-      cam.postFX.addBloom(0xffffff, 1, 1, 1, 1.1, 4);
-      this.bloomOn = true;
-    }
-    this.perfTimer = 0;
-    this.perfFrames = 0;
 
     // ---- 系统 ----
     this.entityManager = new EntityManager();
@@ -244,6 +237,8 @@ export class WorldScene extends Phaser.Scene {
     // 妖异之间互相推挤，避免叠成一团（不与残魂碰撞，残魂不会被卡住）
     this.physics.add.collider(this.spawnSystem.getEnemyGroup(), this.spawnSystem.getEnemyGroup());
 
+    // 子弹时间的冷色罩：盖在地表上、角色之下
+    this.slowTint = this.add.rectangle(WORLD_CENTER, WORLD_CENTER, 4200, 5200, 0x061a3a, 1).setAlpha(0).setDepth(-9);
     this.shapeGfx = this.add.graphics().setDepth(FX_DEPTH + 2);
     this.indicator = this.add.graphics().setDepth(FX_DEPTH + 3);
 
@@ -285,6 +280,8 @@ export class WorldScene extends Phaser.Scene {
     this.wuxingEmitter = undefined;
     this.playerGlow = undefined;
     this.stateTick = 0;
+    this.worldScale = 1;
+    this.wasSlow = false;
     this.trailTick = 0;
     this.dryKills = 0;
     this.statsSynced = false;
@@ -319,8 +316,8 @@ export class WorldScene extends Phaser.Scene {
 
     const C = WORLD_CENTER;
     this.playerAura = this.add.image(C, C, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(SPIRIT_TINT).setScale(1.25).setAlpha(0.42).setDepth(-12);
-    this.tweens.add({ targets: this.playerAura, alpha: 0.26, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      .setTint(SPIRIT_TINT).setScale(1.1).setAlpha(0.3).setDepth(-12);
+    this.tweens.add({ targets: this.playerAura, alpha: 0.18, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.rangeRing = this.add.image(C, C, 'fx_ring').setTint(SPIRIT_TINT)
       .setScale((AUTO_ATTACK_RANGE * 2) / 256).setAlpha(0.07).setDepth(-14);
     this.targetMark = this.add.image(C, C, 'fx_ring').setTint(0xffe066)
@@ -339,7 +336,7 @@ export class WorldScene extends Phaser.Scene {
     // 残魂的描边辉光，颜色随进攻五行变化
     if (this.player.preFX) {
       this.player.preFX.setPadding(24);
-      this.playerGlow = this.player.preFX.addGlow(SPIRIT_TINT, 5, 0, false, 0.1, 14);
+      this.playerGlow = this.player.preFX.addGlow(SPIRIT_TINT, 2.5, 0, false, 0.1, 10);
     }
   }
 
@@ -457,23 +454,10 @@ export class WorldScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (!this.combat) return;
     // 打击停顿：命中瞬间世界几乎静止。放在最前面，保证任何状态下停顿都会按真实时间结束
-    const timeScale = this.fx.tickTimeScale(delta);
-    // 帧率看门狗：按真实时钟统计，连续 5 秒平均低于 40 帧就关掉泛光
-    if (this.bloomOn) {
-      const now = performance.now();
-      if (this.perfTimer === 0) this.perfTimer = now;
-      this.perfFrames++;
-      if (now - this.perfTimer >= 5000) {
-        const fps = (this.perfFrames * 1000) / (now - this.perfTimer);
-        if (fps < 40) {
-          this.cameras.main.postFX.clear();
-          this.bloomOn = false;
-          console.info(`[无极] 平均 ${fps.toFixed(0)} FPS，已自动关闭泛光`);
-        }
-        this.perfTimer = now;
-        this.perfFrames = 0;
-      }
-    }
+    // 子弹时间：只有妖异变慢。先取世界流速，再连同打击停顿一起应用到动画 / 物理上
+    const worldScale = this.combat.tickBulletTime(delta);
+    this.worldScale = worldScale;
+    const timeScale = this.fx.tickTimeScale(delta, worldScale);
     if (this.phase === 'over') return;
     // 灵囊开启时世界静止
     if (this.scene.isActive('InventoryScene')) {
@@ -487,13 +471,16 @@ export class WorldScene extends Phaser.Scene {
     delta = Math.min(delta, 50) * timeScale;
     this.backdrop.update(delta);
 
+    // delta：残魂的时间；worldDelta：妖异的时间
+    const worldDelta = delta * worldScale;
     const moving = this.movePlayer(delta);
-    this.enemyAI.update(delta, this.player);
-    this.combat.update(delta, moving);
+    this.enemyAI.update(worldDelta, this.player);
+    this.combat.update(delta, worldDelta, moving);
+    this.updateSlowTint();
     this.updatePlayerVisuals(moving);
     this.updateOrbs(delta);
     this.updateShaping(delta);
-    this.updateRound(delta);
+    this.updateRound(worldDelta);
     this.updateIndicator();
 
     this.stateTick = (this.stateTick + 1) % 6;
@@ -517,6 +504,9 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    // 物理世界在子弹时间里整体放慢，残魂的速度按倒数补回来
+    const comp = 1 / this.worldScale;
+
     const mag = Math.sqrt(vx * vx + vy * vy);
     const moving = mag > 0.05;
     if (moving) {
@@ -532,7 +522,7 @@ export class WorldScene extends Phaser.Scene {
       this.dashDirX = this.facingX;
       this.dashDirY = this.facingY;
       this.dashGhostTimer = 0;
-      this.combat.setInvulnerable(DASH_INVULN);
+      this.combat.startDodge(DASH_INVULN);
       sfx.dash();
       this.fx.squash(this.player, PLAYER_SCALE, 1.38, 0.7, 300);
       const tint = this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT;
@@ -542,7 +532,7 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.dashTimer > 0) {
       this.dashTimer -= delta;
-      body.setVelocity(this.dashDirX * DASH_SPEED, this.dashDirY * DASH_SPEED);
+      body.setVelocity(this.dashDirX * DASH_SPEED * comp, this.dashDirY * DASH_SPEED * comp);
       this.dashGhostTimer -= delta;
       if (this.dashGhostTimer <= 0) {
         this.dashGhostTimer = 28;
@@ -553,7 +543,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const speed = PLAYER_SPEED * this.combat.getPlayerSpeedMul();
-    body.setVelocity(vx * speed, vy * speed);
+    body.setVelocity(vx * speed * comp, vy * speed * comp);
 
     // 朝向：出手时看目标；移动时看移动方向；站定时看目标
     if (this.combat.isAttackAnimActive()) {
@@ -583,8 +573,29 @@ export class WorldScene extends Phaser.Scene {
     return moving;
   }
 
+  /** 子弹时间的画面表现：地表罩上冷色、镜头略微推近 */
+  private updateSlowTint(): void {
+    const slow = this.worldScale < 1;
+    this.slowTint.setPosition(this.player.x, this.player.y);
+    const target = slow ? 0.5 : 0;
+    this.slowTint.setAlpha(this.slowTint.alpha + (target - this.slowTint.alpha) * 0.2);
+    if (slow !== this.wasSlow) {
+      this.wasSlow = slow;
+      this.cameras.main.zoomTo(RENDER_SCALE * (slow ? 1.08 : 1), slow ? 160 : 320, 'Sine.easeOut', true);
+    }
+    // 残魂在慢下来的世界里拖出残影
+    if (slow && this.trailTick === 0) {
+      this.fx.afterimage(this.player, this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT);
+    }
+  }
+
   private updatePlayerVisuals(moving: boolean): void {
     const p = this.player;
+    // 全局动画流速在子弹时间里被放慢，残魂自己的动画按倒数补回正常速度
+    const animKey = p.anims.currentAnim?.key ?? '';
+    const baseRate = animKey.endsWith('_run') ? 1.25 : animKey.endsWith('_atk') ? 1.3 : animKey.endsWith('_magic') ? 2 : 1;
+    p.anims.timeScale = baseRate / this.worldScale;
+
     const footY = p.y + 307 * PLAYER_SCALE * 0.36;
 
     // 尾迹：移动时脚下散落灵光，遁时更浓；濒死时身上逸散血色残焰

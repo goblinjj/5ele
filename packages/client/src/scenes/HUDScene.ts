@@ -136,15 +136,15 @@ export class HUDScene extends Phaser.Scene {
       scale: { start: 0.55, end: 0 },
       alpha: { start: 0.55, end: 0 },
       tint: [0x9fd8ff, 0xd4a853, 0xffffff],
-      frequency: 170,
+      frequency: 320,
       blendMode: Phaser.BlendModes.ADD,
     }).setDepth(-6);
     this.add.image(width / 2, height / 2, 'fx_vignette')
-      .setDisplaySize(width * 1.25, height * 1.12).setDepth(-5);
+      .setDisplaySize(width * 1.4, height * 1.25).setAlpha(0.7).setDepth(-5);
 
     // 上下压暗，保证文字与按钮可读
-    this.add.image(width / 2, 0, 'hud_shade').setOrigin(0.5, 0).setDisplaySize(width, 260).setFlipY(true).setAlpha(0.85);
-    this.add.image(width / 2, height, 'hud_shade').setOrigin(0.5, 1).setDisplaySize(width, 560).setAlpha(0.8);
+    this.add.image(width / 2, 0, 'hud_shade').setOrigin(0.5, 0).setDisplaySize(width, 220).setFlipY(true).setAlpha(0.6);
+    this.add.image(width / 2, height, 'hud_shade').setOrigin(0.5, 1).setDisplaySize(width, 460).setAlpha(0.5);
 
     this.createTopBar(width);
     this.createControls(width, height);
@@ -692,7 +692,8 @@ export class HUDScene extends Phaser.Scene {
       '五行伤害：克 ×2.5　得生 ×1.5　同属 ×1　受制 ×0.5　泄 ×0.25',
       '进攻用克制妖异的五行；防守穿妖异所「生」的五行最稳，被克则重创。',
       '战斗中点右侧「兵 / 甲」两列即可快换灵囊里的器物。',
-      '「御」：架势中受伤减七成；在妖异出手的瞬间按下则防反——无伤、震退并反击。',
+      '「御」：架势中受伤减七成；在妖异出手的瞬间按下则防反——把这一击弹回去，并进入子弹时间。',
+      '「遁」：在本该被击中的瞬间闪开，世界慢下来，残魂连续打出七发气劲。',
       '被防反或震晕的妖异露出破绽，此时受到的伤害 +50%。',
     );
     if (skills.length > 0) {

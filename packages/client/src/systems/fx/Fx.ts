@@ -15,7 +15,6 @@ export class Fx {
   private motes!: Phaser.GameObjects.Particles.ParticleEmitter;
   /** 打击停顿剩余时间（真实毫秒） */
   private stopTimer: number = 0;
-  private slowed: boolean = false;
   private embers!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor(scene: Phaser.Scene) {
@@ -192,28 +191,25 @@ export class Fx {
   }
 
   /**
-   * 每帧调用一次：推进停顿计时，返回本帧的时间倍率（停顿中约 0.04）。
-   * 同时把补间、动画、物理的时间流速调到一致。
+   * 每帧调用一次：推进停顿计时，返回本帧的全局时间倍率（停顿中约 0.04，否则 1）。
+   * worldScale 是"子弹时间"的世界流速（1 = 正常）：只作用在妖异身上——
+   * 动画与物理按它放慢，残魂自己的速度由调用方补偿回来。
    */
-  tickTimeScale(rawDelta: number): number {
-    const want = this.stopTimer > 0;
-    if (want) this.stopTimer -= rawDelta;
-    if (want !== this.slowed) {
-      this.slowed = want;
-      const k = want ? 0.04 : 1;
-      this.scene.tweens.timeScale = k;
-      this.scene.anims.globalTimeScale = k;
-      this.scene.time.timeScale = k;
-      // Arcade 物理的 timeScale 是反的：越大越慢
-      this.scene.physics.world.timeScale = 1 / k;
-    }
-    return want ? 0.04 : 1;
+  tickTimeScale(rawDelta: number, worldScale: number = 1): number {
+    const stopping = this.stopTimer > 0;
+    if (stopping) this.stopTimer -= rawDelta;
+    const k = stopping ? 0.04 : 1;
+    this.scene.tweens.timeScale = k;
+    this.scene.time.timeScale = k;
+    this.scene.anims.globalTimeScale = k * worldScale;
+    // Arcade 物理的 timeScale 是反的：越大越慢
+    this.scene.physics.world.timeScale = 1 / (k * worldScale);
+    return k;
   }
 
   /** 场景结束时恢复正常流速（动画管理器是全局共享的） */
   resetTimeScale(): void {
     this.stopTimer = 0;
-    this.slowed = false;
     this.scene.tweens.timeScale = 1;
     this.scene.anims.globalTimeScale = 1;
     this.scene.time.timeScale = 1;

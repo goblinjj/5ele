@@ -222,7 +222,7 @@ export class SpawnSystem {
     // 魁首与核心带五行色的描边辉光，一眼就能从妖群里认出来
     if (tier !== 'normal' && sprite.preFX) {
       sprite.preFX.setPadding(24);
-      sprite.preFX.addGlow(tint, tier === 'boss' ? 7 : 5, 0, false, 0.1, 14);
+      sprite.preFX.addGlow(tint, tier === 'boss' ? 4 : 3, 0, false, 0.1, 10);
     }
 
     const footY = y + 307 * baseScale * 0.36;

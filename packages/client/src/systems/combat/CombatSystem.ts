@@ -42,9 +42,19 @@ const GUARD_DURATION = 520;
 const GUARD_COOLDOWN = 1500;
 const PARRY_WINDOW = 230;
 const GUARD_BLOCK_MULT = 0.3;
-/** 防反的反击倍率、破绽时间 */
-const PARRY_COUNTER_MULT = 3;
+/** 防反：把对方这一击的力道弹回去（按对方攻击力计），并让它露出破绽 */
+const PARRY_REFLECT = 2.2;
 const PARRY_STAGGER = 1700;
+/** 防反后的子弹时间（真实毫秒）与世界流速 */
+const PARRY_BULLET_TIME = 1100;
+const PARRY_BULLET_SCALE = 0.25;
+
+/** 完美闪避（遁的无敌帧内本该被击中）→ 子弹时间 + 连击 */
+const FLURRY_BULLET_TIME = 2400;
+const FLURRY_BULLET_SCALE = 0.16;
+const FLURRY_SHOTS = 7;
+const FLURRY_INTERVAL = 170;
+const FLURRY_MULT = 1.4;
 /** 妖异处于破绽（硬直）时受到的额外伤害 */
 const STAGGER_BONUS = 1.5;
 const BOLT_SPEED = 1150;
@@ -62,6 +72,8 @@ interface PlayerBolt {
   color: number;
   mult: number;
   basic: boolean;
+  /** 被弹回的妖异弹道：命中时直接造成这么多伤害 */
+  raw?: number;
 }
 
 interface EnemyBolt {
@@ -99,6 +111,15 @@ export class CombatSystem {
   private guardTimer: number = 0;
   private guardElapsed: number = 0;
   private guardCd: number = 0;
+  /** 遁的无敌帧剩余时间：期间本该命中的攻击算作完美闪避 */
+  private dodgeTimer: number = 0;
+  /** 子弹时间（真实毫秒）与当前世界流速 */
+  private bulletTimer: number = 0;
+  private bulletScale: number = 1;
+  /** 连击：剩余次数 / 下一击倒计时 / 优先目标 */
+  private flurryShots: number = 0;
+  private flurryTimer: number = 0;
+  private flurryTarget: WorldEntity | null = null;
   private currentTarget: WorldEntity | null = null;
 
   private bolts: PlayerBolt[] = [];
@@ -159,6 +180,37 @@ export class CombatSystem {
   isParryWindow(): boolean { return this.guardTimer > 0 && this.guardElapsed <= PARRY_WINDOW; }
   getGuardCdPct(): number { return this.guardCd / GUARD_COOLDOWN; }
   setInvulnerable(ms: number): void { this.invulnTimer = Math.max(this.invulnTimer, ms); }
+  /** 遁：开启闪避判定窗口（同时无敌） */
+  startDodge(ms: number): void {
+    this.dodgeTimer = ms;
+    this.setInvulnerable(ms);
+  }
+  isBulletTime(): boolean { return this.bulletTimer > 0; }
+  isFlurry(): boolean { return this.flurryShots > 0; }
+
+  /**
+   * 每帧最先调用：按真实时间推进子弹时间，返回本帧的世界流速（1 = 正常）。
+   * 子弹时间里只有妖异和它们的弹道变慢，残魂照常行动。
+   */
+  tickBulletTime(realDelta: number): number {
+    if (this.bulletTimer <= 0) return 1;
+    this.bulletTimer -= realDelta;
+    if (this.bulletTimer <= 0) {
+      this.bulletTimer = 0;
+      this.bulletScale = 1;
+      this.flurryShots = 0;
+      this.flurryTarget = null;
+      sfx.slowmoOut();
+      return 1;
+    }
+    return this.bulletScale;
+  }
+
+  private enterBulletTime(ms: number, scale: number): void {
+    if (this.bulletTimer <= 0) sfx.slowmoIn();
+    this.bulletTimer = Math.max(this.bulletTimer, ms);
+    this.bulletScale = Math.min(this.bulletScale, scale);
+  }
 
   /** 玩家移速倍率（被减速 / 连斩加速） */
   getPlayerSpeedMul(): number {
@@ -194,9 +246,14 @@ export class CombatSystem {
 
   // ───────────────────────── 主循环 ─────────────────────────
 
-  update(delta: number, moving: boolean): void {
+  /**
+   * @param delta 残魂的时间（不受子弹时间影响）
+   * @param worldDelta 妖异的时间（子弹时间里被放慢）
+   */
+  update(delta: number, worldDelta: number, moving: boolean): void {
     if (this.gameOver) return;
     this.lastDelta = delta;
+    this.dodgeTimer = Math.max(0, this.dodgeTimer - delta);
 
     this.attackTimer -= delta;
     this.attackAnimTimer = Math.max(0, this.attackAnimTimer - delta);
@@ -231,11 +288,12 @@ export class CombatSystem {
     }
 
     this.tickPassiveRegen(delta);
-    this.tickEnemyStatuses(delta);
-    this.updateAutoAttack(moving);
+    this.tickEnemyStatuses(worldDelta);
+    if (this.flurryShots > 0) this.updateFlurry(delta);
+    else this.updateAutoAttack(moving);
     this.updateSkills();
     this.updateBolts(delta);
-    this.updateEnemyBolts(delta);
+    this.updateEnemyBolts(worldDelta);
   }
 
   // ───────────────────────── 本源之击（自动普攻） ─────────────────────────
@@ -259,6 +317,54 @@ export class CombatSystem {
       }
     }
     return pick;
+  }
+
+  /** 子弹时间里的连击：不需要起手，一口气打出数发气劲 */
+  private updateFlurry(delta: number): void {
+    this.flurryTimer -= delta;
+    if (this.flurryTimer > 0) return;
+
+    let target = this.flurryTarget;
+    if (!target || target.dying || target.combatant.hp <= 0 ||
+        Phaser.Math.Distance.Between(this.player.x, this.player.y, target.sprite.x, target.sprite.y) > AUTO_ATTACK_RANGE * 1.8) {
+      target = this.findTarget(AUTO_ATTACK_RANGE * 1.5);
+      this.flurryTarget = target;
+    }
+    if (!target) {
+      this.flurryShots = 0;
+      return;
+    }
+    this.currentTarget = target;
+    this.flurryTimer = FLURRY_INTERVAL;
+    this.flurryShots--;
+    this.windupTimer = 0;
+    this.attackTimer = 300; // 连击结束后稍作停顿再恢复普攻
+
+    this.player.setFlipX(target.sprite.x < this.player.x);
+    const atkKey = 'player_spirit_atk';
+    if (this.scene.anims.exists(atkKey)) {
+      this.player.play(atkKey, true);
+      this.attackAnimTimer = FLURRY_INTERVAL;
+    }
+    this.fireBolt(target, FLURRY_MULT, false);
+    this.fx.afterimage(this.player, this.attackColor());
+    sfx.flurry(FLURRY_SHOTS - this.flurryShots);
+  }
+
+  /** 完美闪避：进入子弹时间并发动连击 */
+  private perfectDodge(attacker: WorldEntity): void {
+    if (this.flurryShots > 0) return;
+    const p = this.player;
+    this.fx.hitStop(120);
+    this.fx.ring(p.x, p.y, 220, 0x9fd8ff, 420, 0.2);
+    this.fx.burst(p.x, p.y, 0x9fd8ff, 22);
+    this.scene.cameras.main.flash(120, 190, 225, 255, false);
+    this.enterBulletTime(FLURRY_BULLET_TIME, FLURRY_BULLET_SCALE);
+    this.flurryShots = FLURRY_SHOTS;
+    this.flurryTimer = 260;      // 先看清慢下来的世界，再出手
+    this.flurryTarget = attacker.dying ? null : attacker;
+    this.invulnTimer = Math.max(this.invulnTimer, 900);
+    this.guardTimer = 0;
   }
 
   private updateAutoAttack(_moving: boolean): void {
@@ -367,7 +473,8 @@ export class CombatSystem {
       }
 
       if (hit) {
-        this.hitEnemy(hit, b.mult, b.color, Math.atan2(b.vy, b.vx), b.basic);
+        if (b.raw !== undefined) this.directDamage(hit, b.raw, b.color, Math.atan2(b.vy, b.vx));
+        else this.hitEnemy(hit, b.mult, b.color, Math.atan2(b.vy, b.vx), b.basic);
         b.img.destroy();
         this.bolts.splice(i, 1);
       } else if (b.life <= 0) {
@@ -378,6 +485,25 @@ export class CombatSystem {
   }
 
   // ───────────────────────── 对妖异造成伤害 ─────────────────────────
+
+  /** 弹回的伤害：不走五行与防御，直接按数值结算 */
+  private directDamage(target: WorldEntity, damage: number, color: number, angle: number): void {
+    if (target.dying) return;
+    const dmg = Math.max(1, Math.round(damage));
+    target.combatant.hp = Math.max(0, target.combatant.hp - dmg);
+    this.spawnSystem.updateHpBar(target);
+    const tx = target.sprite.x, ty = target.sprite.y - 60 * target.baseScale;
+    this.fx.floatText(tx, ty - 34, `${dmg}`, '#ffe9a8', 38, 88);
+    this.fx.hitStop(80);
+    this.fx.squash(target.sprite, target.baseScale, 1.3, 0.74, 200);
+    target.sprite.setTintFill(0xffffff);
+    target.flashTimer = 90;
+    this.fx.burst(tx, ty + 10, color, 16);
+    sfx.hit(true, false);
+    target.aggro = true;
+    void angle;
+    if (target.combatant.hp <= 0) this.killEnemy(target);
+  }
 
   /**
    * 残魂命中妖异
@@ -712,18 +838,23 @@ export class CombatSystem {
    * 妖异的一次攻击落到残魂身上
    * @returns 是否真正造成了伤害
    */
-  enemyStrikePlayer(entity: WorldEntity, mult: number = 1, slowMs: number = 0): boolean {
+  enemyStrikePlayer(entity: WorldEntity, mult: number = 1, slowMs: number = 0, bolt?: EnemyBolt): boolean {
     if (this.gameOver) return false;
     const px = this.player.x, py = this.player.y - 80;
 
-    // 遁 / 受击保护
+    // 完美闪避：遁的无敌帧里本该被击中 → 子弹时间 + 连击
+    if (this.dodgeTimer > 0) {
+      this.perfectDodge(entity);
+      return false;
+    }
+    // 受击保护
     if (this.invulnTimer > 0) return false;
 
     // 御：出手瞬间架住 → 防反；架势中 → 格挡减伤
     let guarded = false;
     if (this.guardTimer > 0) {
       if (this.guardElapsed <= PARRY_WINDOW) {
-        this.parry(entity);
+        this.parry(entity, bolt);
         return false;
       }
       guarded = true;
@@ -793,15 +924,17 @@ export class CombatSystem {
   }
 
   /**
-   * 防反：完全化解这一击，震退并使对方露出破绽，随即还以一记重击。
-   * 近身的直接反击；远处放弹道的则打回一发气劲。
+   * 防反：把这一击原样弹回去。
+   *  - 近身攻击：力道反震回妖异身上，震退并露出破绽
+   *  - 弹道：调头飞回放出它的妖异
+   * 随后进入短暂的子弹时间，留给残魂追击的空档。
    */
-  private parry(entity: WorldEntity): void {
+  private parry(entity: WorldEntity, bolt?: EnemyBolt): void {
     const p = this.player;
     const color = this.pc.defenseWuxing ? WX_TINT[this.pc.defenseWuxing.wuxing] : SPIRIT_TINT;
     // 防反只用音效与闪光提示，不飘字
     sfx.parry();
-    this.fx.hitStop(190);
+    this.fx.hitStop(160);
     this.fx.squash(this.player, PLAYER_SCALE, 1.22, 0.84, 260);
     this.fx.ring(p.x, p.y, 190, 0xffe9a8, 360, 0.3);
     this.fx.ring(p.x, p.y, 120, color, 260, 0.3);
@@ -812,25 +945,40 @@ export class CombatSystem {
     this.invulnTimer = 450;
     this.guardTimer = 0;
     this.guardCd = 0;        // 防反成功：冷却直接恢复
-    this.attackTimer = Math.min(this.attackTimer, 250);
+    this.attackTimer = Math.min(this.attackTimer, 200);
+    this.enterBulletTime(PARRY_BULLET_TIME, PARRY_BULLET_SCALE);
+
+    const reflected = entity.combatant.attack * PARRY_REFLECT;
+
+    if (bolt) {
+      // 弹道调头：以两倍速飞回去
+      const sx = bolt.img.x, sy = bolt.img.y;
+      const tint = WX_TINT[entity.wuxing];
+      const a = Math.atan2(entity.sprite.y - sy, entity.sprite.x - sx);
+      const img = this.scene.add.image(sx, sy, 'fx_bolt')
+        .setTint(tint).setBlendMode(Phaser.BlendModes.ADD)
+        .setOrigin(0.85, 0.5).setRotation(a).setScale(1.5, 1.2).setDepth(FX_DEPTH);
+      this.bolts.push({
+        img, target: entity.dying ? null : entity,
+        vx: Math.cos(a) * BOLT_SPEED, vy: Math.sin(a) * BOLT_SPEED,
+        life: 2500, color: tint, mult: 1, basic: false, raw: reflected,
+      });
+      return;
+    }
 
     if (entity.dying) return;
     const dx = entity.sprite.x - p.x, dy = entity.sprite.y - p.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const angle = Math.atan2(dy, dx);
-    // 露出破绽
+    // 力道反震：震退并露出破绽
     entity.stunTimer = entity.tier === 'boss' ? 800 : PARRY_STAGGER;
     if (entity.tier !== 'boss') {
-      entity.knockX = (dx / dist) * 380;
-      entity.knockY = (dy / dist) * 380;
-      entity.knockTimer = 170;
+      entity.knockX = (dx / dist) * 520;
+      entity.knockY = (dy / dist) * 520;
+      entity.knockTimer = 200;
     }
-    if (dist < 420) {
-      this.fx.slash(p.x + Math.cos(angle) * 60, p.y + Math.sin(angle) * 60, angle, 260, 0xffe9a8);
-      this.hitEnemy(entity, PARRY_COUNTER_MULT / STAGGER_BONUS, this.attackColor(), angle, false);
-    } else {
-      this.fireBolt(entity, PARRY_COUNTER_MULT / STAGGER_BONUS, false);
-    }
+    this.fx.slash(p.x + Math.cos(angle) * 60, p.y + Math.sin(angle) * 60, angle, 280, 0xffe9a8);
+    this.directDamage(entity, reflected, 0xffe9a8, angle);
   }
 
   private triggerGameOver(): void {
@@ -863,8 +1011,8 @@ export class CombatSystem {
       this.fx.trail(b.img.x, b.img.y, WX_TINT[b.source.wuxing], 1);
       let done = b.life <= 0;
       if (!done && Phaser.Math.Distance.Squared(b.img.x, b.img.y, px, py) < 38 * 38) {
-        if (this.invulnTimer <= 0) {
-          this.enemyStrikePlayer(b.source, b.mult); // 架势内命中会在这里触发格挡 / 防反
+        if (this.invulnTimer <= 0 || this.dodgeTimer > 0) {
+          this.enemyStrikePlayer(b.source, b.mult, 0, b); // 架势内命中会触发格挡 / 防反（弹道被弹回）
           this.fx.burst(b.img.x, b.img.y, WX_TINT[b.source.wuxing], 8);
           done = true;
         }
