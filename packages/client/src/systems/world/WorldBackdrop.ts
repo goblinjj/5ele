@@ -229,6 +229,19 @@ export class WorldBackdrop {
       .setTint(0x304048).setDepth(D_GROUND - 1);
     s.add.tileSprite(C, C, WORLD_SIZE, WORLD_SIZE, 'bg_ground').setDepth(D_GROUND);
 
+    // 大尺度明暗：打破地面贴图的平铺感
+    const rnd = new Phaser.Math.RandomDataGenerator(['wuji-patches']);
+    for (let i = 0; i < 46; i++) {
+      const dark = rnd.frac() < 0.6;
+      s.add.image(rnd.between(0, WORLD_SIZE), rnd.between(0, WORLD_SIZE), 'fx_glow')
+        .setTint(dark ? 0x000000 : 0x2f5a62)
+        .setAlpha(dark ? rnd.realInRange(0.35, 0.6) : rnd.realInRange(0.25, 0.45))
+        .setScale(rnd.realInRange(2.4, 5.5), rnd.realInRange(1.8, 4.5))
+        .setRotation(rnd.realInRange(0, Math.PI))
+        .setBlendMode(dark ? Phaser.BlendModes.NORMAL : Phaser.BlendModes.ADD)
+        .setDepth(D_GROUND + 1);
+    }
+
     // 中央本源之光
     s.add.image(C, C, 'fx_glow').setTint(0x9fd8ff).setAlpha(0.20)
       .setScale(1500 / 256).setBlendMode(Phaser.BlendModes.ADD).setDepth(D_GLOW);

@@ -235,6 +235,9 @@ export class EnemyAI {
       e.sprite.anims.timeScale = Math.max(0.5, 500 / (e.phaseDuration + 120));
     }
 
+    // 蓄力：身体下沉蓄劲
+    this.fx.stretchTo(e.sprite, e.baseScale, 0.9, 1.1, e.phaseDuration);
+
     // 预警：外框一开始就标出完整范围，内部填充随蓄力涨满；涨满即出手
     const footY = e.sprite.y + 30;
     if (e.kind === 'charger' && e.tier !== 'boss') {
@@ -272,6 +275,8 @@ export class EnemyAI {
     e.phaseTimer = 0;
     e.tele?.setVisible(false);
     e.teleEdge?.setVisible(false);
+    // 被打断（硬直）时把蓄力的形变还原
+    if (e.sprite.scaleX !== e.baseScale) this.fx.squash(e.sprite, e.baseScale, e.sprite.scaleX / e.baseScale, e.sprite.scaleY / e.baseScale, 120);
     e.sprite.anims.timeScale = 1;
   }
 
@@ -300,7 +305,8 @@ export class EnemyAI {
       }
       if (e.phaseTimer > 0) return;
 
-      // —— 出手 ——
+      // —— 出手 ——（前扑拉长再弹回）
+      this.fx.squash(e.sprite, e.baseScale, 1.26, 0.8, 260);
       e.tele?.setVisible(false);
       e.teleEdge?.setVisible(false);
       if (e.kind === 'charger' && e.tier !== 'boss') {

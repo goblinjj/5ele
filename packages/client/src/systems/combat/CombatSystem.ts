@@ -9,7 +9,7 @@ import { inputManager } from '../input/InputManager.js';
 import { resolveCombat } from './CombatResolver.js';
 import { eventBus, GameEvent } from '../../core/EventBus.js';
 import { Fx, FX_DEPTH } from '../fx/Fx.js';
-import { AUTO_ATTACK_RANGE, WX_TINT, SPIRIT_TINT } from '../../config/worldConfig.js';
+import { AUTO_ATTACK_RANGE, WX_TINT, SPIRIT_TINT, PLAYER_SCALE } from '../../config/worldConfig.js';
 import { sfx } from '../audio/Sfx.js';
 
 /** 范围技能配置 */
@@ -300,6 +300,8 @@ export class CombatSystem {
       this.player.anims.timeScale = 1.3;
       this.attackAnimTimer = 380;
     }
+    // 起手：身体后缩蓄劲
+    this.fx.stretchTo(this.player, PLAYER_SCALE, 0.9, 1.08, ATTACK_WINDUP);
     // 掌心聚气
     const color = this.attackColor();
     const dir = target.sprite.x < this.player.x ? -1 : 1;
@@ -325,6 +327,8 @@ export class CombatSystem {
       basic,
     });
     this.fx.flashGlow(sx + Math.cos(angle) * 34, sy + Math.sin(angle) * 34, 34, color, 140, 0.9);
+    // 出手：身体前冲拉长
+    this.fx.squash(this.player, PLAYER_SCALE, 1.16, 0.88, 200);
     sfx.shoot();
   }
 
@@ -410,7 +414,10 @@ export class CombatSystem {
     sfx.hit(res.relation === 'ke', res.relation === 'sheng' || res.relation === 'beike');
     if (staggered) this.fx.floatText(tx, ty - 74, '破绽', '#ffb020', 22, 40, 500);
 
-    // 受击反馈：闪白、火花、击退
+    // 受击反馈：停顿、压扁回弹、闪白、火花、击退
+    const heavyHit = res.critical || res.relation === 'ke' || mult >= 2.5;
+    this.fx.hitStop(heavyHit ? 75 : 30);
+    if (target.phase === 'idle' || target.stunTimer > 0) this.fx.squash(target.sprite, target.baseScale, heavyHit ? 1.28 : 1.16, heavyHit ? 0.76 : 0.87, 190);
     target.sprite.setTintFill(0xffffff);
     target.flashTimer = 70;
     this.fx.burst(tx, ty + 10, color, res.critical || res.relation === 'ke' ? 12 : 6);
@@ -572,6 +579,7 @@ export class CombatSystem {
     const tint = WX_TINT[entity.wuxing];
     const big = entity.tier !== 'normal';
     sfx.enemyDie(entity.wuxing, big);
+    this.fx.hitStop(entity.tier === 'boss' ? 360 : big ? 150 : 60);
     this.fx.burst(sprite.x, sprite.y, tint, big ? 40 : 14);
     this.fx.ember(sprite.x, sprite.y, tint, big ? 24 : 8, big ? 90 : 36);
     this.fx.ring(sprite.x, sprite.y, big ? 260 : 110, tint, big ? 600 : 380);
@@ -626,9 +634,11 @@ export class CombatSystem {
 
     // 演出
     sfx.skill(cfg.wuxing);
+    this.fx.hitStop(70);
+    this.fx.squash(this.player, PLAYER_SCALE, 1.3, 0.78, 260);
     this.fx.ring(px, py, r, color, 480, 0.1);
     this.fx.ring(px, py, r * 0.7, 0xffffff, 340, 0.1);
-    this.fx.flashGlow(px, py, r * 1.1, color, 480, 0.75);
+    this.fx.flashGlow(px, py, r * 1.1, color, 480, 0.5);
     this.fx.burst(px, py, color, 28);
     this.fx.radial(px, py, r, color, 30);
     this.fx.ember(px, py, color, 16, r * 0.6);
@@ -742,6 +752,8 @@ export class CombatSystem {
     const label = (res.blocked ? '挡 ' : ke ? '被克 ' : res.relation === 'sheng' ? '化 ' : '') + `-${res.damage}`;
     this.fx.floatText(px, py, label, ke ? '#ff3b3b' : weak ? '#c9d1d9' : '#ff7a7a', ke ? 42 : weak ? 24 : 30, ke ? 96 : 70);
     if (!guarded) sfx.playerHurt(ke);
+    this.fx.hitStop(guarded ? 40 : ke ? 150 : 80);
+    this.fx.squash(this.player, PLAYER_SCALE, 0.82, 1.16, 220);
     this.player.setTint(0xff6a6a);
     this.hurtFlashTimer = 140;
     this.fx.burst(this.player.x, this.player.y - 20, 0xff5a5a, ke ? 18 : 8);
@@ -789,6 +801,8 @@ export class CombatSystem {
     const color = this.pc.defenseWuxing ? WX_TINT[this.pc.defenseWuxing.wuxing] : SPIRIT_TINT;
     // 防反只用音效与闪光提示，不飘字
     sfx.parry();
+    this.fx.hitStop(190);
+    this.fx.squash(this.player, PLAYER_SCALE, 1.22, 0.84, 260);
     this.fx.ring(p.x, p.y, 190, 0xffe9a8, 360, 0.3);
     this.fx.ring(p.x, p.y, 120, color, 260, 0.3);
     this.fx.burst(p.x, p.y - 10, 0xffe9a8, 26);

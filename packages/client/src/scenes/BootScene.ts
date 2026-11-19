@@ -39,11 +39,25 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('done');
-      window.setTimeout(() => splash.remove(), 600);
+    // 等内嵌字体就绪再进菜单：Phaser 的文字是一次性栅格化的，字体晚到会停留在系统字体上
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      const splash = document.getElementById('splash');
+      if (splash) {
+        splash.classList.add('done');
+        window.setTimeout(() => splash.remove(), 600);
+      }
+      this.scene.start('MenuScene');
+    };
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts?.load) {
+      fonts.load('700 32px "Noto Serif SC"', '无极五行').then(start, start);
+      // 字体下载失败或太慢也不能卡住游戏
+      window.setTimeout(start, 3000);
+    } else {
+      start();
     }
-    this.scene.start('MenuScene');
   }
 }

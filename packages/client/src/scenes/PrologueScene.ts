@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { uiConfig } from '../config/uiConfig.js';
 import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
+import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
 
 /**
  * 序幕场景 - 显示游戏开场白
@@ -52,19 +53,31 @@ export class PrologueScene extends Phaser.Scene {
 
   private createBackground(): void {
     const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
+    WorldBackdrop.ensureTextures(this);
+    this.cameras.main.setBackgroundColor('#05080b');
 
-    const bgGraphics = this.add.graphics();
-    bgGraphics.fillStyle(this.colors.bgDark, 1);
-    bgGraphics.fillRect(0, 0, width, height);
+    // 与首页、战场同一套底色：墨色大地 + 阵心微光 + 缓缓转动的太极
+    this.add.tileSprite(width / 2, height / 2, width, height, 'bg_ground').setTint(0x7f949c);
+    this.add.image(width / 2, height * 0.42, 'fx_glow').setTint(0x9fd8ff)
+      .setBlendMode(Phaser.BlendModes.ADD).setScale(5).setAlpha(0.22);
+    const bagua = this.add.image(width / 2, height * 0.42, 'bg_bagua').setScale(0.66).setAlpha(0.16);
+    const taiji = this.add.image(width / 2, height * 0.42, 'bg_taiji').setScale(0.5).setAlpha(0.14);
+    this.tweens.add({ targets: taiji, angle: 360, duration: 60000, repeat: -1 });
+    this.tweens.add({ targets: bagua, angle: -360, duration: 180000, repeat: -1 });
 
-    // 水墨晕染效果
-    for (let i = 0; i < 12; i++) {
-      const x = Phaser.Math.Between(0, width);
-      const y = Phaser.Math.Between(0, height);
-      const radius = Phaser.Math.Between(width * 0.08, width * 0.2);
-      bgGraphics.fillStyle(this.colors.inkBlack, 0.4);
-      bgGraphics.fillCircle(x, y, radius);
-    }
+    this.add.particles(0, 0, 'fx_dot', {
+      x: { min: 0, max: width },
+      y: { min: height * 0.1, max: height },
+      lifespan: 5200,
+      speedY: { min: -40, max: -12 },
+      speedX: { min: -8, max: 8 },
+      scale: { start: 0.55, end: 0 },
+      alpha: { start: 0.55, end: 0 },
+      tint: [0x9fd8ff, 0xd4a853, 0xffffff],
+      frequency: 140,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    this.add.image(width / 2, height / 2, 'fx_vignette').setDisplaySize(width * 1.3, height * 1.15);
   }
 
   private createSkipButton(): void {

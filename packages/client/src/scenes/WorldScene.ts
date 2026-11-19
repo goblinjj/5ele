@@ -138,6 +138,11 @@ export class WorldScene extends Phaser.Scene {
   private rangeRing!: Phaser.GameObjects.Image;
   private targetMark!: Phaser.GameObjects.Image;
   private guardRing!: Phaser.GameObjects.Image;
+  private playerGlow?: Phaser.FX.Glow;
+  /** 帧率看门狗：开局几秒内若明显掉帧，自动关掉最吃性能的泛光 */
+  private bloomOn: boolean = false;
+  private perfTimer: number = 0;
+  private perfFrames: number = 0;
   private guardGlow!: Phaser.GameObjects.Image;
   private pc!: Combatant;
 
@@ -222,6 +227,13 @@ export class WorldScene extends Phaser.Scene {
     this.createPlayerAnims();
     cam.startFollow(this.player, true, 0.14, 0.14, 0, -height * 0.07);
     cam.fadeIn(600, 0, 0, 0);
+    // 泛光：让气劲、技能、阵眼这些发光体真正"发光"
+    if (cam.postFX) {
+      cam.postFX.addBloom(0xffffff, 1, 1, 1, 1.1, 4);
+      this.bloomOn = true;
+    }
+    this.perfTimer = 0;
+    this.perfFrames = 0;
 
     // ---- 系统 ----
     this.entityManager = new EntityManager();
@@ -271,6 +283,7 @@ export class WorldScene extends Phaser.Scene {
     this.shapeTimer = 0;
     this.shapingBonus = 0;
     this.wuxingEmitter = undefined;
+    this.playerGlow = undefined;
     this.stateTick = 0;
     this.trailTick = 0;
     this.dryKills = 0;
@@ -278,6 +291,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private onShutdown(): void {
+    this.fx.resetTimeScale();
     this.scene.stop('HUDScene');
     this.scene.stop('InventoryScene');
     inputManager.reset();
@@ -322,6 +336,11 @@ export class WorldScene extends Phaser.Scene {
     this.player.setScale(PLAYER_SCALE);
     this.player.setCollideWorldBounds(true);
     (this.player.body as Phaser.Physics.Arcade.Body).setCircle(56, 98, 130);
+    // 残魂的描边辉光，颜色随进攻五行变化
+    if (this.player.preFX) {
+      this.player.preFX.setPadding(24);
+      this.playerGlow = this.player.preFX.addGlow(SPIRIT_TINT, 5, 0, false, 0.1, 14);
+    }
   }
 
   private createPlayerAnims(): void {
@@ -427,6 +446,7 @@ export class WorldScene extends Phaser.Scene {
 
     const tint = pc.attackWuxing ? WX_TINT[pc.attackWuxing.wuxing] : SPIRIT_TINT;
     this.playerAura?.setTint(tint);
+    if (this.playerGlow) this.playerGlow.color = tint;
     this.rangeRing?.setTint(tint);
 
     this.combat?.setSkills(getEquippedAoeSkills());
@@ -435,7 +455,26 @@ export class WorldScene extends Phaser.Scene {
   // ───────────────────────── 主循环 ─────────────────────────
 
   update(_time: number, delta: number): void {
-    if (this.phase === 'over' || !this.combat) return;
+    if (!this.combat) return;
+    // 打击停顿：命中瞬间世界几乎静止。放在最前面，保证任何状态下停顿都会按真实时间结束
+    const timeScale = this.fx.tickTimeScale(delta);
+    // 帧率看门狗：按真实时钟统计，连续 5 秒平均低于 40 帧就关掉泛光
+    if (this.bloomOn) {
+      const now = performance.now();
+      if (this.perfTimer === 0) this.perfTimer = now;
+      this.perfFrames++;
+      if (now - this.perfTimer >= 5000) {
+        const fps = (this.perfFrames * 1000) / (now - this.perfTimer);
+        if (fps < 40) {
+          this.cameras.main.postFX.clear();
+          this.bloomOn = false;
+          console.info(`[无极] 平均 ${fps.toFixed(0)} FPS，已自动关闭泛光`);
+        }
+        this.perfTimer = now;
+        this.perfFrames = 0;
+      }
+    }
+    if (this.phase === 'over') return;
     // 灵囊开启时世界静止
     if (this.scene.isActive('InventoryScene')) {
       (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
@@ -445,7 +484,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.physics.world.isPaused && this.phase !== 'victory') this.physics.world.resume();
     if (this.phase === 'victory') return;
 
-    delta = Math.min(delta, 50);
+    delta = Math.min(delta, 50) * timeScale;
     this.backdrop.update(delta);
 
     const moving = this.movePlayer(delta);
@@ -495,6 +534,7 @@ export class WorldScene extends Phaser.Scene {
       this.dashGhostTimer = 0;
       this.combat.setInvulnerable(DASH_INVULN);
       sfx.dash();
+      this.fx.squash(this.player, PLAYER_SCALE, 1.38, 0.7, 300);
       const tint = this.pc.attackWuxing ? WX_TINT[this.pc.attackWuxing.wuxing] : SPIRIT_TINT;
       this.fx.ring(this.player.x, this.player.y, 90, tint, 260);
       this.fx.burst(this.player.x, this.player.y, tint, 10);

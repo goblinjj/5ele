@@ -52,6 +52,8 @@ class SfxEngine {
   private muted: boolean = false;
   /** 各音效上次播放时间，用于限流（同一帧命中十只妖异不能响十次） */
   private last: Record<string, number> = {};
+  private musicBus: GainNode | null = null;
+  private ambienceTimer: number = 0;
 
   constructor() {
     try {
@@ -91,6 +93,92 @@ class SfxEngine {
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
+    this.startAmbience();
+  }
+
+  // ───────────────────────── 环境音乐 ─────────────────────────
+
+  /**
+   * 生成式的环境音乐：低沉的持续音（宫 + 徵）铺底，
+   * 上面每隔几秒随机拨一个五声音阶的音，带回声 —— 类似空谷里的古琴泛音。
+   * 永不重复，也不需要任何音频文件。
+   */
+  private startAmbience(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.musicBus) return;
+
+    const bus = ctx.createGain();
+    bus.gain.value = 0.55;
+    // 回声：延迟 + 反馈 + 低通，营造空间感
+    const delay = ctx.createDelay(1.5);
+    delay.delayTime.value = 0.42;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.42;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1800;
+    bus.connect(this.master);
+    bus.connect(delay);
+    delay.connect(lp).connect(fb).connect(delay);
+    lp.connect(this.master);
+    this.musicBus = bus;
+
+    // 铺底：C2 + G2，各自缓慢起伏
+    [[65.41, 0.085, 0.07], [98.0, 0.05, 0.11], [130.81, 0.028, 0.05]].forEach(([freq, gain, lfoHz]) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = lfoHz;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = gain * 0.6;
+      lfo.connect(lfoGain).connect(g.gain);
+      osc.connect(g).connect(bus);
+      osc.start();
+      lfo.start();
+    });
+
+    // 泛音：随机拨弦
+    const scale = [196.0, 220.0, 261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25];
+    let lastIdx = 4;
+    const pluck = () => {
+      if (!this.ctx || this.ctx.state !== 'running' || this.muted) return;
+      // 多数时候走相邻的音，偶尔跳进
+      const step = Math.random() < 0.75 ? (Math.random() < 0.5 ? -1 : 1) : Math.floor(Math.random() * 7) - 3;
+      lastIdx = Math.max(0, Math.min(scale.length - 1, lastIdx + step));
+      const f = scale[lastIdx];
+      const t0 = this.ctx.currentTime + 0.02;
+      const voice = (freq: number, gain: number, dur: number, type: OscillatorType) => {
+        const o = this.ctx!.createOscillator();
+        const g = this.ctx!.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g).connect(bus);
+        o.start(t0);
+        o.stop(t0 + dur + 0.05);
+      };
+      voice(f, 0.085, 2.6, 'triangle');
+      voice(f * 2, 0.03, 1.4, 'sine');
+      // 偶尔叠一个五度
+      if (Math.random() < 0.3) voice(f * 1.5, 0.04, 2.2, 'sine');
+    };
+    const schedule = () => {
+      pluck();
+      this.ambienceTimer = window.setTimeout(schedule, 1800 + Math.random() * 3600);
+    };
+    this.ambienceTimer = window.setTimeout(schedule, 1200);
+
+    // 切到后台时静音，回来再继续
+    document.addEventListener('visibilitychange', () => {
+      if (!this.ctx) return;
+      if (document.hidden) void this.ctx.suspend();
+      else void this.ctx.resume();
+    });
   }
 
   isMuted(): boolean {

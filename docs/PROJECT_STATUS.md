@@ -52,7 +52,9 @@ pnpm dev:client       # http://localhost:5173
 | `systems/combat/` | `CombatSystem`（普攻弹道、技能、状态、受击）、`CombatResolver` |
 | `systems/world/` | `SpawnSystem`、`EnemyAI`、`EntityManager`、`WorldBackdrop`（程序化地表） |
 | `systems/fx/Fx.ts` | 程序化特效贴图、火花、冲击波、飘字对象池 |
-| `systems/audio/Sfx.ts` | 程序化音效：全部用 Web Audio 实时合成，五行对应五声音阶 |
+| `systems/audio/Sfx.ts` | 程序化音效与生成式环境音乐：全部用 Web Audio 实时合成，五行对应五声音阶 |
+| `config/gameConfig.ts` | 设计分辨率 720×1560；`RENDER_SCALE` 按设备物理像素渲染，相机 zoom 映射逻辑坐标 |
+| `public/fonts/` | 思源宋体子集（`tools/subset-font.py` 生成，新增生僻字后需重跑） |
 | `systems/input/` | `InputManager`、浮动 `VirtualJoystick` |
 | `config/worldConfig.ts` | 地图 / 阵眼 / 五行色 / 数值常量 |
 

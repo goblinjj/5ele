@@ -13,6 +13,9 @@ export class Fx {
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   private textPool: Phaser.GameObjects.Text[] = [];
   private motes!: Phaser.GameObjects.Particles.ParticleEmitter;
+  /** 打击停顿剩余时间（真实毫秒） */
+  private stopTimer: number = 0;
+  private slowed: boolean = false;
   private embers!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor(scene: Phaser.Scene) {
@@ -179,6 +182,63 @@ export class Fx {
   burst(x: number, y: number, color: number, count: number = 8): void {
     this.sparks.setParticleTint(color);
     this.sparks.explode(count, x, y);
+  }
+
+  // ───────────────────────── 打击停顿 ─────────────────────────
+
+  /** 命中瞬间让整个世界几乎静止 ms 毫秒，给这一击"分量" */
+  hitStop(ms: number): void {
+    this.stopTimer = Math.max(this.stopTimer, ms);
+  }
+
+  /**
+   * 每帧调用一次：推进停顿计时，返回本帧的时间倍率（停顿中约 0.04）。
+   * 同时把补间、动画、物理的时间流速调到一致。
+   */
+  tickTimeScale(rawDelta: number): number {
+    const want = this.stopTimer > 0;
+    if (want) this.stopTimer -= rawDelta;
+    if (want !== this.slowed) {
+      this.slowed = want;
+      const k = want ? 0.04 : 1;
+      this.scene.tweens.timeScale = k;
+      this.scene.anims.globalTimeScale = k;
+      this.scene.time.timeScale = k;
+      // Arcade 物理的 timeScale 是反的：越大越慢
+      this.scene.physics.world.timeScale = 1 / k;
+    }
+    return want ? 0.04 : 1;
+  }
+
+  /** 场景结束时恢复正常流速（动画管理器是全局共享的） */
+  resetTimeScale(): void {
+    this.stopTimer = 0;
+    this.slowed = false;
+    this.scene.tweens.timeScale = 1;
+    this.scene.anims.globalTimeScale = 1;
+    this.scene.time.timeScale = 1;
+    this.scene.physics.world.timeScale = 1;
+  }
+
+  // ───────────────────────── 挤压与拉伸 ─────────────────────────
+
+  /** 瞬间变形后弹回原状（受击被压扁、出手前冲被拉长） */
+  squash(sprite: Phaser.GameObjects.Sprite, base: number, sx: number, sy: number, duration: number = 160): void {
+    if (!sprite.active) return;
+    (sprite.getData('sq') as Phaser.Tweens.Tween | undefined)?.stop();
+    sprite.setScale(base * sx, base * sy);
+    sprite.setData('sq', this.scene.tweens.add({
+      targets: sprite, scaleX: base, scaleY: base, duration, ease: 'Back.easeOut',
+    }));
+  }
+
+  /** 缓慢变形并保持（蓄力时身体下沉蓄劲），之后由 squash 接管弹回 */
+  stretchTo(sprite: Phaser.GameObjects.Sprite, base: number, sx: number, sy: number, duration: number): void {
+    if (!sprite.active) return;
+    (sprite.getData('sq') as Phaser.Tweens.Tween | undefined)?.stop();
+    sprite.setData('sq', this.scene.tweens.add({
+      targets: sprite, scaleX: base * sx, scaleY: base * sy, duration, ease: 'Sine.easeIn',
+    }));
   }
 
   /** 拖尾微粒（弹道、移动、能量飞行） */
