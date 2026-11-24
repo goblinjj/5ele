@@ -239,7 +239,8 @@ export class WorldBackdrop {
         .setScale(rnd.realInRange(2.4, 5.5), rnd.realInRange(1.8, 4.5))
         .setRotation(rnd.realInRange(0, Math.PI))
         .setBlendMode(dark ? Phaser.BlendModes.NORMAL : Phaser.BlendModes.ADD)
-        .setDepth(D_GROUND + 1);
+        // 暗斑与亮斑分层：同一深度里混合模式交替会打断合批，每次切换都多一次绘制提交
+        .setDepth(dark ? D_GROUND + 1 : D_GROUND + 2);
     }
 
     // 中央本源之光

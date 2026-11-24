@@ -5,7 +5,7 @@ import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
 import { WX_ORDER, WX_TINT, SPIRIT_TINT } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
 import { net } from '../systems/net/Net.js';
-import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale, isLowQuality, setLowQuality } from '../config/gameConfig.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", "STSong", serif';
 const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
@@ -231,10 +231,12 @@ export class MenuScene extends Phaser.Scene {
 
     // 次级入口
     const rowY = height * 0.875;
-    this.createLink(width / 2 - 150, rowY, '游戏介绍', true, () => window.open('/landing/index.html', '_blank'));
+    this.createLink(width / 2 - 230, rowY, '游戏介绍', true, () => window.open('/landing/index.html', '_blank'));
+    // 画质（切换后刷新页面生效）
+    this.createLink(width / 2, rowY, `画质：${isLowQuality() ? '流畅' : '高清'}`, true, () => setLowQuality(!isLowQuality()));
     // 音效开关（记在本机）
     const soundLabel = () => `音效：${sfx.isMuted() ? '关' : '开'}`;
-    const soundLink = this.createLink(width / 2 + 150, rowY, soundLabel(), true, () => {
+    const soundLink = this.createLink(width / 2 + 230, rowY, soundLabel(), true, () => {
       sfx.unlock();
       sfx.setMuted(!sfx.isMuted());
       soundLink.setText(soundLabel());
@@ -242,7 +244,8 @@ export class MenuScene extends Phaser.Scene {
     });
     const sep = this.add.graphics().setDepth(60);
     sep.lineStyle(1.5, 0x30363d, 1);
-    sep.lineBetween(width / 2, rowY - 16, width / 2, rowY + 16);
+    sep.lineBetween(width / 2 - 115, rowY - 16, width / 2 - 115, rowY + 16);
+    sep.lineBetween(width / 2 + 115, rowY - 16, width / 2 + 115, rowY + 16);
     this.add.text(width / 2, rowY + 62, '可组队联机 · 最多 4 人一起刷', {
       fontFamily: SANS, fontSize: '18px', color: '#484f58',
     }).setOrigin(0.5).setDepth(60);

@@ -20,8 +20,18 @@ export { GAME_WIDTH, GAME_HEIGHT };
  * 例如 390pt@3x 的手机，物理宽 1170 像素，倍率约 1.6；各场景的相机用同样的 zoom
  * 把 720×1560 的逻辑坐标映射到这块更大的画布上，所以布局代码不需要改动。
  */
+/** 画质：「流畅」按逻辑分辨率渲染（约为高清的 1/2.7 像素量），给性能一般的手机用 */
+export function isLowQuality(): boolean {
+  try { return localStorage.getItem('5ele_quality') === 'low'; } catch { return false; }
+}
+export function setLowQuality(low: boolean): void {
+  localStorage.setItem('5ele_quality', low ? 'low' : 'high');
+  location.reload();
+}
+
 function computeRenderScale(): number {
   if (typeof window === 'undefined') return 1;
+  if (isLowQuality()) return 1;
   const dpr = window.devicePixelRatio || 1;
   // 横屏设备（桌面）按高度适配，竖屏按宽度适配
   const fit = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);

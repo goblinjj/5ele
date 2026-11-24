@@ -3,7 +3,7 @@ import {
   TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, RARITY_COLORS, RARITY_CSS,
   withCdr, meteorCd,
 } from '@xiyou/shared';
-import { applyRenderScale } from '../config/gameConfig.js';
+import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/dims.js';
 import { VirtualJoystick } from '../systems/input/VirtualJoystick.js';
 import { inputManager } from '../systems/input/InputManager.js';
@@ -14,6 +14,12 @@ import { button, fmtTime, SERIF, SANS, hex } from '../ui/kit.js';
 
 const W = GAME_WIDTH;
 const H = GAME_HEIGHT;
+
+/** 只在内容或颜色真的变了时才改：Text 每次 setText / setColor 都会重新栅格化 */
+function setTextIf(t: Phaser.GameObjects.Text, text: string, color?: string): void {
+  if (t.text !== text) t.setText(text);
+  if (color && t.style.color !== color) t.setColor(color);
+}
 
 interface RoundBtn {
   x: number;
@@ -45,6 +51,10 @@ export class RiftHUDScene extends Phaser.Scene {
   private mateTexts: Phaser.GameObjects.Text[] = [];
   private endLayer: Phaser.GameObjects.Container | null = null;
   private controls: Phaser.GameObjects.GameObject[] = [];
+  private slowT = 0;
+  private netT = 0;
+  private miniT = 0;
+  private hinted = false;
 
   constructor() {
     super({ key: 'RiftHUDScene' });
@@ -55,6 +65,7 @@ export class RiftHUDScene extends Phaser.Scene {
     this.rift = this.scene.get('RiftScene') as RiftScene;
     this.endLayer = null;
     this.controls = [];
+    this.slowT = 0; this.netT = 0; this.miniT = 0; this.hinted = false;
     this.mateTexts = [];
 
     this.gfx = this.add.graphics();
@@ -124,7 +135,8 @@ export class RiftHUDScene extends Phaser.Scene {
       b.cd.fillStyle(0x000000, 0.66);
       b.cd.slice(b.x, b.y, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct, false);
       b.cd.fillPath();
-      b.cdText.setText(remain >= 1000 ? `${Math.ceil(remain / 1000)}` : (remain / 1000).toFixed(1)).setVisible(true);
+      setTextIf(b.cdText, remain >= 1000 ? `${Math.ceil(remain / 1000)}` : (remain / 1000).toFixed(1));
+      b.cdText.setVisible(true);
     } else {
       b.cdText.setVisible(false);
     }
@@ -138,11 +150,21 @@ export class RiftHUDScene extends Phaser.Scene {
     const g = this.gfx;
     g.clear();
 
-    this.topText.setText(`${TIER_NAMES[r.tier]}  ${fmtTime(r.elapsed)}`);
+    setTextIf(this.topText, `${TIER_NAMES[r.tier]}  ${fmtTime(r.elapsed)}`);
+    // 文字每改一次都要重新栅格化，所以延迟 / 帧率半秒刷新一次
+    const now = this.time.now;
     const fps = Math.round(this.game.loop.actualFps);
-    const rtt = net.rtt;
-    this.netText.setText(`延迟 ${rtt}ms · ${fps}帧`)
-      .setColor(rtt > 250 || fps < 30 ? '#f85149' : rtt > 120 || fps < 50 ? '#e3b23c' : '#3fb950');
+    if (now - this.netT > 500) {
+      this.netT = now;
+      const rtt = net.rtt;
+      setTextIf(this.netText, `延迟 ${rtt}ms · ${fps}帧`, rtt > 250 || fps < 30 ? '#f85149' : rtt > 120 || fps < 50 ? '#e3b23c' : '#3fb950');
+    }
+    // 持续掉帧：提示切换流畅画质（每局一次）
+    this.slowT = fps < 42 ? this.slowT + this.game.loop.delta : 0;
+    if (!this.hinted && this.slowT > 6000 && !isLowQuality()) {
+      this.hinted = true;
+      this.banner('画面不够流畅？', '可在主菜单把画质切换为「流畅」', 0xe3b23c);
+    }
 
     // 进度 / 核心血条
     const bx = 90, bw = W - 180, by = 76, bh = 40;
@@ -153,12 +175,12 @@ export class RiftHUDScene extends Phaser.Scene {
       const p = Phaser.Math.Clamp(boss.hp / boss.max, 0, 1);
       g.fillStyle(0xc9a0ff, 1);
       g.fillRoundedRect(bx, by, Math.max(1, bw * p), bh, 10);
-      this.progText.setText(`病变核心 ${Math.ceil(p * 100)}%`);
+      setTextIf(this.progText, `病变核心 ${Math.ceil(p * 100)}%`);
     } else {
       const p = Phaser.Math.Clamp(r.progress / PROGRESS_GOAL, 0, 1);
       g.fillStyle(0xd4a853, 1);
       g.fillRoundedRect(bx, by, Math.max(1, bw * p), bh, 10);
-      this.progText.setText(p >= 1 ? '病变核心即将现身…' : `净化进度 ${Math.floor(p * 100)}%`);
+      setTextIf(this.progText, p >= 1 ? '病变核心即将现身…' : `净化进度 ${Math.floor(p * 100)}%`);
     }
 
     // 自己的生命
@@ -168,15 +190,15 @@ export class RiftHUDScene extends Phaser.Scene {
     g.fillRoundedRect(26, 126, hpw + 8, 30, 10);
     g.fillStyle(hpP > 0.35 ? 0x3fb950 : 0xf85149, 1);
     g.fillRoundedRect(30, 130, Math.max(1, hpw * hpP), 22, 8);
-    this.hpText.setPosition(40, 141).setText(`${Math.ceil(r.hp)} / ${r.stats.maxHp}`);
-    this.critText.setText(r.critCharges > 0 ? `必暴火球 ×${r.critCharges}` : '');
+    setTextIf(this.hpText, `${Math.ceil(r.hp)} / ${r.stats.maxHp}`);
+    setTextIf(this.critText, r.critCharges > 0 ? `必暴火球 ×${r.critCharges}` : '');
 
     // 同伴
     const mates = r.mateList;
     this.mateTexts.forEach((t, i) => {
       const m = mates[i];
-      if (!m) { t.setText(''); return; }
-      t.setText(m.down ? `${m.info.name} · 倒地` : m.info.name).setColor(m.down ? '#f85149' : '#79c0ff');
+      if (!m) { setTextIf(t, ''); return; }
+      setTextIf(t, m.down ? `${m.info.name} · 倒地` : m.info.name, m.down ? '#f85149' : '#79c0ff');
       const y = 220 + i * 52 + 30;
       g.fillStyle(0x000000, 0.6);
       g.fillRect(30, y, 180, 10);
@@ -185,14 +207,14 @@ export class RiftHUDScene extends Phaser.Scene {
     });
 
     if (r.down && !r.ended) {
-      this.downText.setText(mates.some(m => !m.down) ? '你倒下了\n等待同伴靠近救援' : '你倒下了');
+      setTextIf(this.downText, mates.some(m => !m.down) ? '你倒下了\n等待同伴靠近救援' : '你倒下了', '#f85149');
     } else if (r.rescuing) {
-      this.downText.setText('救援中…').setColor('#3fb950');
+      setTextIf(this.downText, '救援中…', '#3fb950');
     } else {
-      this.downText.setText('').setColor('#f85149');
+      setTextIf(this.downText, '');
     }
 
-    this.drawMinimap();
+    if (now - this.miniT > 120) { this.miniT = now; this.drawMinimap(); }
 
     // 冷却
     this.setCd(this.btnDodge, r.cdDodge, DODGE.cooldown);

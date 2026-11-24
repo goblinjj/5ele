@@ -15,6 +15,7 @@ import { inputManager } from '../systems/input/InputManager.js';
 import { net } from '../systems/net/Net.js';
 import { sfx } from '../systems/audio/Sfx.js';
 import { SANS } from '../ui/kit.js';
+import { DamageText } from '../systems/fx/DamageText.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 const FIRE_TINT = 0xff6a3c;
@@ -23,6 +24,11 @@ const TELE_EDGE = 0xffd0c0;
 const TELE_DEPTH = -8;
 /** 玩家身体判定半径 */
 const BODY_R = 34;
+/** 火球：飞得快、转向有上限，弹道接近直线才不飘 */
+const BOLT_SPEED = 1850;
+const SPLIT_SPEED = 1500;
+const BOLT_TURN = 9;
+const BOLT_HIT_R = 48;
 /** 远端实体按服务器时间回放，比最新快照晚这么多毫秒，用来吸收网络抖动 */
 const INTERP_DELAY = 150;
 /** 快照断档时最多外推这么久，之后原地等待 */
@@ -74,6 +80,9 @@ interface CEnemy {
   x: number;
   y: number;
   buf: Sample[];
+  /** 受击后退的视觉偏移（只影响显示） */
+  kx: number;
+  ky: number;
   hp: number;
   max: number;
   scale: number;
@@ -108,7 +117,8 @@ interface MyBolt {
   vx: number;
   vy: number;
   life: number;
-  img: Phaser.GameObjects.Image;
+  core: Phaser.GameObjects.Image;
+  glow: Phaser.GameObjects.Image;
   scale: number;
 }
 
@@ -158,6 +168,7 @@ export interface EndMsg {
  */
 export class RiftScene extends Phaser.Scene {
   fx!: Fx;
+  private dmgText!: DamageText;
   private backdrop!: WorldBackdrop;
   private offs: (() => void)[] = [];
 
@@ -273,6 +284,7 @@ export class RiftScene extends Phaser.Scene {
     cam.setBackgroundColor('#020406');
 
     this.fx = new Fx(this);
+    this.dmgText = new DamageText(this);
     this.backdrop = new WorldBackdrop(this);
     this.createAnims();
     this.createMe();
@@ -343,12 +355,12 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private makeSpirit(x: number, y: number, tint: number): Phaser.GameObjects.Sprite {
+  private makeSpirit(x: number, y: number, tint: number, glow: boolean = true): Phaser.GameObjects.Sprite {
     const spr = this.textures.exists(PLAYER_ATLAS)
       ? this.add.sprite(x, y, PLAYER_ATLAS, 'character_idle_0')
       : this.add.sprite(x, y, '__DEFAULT');
     spr.setScale(PLAYER_SCALE);
-    if (spr.preFX) {
+    if (glow && spr.preFX) {
       spr.preFX.setPadding(24);
       spr.preFX.addGlow(tint, 2.5, 0, false, 0.1, 10);
     }
@@ -371,7 +383,7 @@ export class RiftScene extends Phaser.Scene {
     const y = RIFT_CENTER + Math.sin(ang) * 90;
     const tint = WX_TINT[info.path];
     const shadow = this.add.image(x, y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
-    const spr = this.makeSpirit(x, y, tint).setAlpha(0.92);
+    const spr = this.makeSpirit(x, y, tint, false).setAlpha(0.92);
     const name = this.add.text(x, y, info.name, {
       fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#79c0ff', stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5, 1).setDepth(FX_DEPTH - 2);
@@ -434,7 +446,7 @@ export class RiftScene extends Phaser.Scene {
     }
     const shadow = this.add.image(s.x, s.y, 'fx_shadow').setScale(scale * 3.1).setDepth(-20);
     const ring = this.add.image(s.x, s.y, 'fx_ring').setTint(tint).setScale(scale * 1.25, scale * 0.5).setAlpha(s.tier ? 0.95 : 0.55).setDepth(-19);
-    if (s.tier) ring.setBlendMode(Phaser.BlendModes.ADD);
+    if (s.tier) ring.setBlendMode(Phaser.BlendModes.ADD).setDepth(-18.5);
     const barW = s.tier === 2 ? 0 : s.tier === 1 ? 110 : 64;
     const hpBg = this.add.rectangle(s.x, s.y, barW + 4, 10, 0x000000, 0.7).setVisible(false);
     const hpFill = this.add.rectangle(s.x, s.y, barW, 6, tint, 1).setOrigin(0, 0.5).setVisible(false);
@@ -442,7 +454,7 @@ export class RiftScene extends Phaser.Scene {
 
     const en: CEnemy = {
       id: s.id, def, tier: s.tier, spr, shadow, ring, hpBg, hpFill, burnFx,
-      x: s.x, y: s.y, buf: [{ t: this.lastServerMs, x: s.x, y: s.y }], hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
+      x: s.x, y: s.y, buf: [{ t: this.lastServerMs, x: s.x, y: s.y }], kx: 0, ky: 0, hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
     };
     spr.setAlpha(0).setScale(scale * 0.4);
     this.tweens.add({ targets: spr, alpha: 1, scale, duration: 320, ease: 'Back.easeOut' });
@@ -464,7 +476,10 @@ export class RiftScene extends Phaser.Scene {
     if (!animate) { destroy(); return; }
     const atlas = MONSTER_ATLAS_MAP[en.def.atlas];
     if (atlas && this.anims.exists(`${atlas}_die`)) en.spr.play(`${atlas}_die`, true);
-    this.tweens.add({ targets: [en.spr, en.shadow, en.ring], alpha: 0, duration: 420, delay: 160, onComplete: destroy });
+    en.spr.setTintFill(0xffffff);
+    this.time.delayedCall(70, () => { if (en.spr.active) en.spr.clearTint(); });
+    this.tweens.add({ targets: en.spr, scale: en.scale * 1.22, duration: 90, yoyo: true, ease: 'Quad.easeOut' });
+    this.tweens.add({ targets: [en.spr, en.shadow, en.ring], alpha: 0, duration: 380, delay: 200, onComplete: destroy });
   }
 
   private onDie(id: number, by: number): void {
@@ -495,13 +510,17 @@ export class RiftScene extends Phaser.Scene {
       const mine = by === this.myIdx;
       const top = en.y - 307 * en.scale * 0.42;
       if (burn) {
-        if (mine) this.fx.floatText(en.x, top, `${amt}`, '#ff9a4a', 20, 50, 600);
+        if (mine) this.dmgText.show(en.x, top, `${amt}`, 0xff9a4a, 22, 50, 600);
         continue;
       }
       if (mine) {
-        this.fx.floatText(en.x, top - 10, crit ? `${amt}!` : `${amt}`, crit ? '#ffe066' : '#ffffff', crit ? 38 : 26, crit ? 90 : 70, crit ? 900 : 700);
+        this.dmgText.show(en.x, top - 10, crit ? `${amt}!` : `${amt}`, crit ? 0xffd23c : 0xffffff, crit ? 46 : 30, crit ? 100 : 70, crit ? 800 : 650, crit);
+        if (crit) {
+          this.fx.shake(0.0025, 70);
+          this.fx.flashGlow(en.x, en.y - 30, 90, 0xffd23c, 160, 0.7);
+        }
       } else {
-        this.fx.floatText(en.x, top, `${amt}`, '#8b949e', 18, 50, 500);
+        this.dmgText.show(en.x, top, `${amt}`, 0x8b949e, 20, 50, 500);
       }
       if (mine) continue;
       // 同伴打中的：闪白 + 压扁
@@ -704,7 +723,7 @@ export class RiftScene extends Phaser.Scene {
     this.hp = Math.max(0, this.hp - amt);
     this.hpDirty = true;
     this.hurtFlash = 160;
-    this.fx.floatText(this.x, this.y - 120, `-${amt}`, mult > 1 ? '#ff4d4d' : '#ff8a80', mult > 1 ? 32 : 26, 60, 700);
+    this.dmgText.show(this.x, this.y - 120, `-${amt}`, mult > 1 ? 0xff4d4d : 0xff8a80, mult > 1 ? 36 : 28, 60, 700);
     sfx.playerHurt(mult > 1);
     this.fx.shake(mult > 1 ? 0.007 : 0.004, 110);
     if (this.hp <= 0) {
@@ -739,46 +758,84 @@ export class RiftScene extends Phaser.Scene {
   }
 
   private fireBolt(s: SkillCode, x: number, y: number, target: CEnemy, scale: number): void {
-    const img = this.add.image(x, y, 'fx_glow').setTint(FIRE_TINT).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5 * scale).setDepth(FX_DEPTH - 6);
     const ang = Math.atan2(target.y - 40 - y, target.x - x);
-    const speed = s === 'b' ? FIRE.boltSpeed : FIRE.boltSpeed * 0.85;
-    this.mybolts.push({ s, target: target.id, x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 900, img, scale });
+    const speed = s === 'b' ? BOLT_SPEED : SPLIT_SPEED;
+    const core = this.add.image(x, y, 'fx_bolt').setTint(0xffe2a0).setBlendMode(Phaser.BlendModes.ADD)
+      .setOrigin(0.85, 0.5).setScale(1.15 * scale, 0.9 * scale).setRotation(ang).setDepth(FX_DEPTH - 6);
+    const glow = this.add.image(x, y, 'fx_glow').setTint(FIRE_TINT).setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.42 * scale).setDepth(FX_DEPTH - 6);
+    this.mybolts.push({ s, target: target.id, x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 650, core, glow, scale });
+    if (s === 'b') {
+      // 出手：掌心一闪 + 身体后坐
+      this.fx.flashGlow(x + Math.cos(ang) * 30, y + Math.sin(ang) * 30, 70, 0xffd27a, 120, 0.9);
+      this.fx.squash(this.me, PLAYER_SCALE, 0.9, 1.08, 100);
+    }
+  }
+
+  private destroyBolt(b: MyBolt): void {
+    b.core.destroy();
+    b.glow.destroy();
   }
 
   private updateMyBolts(dt: number): void {
     const sec = dt / 1000;
     this.mybolts = this.mybolts.filter(b => {
       const t = this.enemies.get(b.target);
+      const speed = Math.hypot(b.vx, b.vy);
       if (t) {
-        // 追踪：朝目标当前位置转向
-        const ang = Math.atan2(t.y - 40 - b.y, t.x - b.x);
-        const speed = Math.hypot(b.vx, b.vy);
-        b.vx = Math.cos(ang) * speed;
-        b.vy = Math.sin(ang) * speed;
+        // 有限转向：大体直线飞，只修正一点点
+        const want = Math.atan2(t.y - 40 - b.y, t.x - b.x);
+        const cur = Math.atan2(b.vy, b.vx);
+        const diff = Phaser.Math.Angle.Wrap(want - cur);
+        const turn = Phaser.Math.Clamp(diff, -BOLT_TURN * sec, BOLT_TURN * sec);
+        b.vx = Math.cos(cur + turn) * speed;
+        b.vy = Math.sin(cur + turn) * speed;
       }
       b.x += b.vx * sec;
       b.y += b.vy * sec;
       b.life -= dt;
-      b.img.setPosition(b.x, b.y);
-      if (Math.random() < 0.6) this.fx.trail(b.x, b.y, FIRE_TINT, 1);
-      if (t && (t.x - b.x) ** 2 + (t.y - 40 - b.y) ** 2 < 46 ** 2) {
-        net.send({ t: 'hit', s: b.s, id: t.id, x: Math.round(t.x), y: Math.round(t.y) });
-        this.fx.burst(b.x, b.y, FIRE_TINT, b.s === 'b' ? 8 : 4);
-        this.hitFeedback(t);
-        if (b.s === 'b') {
-          this.fx.flashGlow(b.x, b.y, FIRE.splashRadius, FIRE_TINT, 200, 0.5);
-          if (hasLegend(this.stats, 'chiyan_feather')) this.splitFrom(t);
+      b.core.setPosition(b.x, b.y).setRotation(Math.atan2(b.vy, b.vx));
+      b.glow.setPosition(b.x, b.y);
+      if (Math.random() < 0.5) this.fx.trail(b.x, b.y, FIRE_TINT, 1);
+
+      // 先看原目标；目标没了或被甩开，就打沿途撞上的第一只
+      let hit: CEnemy | null = null;
+      if (t && (t.x - b.x) ** 2 + (t.y - 40 - b.y) ** 2 < BOLT_HIT_R ** 2) hit = t;
+      if (!hit) {
+        for (const en of this.enemies.values()) {
+          if (en.hp <= 0) continue;
+          const r = en.tier === 2 ? 110 : en.tier === 1 ? 64 : BOLT_HIT_R;
+          if ((en.x - b.x) ** 2 + (en.y - 40 - b.y) ** 2 < r * r) { hit = en; break; }
         }
-        b.img.destroy();
+      }
+      if (hit) {
+        net.send({ t: 'hit', s: b.s, id: hit.id, x: Math.round(hit.x), y: Math.round(hit.y) });
+        const ang = Math.atan2(b.vy, b.vx);
+        this.fx.burst(b.x, b.y, FIRE_TINT, b.s === 'b' ? 10 : 5);
+        this.fx.slash(b.x, b.y, ang + (Math.random() - 0.5) * 0.8, b.s === 'b' ? 150 : 90, 0xffc06a);
+        this.hitFeedback(hit, Math.cos(ang), Math.sin(ang), b.s === 'b' ? 1 : 0.5);
+        if (b.s === 'b') {
+          this.fx.flashGlow(b.x, b.y, FIRE.splashRadius, FIRE_TINT, 180, 0.55);
+          if (hasLegend(this.stats, 'chiyan_feather')) this.splitFrom(hit);
+        }
+        this.destroyBolt(b);
         return false;
       }
-      if (b.life <= 0 || !t) { b.img.destroy(); return false; }
+      if (b.life <= 0) {
+        this.fx.burst(b.x, b.y, FIRE_TINT, 3);
+        this.destroyBolt(b);
+        return false;
+      }
       return true;
     });
   }
 
   /** 命中的手感在本地立刻给出（闪白、压扁、音效），伤害数字等服务器结算 */
-  private hitFeedback(en: CEnemy): void {
+  private hitFeedback(en: CEnemy, dx: number, dy: number, power: number): void {
+    // 后退：核心几乎不动，魁首退得少
+    const push = (en.tier === 2 ? 4 : en.tier === 1 ? 9 : 18) * power;
+    en.kx += dx * push;
+    en.ky += dy * push;
     en.spr.setTintFill(0xffffff);
     this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
     if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
@@ -886,7 +943,7 @@ export class RiftScene extends Phaser.Scene {
   private addLoot(id: string, x: number, y: number, item: GearItem): void {
     const c = RARITY_COLORS[item.rarity];
     const beam = this.add.image(x, y - 90, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD)
-      .setDisplaySize(item.rarity >= 3 ? 70 : 46, item.rarity >= 2 ? 360 : 180).setAlpha(item.rarity >= 2 ? 0.85 : 0.55).setDepth(y - 1);
+      .setDisplaySize(item.rarity >= 3 ? 70 : 46, item.rarity >= 2 ? 360 : 180).setAlpha(item.rarity >= 2 ? 0.85 : 0.55).setDepth(FX_DEPTH - 7);
     const glow = this.add.image(x, y, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.6).setDepth(-15);
     this.tweens.add({ targets: [beam, glow], alpha: { from: beam.alpha, to: beam.alpha * 0.55 }, duration: 700, yoyo: true, repeat: -1 });
     let label: Phaser.GameObjects.Text | undefined;
@@ -1098,9 +1155,12 @@ export class RiftScene extends Phaser.Scene {
       const dx = s ? s.x - en.x : 0, dy = s ? s.y - en.y : 0;
       en.x += dx;
       en.y += dy;
+      const decay = Math.exp(-dt / 70);
+      en.kx *= decay;
+      en.ky *= decay;
       const moving = Math.abs(dx) + Math.abs(dy) > dt * 0.05;
       if (Math.abs(dx) > 0.5 && now > en.atkUntil) en.spr.setFlipX(dx < 0);
-      en.spr.setPosition(en.x, en.y);
+      en.spr.setPosition(en.x + en.kx, en.y + en.ky);
       const foot = en.y + 307 * en.scale * 0.36;
       en.spr.setDepth(foot);
       en.shadow.setPosition(en.x, foot);
