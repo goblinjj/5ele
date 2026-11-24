@@ -4,6 +4,7 @@ import { gameState } from '../systems/GameStateManager.js';
 import { WorldBackdrop } from '../systems/world/WorldBackdrop.js';
 import { WX_ORDER, WX_TINT, SPIRIT_TINT } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
+import { net } from '../systems/net/Net.js';
 import { GAME_WIDTH, GAME_HEIGHT, RENDER_SCALE, applyRenderScale } from '../config/gameConfig.js';
 
 const SERIF = '"Noto Serif SC", "Songti SC", "STSong", serif';
@@ -34,6 +35,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 提前连上服务器，进营地时存档已经就绪
+    net.connect();
     const { width, height } = { width: GAME_WIDTH, height: GAME_HEIGHT };
     applyRenderScale(this);
     WorldBackdrop.ensureTextures(this);
@@ -222,7 +225,7 @@ export class MenuScene extends Phaser.Scene {
     hit.on('pointerout', () => draw(false));
     hit.on('pointerup', () => { draw(false); sfx.unlock(); sfx.click(); this.startSinglePlayer(); });
 
-    this.add.text(bx, by + bh / 2 + 34, '夺回五行之力，让世界归于平衡', {
+    this.add.text(bx, by + bh / 2 + 34, '刷秘境，夺神兵，净化五行', {
       fontFamily: SERIF, fontSize: '22px', color: '#8b949e',
     }).setOrigin(0.5).setDepth(60);
 
@@ -240,7 +243,7 @@ export class MenuScene extends Phaser.Scene {
     const sep = this.add.graphics().setDepth(60);
     sep.lineStyle(1.5, 0x30363d, 1);
     sep.lineBetween(width / 2, rowY - 16, width / 2, rowY + 16);
-    this.add.text(width / 2, rowY + 62, '多人模式 · 敬请期待', {
+    this.add.text(width / 2, rowY + 62, '可组队联机 · 最多 4 人一起刷', {
       fontFamily: SANS, fontSize: '18px', color: '#484f58',
     }).setOrigin(0.5).setDepth(60);
   }
@@ -264,7 +267,7 @@ export class MenuScene extends Phaser.Scene {
     gameState.reset();
     this.cameras.main.fadeOut(350, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start('PrologueScene');
+      this.scene.start(localStorage.getItem('5ele_prologue') ? 'CampScene' : 'PrologueScene');
     });
   }
 

@@ -8,10 +8,12 @@ import { RewardScene } from '../scenes/RewardScene.js';
 import { InventoryScene } from '../scenes/InventoryScene.js';
 import { HUDScene } from '../scenes/HUDScene.js';
 import { WorldScene } from '../scenes/WorldScene.js';
+import { CampScene } from '../scenes/CampScene.js';
+import { RiftScene } from '../scenes/RiftScene.js';
+import { RiftHUDScene } from '../scenes/RiftHUDScene.js';
 
-// 设计基准尺寸（9:19.5 竖屏）—— 所有布局坐标都以它为准
-export const GAME_WIDTH = 720;
-export const GAME_HEIGHT = 1560;
+import { GAME_WIDTH, GAME_HEIGHT } from './dims.js';
+export { GAME_WIDTH, GAME_HEIGHT };
 
 /**
  * 渲染倍率：画布按设备的物理像素创建，而不是固定 720 宽再被浏览器拉伸放大。
@@ -45,7 +47,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   height: Math.round(GAME_HEIGHT * RENDER_SCALE),
   parent: 'game-container',
   backgroundColor: '#0d1117',
-  scene: [BootScene, MenuScene, PrologueScene, MapScene, BattleScene, RewardScene, InventoryScene, HUDScene, WorldScene],
+  scene: [BootScene, MenuScene, PrologueScene, CampScene, RiftScene, RiftHUDScene, MapScene, BattleScene, RewardScene, InventoryScene, HUDScene, WorldScene],
   physics: {
     default: 'arcade',
     arcade: {

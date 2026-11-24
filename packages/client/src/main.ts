@@ -6,6 +6,7 @@ import { gameState } from './systems/GameStateManager.js';
 import { eventBus, GameEvent } from './core/EventBus.js';
 import { inputManager } from './systems/input/InputManager.js';
 import { installAudioUnlock } from './systems/audio/Sfx.js';
+import { net } from './systems/net/Net.js';
 
 // 文字在自己的画布上栅格化后再贴到屏幕上；默认按 1 倍栅格化，放大后会发糊。
 // 这里把所有 this.add.text 的默认分辨率提到渲染倍率，保证文字锐利。
@@ -129,5 +130,5 @@ showInstallPrompt();
 // 开发模式下暴露 game 实例
 if (import.meta.env.DEV) {
   (window as any).game = game;
-  (window as any).__dev = { gameState, eventBus, GameEvent, inputManager };
+  (window as any).__dev = { gameState, eventBus, GameEvent, inputManager, net };
 }

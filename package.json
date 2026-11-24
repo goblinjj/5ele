@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "dev": "docker-compose up",
+    "dev": "pnpm run --parallel -r dev",
     "dev:local": "pnpm run --parallel -r dev",
     "dev:client": "pnpm --filter @xiyou/client dev",
     "dev:server": "pnpm --filter @xiyou/server dev",

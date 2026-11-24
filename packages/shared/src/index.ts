@@ -10,3 +10,5 @@ export * from './logic/WuxingPassiveProcessor.js';
 export * from './logic/BattleEngine.js';
 export * from './logic/LootGenerator.js';
 export * from './utils/SkillDisplay.js';
+export * from './rift/gear.js';
+export * from './rift/rift.js';

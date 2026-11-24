@@ -191,7 +191,8 @@ export class PrologueScene extends Phaser.Scene {
       alpha: 1,
       duration: 800,
       onComplete: () => {
-        this.scene.start('WorldScene');
+        localStorage.setItem('5ele_prologue', '1');
+        this.scene.start('CampScene');
       },
     });
   }

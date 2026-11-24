@@ -7,7 +7,7 @@ import {
 } from '../../config/worldConfig.js';
 import { Fx } from '../fx/Fx.js';
 
-const MONSTER_ATLAS_MAP: Record<string, string> = {
+export const MONSTER_ATLAS_MAP: Record<string, string> = {
   '树妖':   'monster_tree_demon',
   '獠牙怪': 'monster_fang_beast',
   '青鳞蛇': 'monster_green_snake',
