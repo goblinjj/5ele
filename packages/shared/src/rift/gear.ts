@@ -1,4 +1,8 @@
 import { Wuxing, WUXING_CONQUERS, WUXING_GENERATES } from '../types/Wuxing.js';
+import { GearSlot } from './slots.js';
+import { SETS, SetId, SetFx, GRADE_STEP, CODEX_BONUS_PCT } from './sets.js';
+
+export { GearSlot };
 
 /**
  * 刷宝装备
@@ -7,13 +11,6 @@ import { Wuxing, WUXING_CONQUERS, WUXING_GENERATES } from '../types/Wuxing.js';
  * 品质越高词条越多；传说（橙）额外带一条改变技能形态的「异能」。
  * 装备有五行属性，与玩家所修之道相合时数值更高（五行共鸣）。
  */
-
-export enum GearSlot {
-  WEAPON = 'weapon',
-  ARMOR = 'armor',
-  CHARM = 'charm',
-  RELIC = 'relic',
-}
 
 export const EQUIP_SLOTS = ['weapon', 'armor', 'charm1', 'charm2', 'relic'] as const;
 export type EquipSlotKey = typeof EQUIP_SLOTS[number];
@@ -134,6 +131,13 @@ export interface GearItem {
   /** 随机词条 */
   affixes: StatLine[];
   legend?: LegendId;
+  /** 器型：剑 刃 杖 枪 扇 / 甲 袍 衣 铠 / 佩 坠 环 珠 / 印 铃 镜 葫芦 塔（决定外观） */
+  kind?: string;
+  /** 升阶 0~10，每阶所有数值 +8% */
+  grade?: number;
+  /** 套装与部件序号 */
+  set?: SetId;
+  piece?: number;
 }
 
 const WX_PREFIX: Record<Wuxing, string> = {
@@ -206,9 +210,10 @@ export function generateItem(tier: number, rarity: GearRarity, slot?: GearSlot, 
     affixes.push({ stat, value: roll(stat, tier, quality) });
   }
 
+  const kind = legend ? LEGEND_KIND[legend.id] : pick(BASE_NAMES[slot]);
   const name = legend
     ? legend.name
-    : `${WX_PREFIX[wx]}·${MATERIAL[Math.min(tier, MATERIAL.length - 1)]}${pick(BASE_NAMES[slot])}`;
+    : `${WX_PREFIX[wx]}·${MATERIAL[Math.min(tier, MATERIAL.length - 1)]}${kind}`;
 
   return {
     id: newItemId(),
@@ -220,7 +225,60 @@ export function generateItem(tier: number, rarity: GearRarity, slot?: GearSlot, 
     base: baseLines(slot, tier).map(l => ({ ...l, value: STAT_DEFS[l.stat].flat ? Math.round(l.value * quality) : l.value })),
     affixes,
     legend: legend?.id,
+    kind,
   };
+}
+
+const LEGEND_KIND: Record<LegendId, string> = {
+  chiyan_feather: '扇', jinwu_armor: '衣', liaoyuan_heart: '珠', fentian_seal: '印',
+};
+
+/** 生成一件套装件（品质固定为极品，词条 2 条） */
+export function generateSetPiece(setId: SetId, index: number, tier: number): GearItem {
+  const set = SETS[setId];
+  const p = set.pieces[index];
+  const quality = 1 + 3 * 0.12;
+  const pool = [...SLOT_AFFIXES[p.slot]];
+  const affixes: StatLine[] = [];
+  for (let i = 0; i < 2 && pool.length; i++) {
+    const stat = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    affixes.push({ stat, value: roll(stat, tier, quality) });
+  }
+  return {
+    id: newItemId(),
+    slot: p.slot,
+    name: p.name,
+    rarity: 3,
+    tier,
+    wuxing: set.wuxing,
+    base: baseLines(p.slot, tier).map(l => ({ ...l, value: STAT_DEFS[l.stat].flat ? Math.round(l.value * quality) : l.value })),
+    affixes,
+    kind: p.kind,
+    set: setId,
+    piece: index,
+  };
+}
+
+/** 器型（旧存档没有 kind 字段时从名字末尾推断） */
+export function kindOf(item: GearItem): string {
+  if (item.kind) return item.kind;
+  if (item.legend) return LEGEND_KIND[item.legend];
+  for (const k of BASE_NAMES[item.slot]) if (item.name.endsWith(k)) return k;
+  return BASE_NAMES[item.slot][0];
+}
+
+/** 装备显示颜色：套装用套装色，其余按品质 */
+export function itemCss(item: GearItem): string {
+  return item.set ? SETS[item.set].css : RARITY_CSS[item.rarity];
+}
+export function itemColor(item: GearItem): number {
+  return item.set ? SETS[item.set].color : RARITY_COLORS[item.rarity];
+}
+export function gradeMult(item: GearItem): number {
+  return 1 + (item.grade ?? 0) * GRADE_STEP;
+}
+export function displayName(item: GearItem): string {
+  return item.grade ? `${item.name} +${item.grade}` : item.name;
 }
 
 /** 掉落品质：层数越高、寻宝越高，好东西越多 */
@@ -275,6 +333,8 @@ export interface PlayerStats {
   find: number;
   regen: number;
   legends: LegendId[];
+  /** 五件套效果 */
+  setFx: SetFx[];
 }
 
 export const BASE_ATTACK = 10;
@@ -286,7 +346,21 @@ export function emptyEquipped(): Equipped {
   return { weapon: null, armor: null, charm1: null, charm2: null, relic: null };
 }
 
-export function computeStats(eq: Equipped, path: Wuxing | null | undefined): PlayerStats {
+/** 身上每套穿了几件 */
+export function setCounts(eq: Equipped): Partial<Record<SetId, number>> {
+  const out: Partial<Record<SetId, number>> = {};
+  for (const key of EQUIP_SLOTS) {
+    const it = eq[key];
+    if (it?.set) out[it.set] = (out[it.set] ?? 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * 汇总属性
+ * @param codexCount 图鉴已登记的套装件数（每件攻击与生命 +1%）
+ */
+export function computeStats(eq: Equipped, path: Wuxing | null | undefined, codexCount: number = 0): PlayerStats {
   const sum: Record<StatKey, number> = {
     atk: 0, atkPct: 0, aspd: 0, crit: 0, critDmg: 0, area: 0, move: 0,
     hp: 0, dr: 0, cdr: 0, burn: 0, pickup: 0, find: 0, regen: 0,
@@ -295,14 +369,25 @@ export function computeStats(eq: Equipped, path: Wuxing | null | undefined): Pla
   for (const key of EQUIP_SLOTS) {
     const it = eq[key];
     if (!it) continue;
-    const m = RESONANCE_MULT[resonanceOf(path, it.wuxing)];
+    const m = RESONANCE_MULT[resonanceOf(path, it.wuxing)] * gradeMult(it);
     for (const l of [...it.base, ...it.affixes]) sum[l.stat] += l.value * m;
     if (it.legend && !legends.includes(it.legend)) legends.push(it.legend);
   }
+  // 套装加成（不受五行共鸣影响）
+  const setFx: SetFx[] = [];
+  const counts = setCounts(eq);
+  for (const id of Object.keys(counts) as SetId[]) {
+    const n = counts[id]!;
+    const def = SETS[id];
+    if (n >= 2) def.bonus2.forEach(l => { sum[l.stat] += l.value; });
+    if (n >= 3) def.bonus3.forEach(l => { sum[l.stat] += l.value; });
+    if (n >= 5) setFx.push(def.fx5);
+  }
+  const codexPct = codexCount * CODEX_BONUS_PCT;
   const cap = (k: StatKey, v: number) => Math.min(STAT_DEFS[k].cap ?? Infinity, v);
   return {
-    attack: Math.round((BASE_ATTACK + sum.atk) * (1 + sum.atkPct / 100)),
-    maxHp: Math.round(BASE_HP + sum.hp),
+    attack: Math.round((BASE_ATTACK + sum.atk) * (1 + (sum.atkPct + codexPct) / 100)),
+    maxHp: Math.round((BASE_HP + sum.hp) * (1 + codexPct / 100)),
     aspd: cap('aspd', sum.aspd),
     crit: cap('crit', 5 + sum.crit),
     critDmg: 50 + sum.critDmg,
@@ -315,6 +400,7 @@ export function computeStats(eq: Equipped, path: Wuxing | null | undefined): Pla
     find: cap('find', sum.find),
     regen: BASE_REGEN + sum.regen,
     legends,
+    setFx,
   };
 }
 
@@ -322,12 +408,12 @@ export function computeStats(eq: Equipped, path: Wuxing | null | undefined): Pla
 export function powerOf(s: PlayerStats): number {
   const dps = s.attack * (1 + (s.crit / 100) * (s.critDmg / 100)) * (1 + s.aspd / 100) * (1 + s.area / 250) * (1 + s.burn / 400) * (1 + s.cdr / 200);
   const tough = Math.sqrt((s.maxHp / BASE_HP) / (1 - s.dr / 100));
-  return Math.round(dps * tough * 10 * (1 + s.legends.length * 0.12));
+  return Math.round(dps * tough * 10 * (1 + s.legends.length * 0.12 + s.setFx.length * 0.15));
 }
 
 /** 把某件装备换到某个栏位后的属性（用于对比） */
-export function statsWith(eq: Equipped, path: Wuxing | null | undefined, key: EquipSlotKey, item: GearItem | null): PlayerStats {
-  return computeStats({ ...eq, [key]: item }, path);
+export function statsWith(eq: Equipped, path: Wuxing | null | undefined, key: EquipSlotKey, item: GearItem | null, codexCount: number = 0): PlayerStats {
+  return computeStats({ ...eq, [key]: item }, path, codexCount);
 }
 
 /** 一件装备应该放进哪个栏位：佩饰优先放空位，否则替换较弱的那个 */
@@ -342,7 +428,7 @@ export function bestSlotFor(eq: Equipped, path: Wuxing | null | undefined, item:
 
 /** 分解所得玄晶 */
 export function salvageValue(item: GearItem): number {
-  return Math.round([1, 3, 8, 20, 60][item.rarity] * (1 + (item.tier - 1) * 0.3));
+  return Math.round([1, 3, 8, 20, 60][item.rarity] * (item.set ? 2 : 1) * (1 + (item.grade ?? 0) * 0.5) * (1 + (item.tier - 1) * 0.3));
 }
 
 export function formatStat(l: StatLine): string {

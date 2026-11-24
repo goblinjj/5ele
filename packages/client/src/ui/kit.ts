@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import {
-  GearItem, GearSlot, RARITY_COLORS, RARITY_CSS, RARITY_NAMES, WUXING_NAMES, LEGENDS, SLOT_NAME,
-  formatStat, resonanceOf, RESONANCE_LABEL, Wuxing,
+  GearItem, GearSlot, RARITY_CSS, RARITY_NAMES, WUXING_NAMES, LEGENDS, SLOT_NAME,
+  formatStat, resonanceOf, RESONANCE_LABEL, Wuxing, Equipped, SETS, setCounts,
+  itemColor, itemCss, displayName, gradeMult, StatLine,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
 import { sfx } from '../systems/audio/Sfx.js';
@@ -84,8 +85,8 @@ export function gearIcon(scene: Phaser.Scene, x: number, y: number, size: number
     }
     return c;
   }
-  const rc = RARITY_COLORS[item.rarity];
-  if (item.rarity >= 3) {
+  const rc = itemColor(item);
+  if (item.rarity >= 3 || item.set) {
     const glow = scene.add.image(0, 0, 'fx_glow').setTint(rc).setBlendMode(Phaser.BlendModes.ADD)
       .setDisplaySize(size * 1.7, size * 1.7).setAlpha(item.rarity === 4 ? 0.55 : 0.3);
     c.add(glow);
@@ -104,6 +105,18 @@ export function gearIcon(scene: Phaser.Scene, x: number, y: number, size: number
     fontFamily: SERIF, fontSize: `${Math.round(size * 0.46)}px`, fontStyle: 'bold',
     color: WX_CSS[item.wuxing], stroke: '#000000', strokeThickness: 4,
   }).setOrigin(0.5));
+  if (item.grade) {
+    c.add(scene.add.text(size / 2 - 5, size / 2 - 4, `+${item.grade}`, {
+      fontFamily: SANS, fontSize: `${Math.round(size * 0.22)}px`, fontStyle: 'bold', color: '#ffe066',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(1, 1));
+  }
+  if (item.set) {
+    c.add(scene.add.text(-size / 2 + 5, -size / 2 + 3, '套', {
+      fontFamily: SERIF, fontSize: `${Math.round(size * 0.2)}px`, fontStyle: 'bold', color: itemCss(item),
+      stroke: '#000000', strokeThickness: 3,
+    }));
+  }
   c.add(scene.add.text(-size / 2 + 6, size / 2 - 4, `${item.tier}`, {
     fontFamily: SANS, fontSize: `${Math.round(size * 0.2)}px`, fontStyle: 'bold', color: '#c9d1d9',
     stroke: '#000000', strokeThickness: 3,
@@ -112,9 +125,9 @@ export function gearIcon(scene: Phaser.Scene, x: number, y: number, size: number
 }
 
 /** 装备说明的多行文字 */
-export function itemLines(item: GearItem, path: Wuxing | null): { text: string; color: string; size: number }[] {
+export function itemLines(item: GearItem, path: Wuxing | null, equip?: Equipped): { text: string; color: string; size: number }[] {
   const out: { text: string; color: string; size: number }[] = [];
-  out.push({ text: item.name, color: RARITY_CSS[item.rarity], size: 38 });
+  out.push({ text: displayName(item), color: itemCss(item), size: 38 });
   const res = resonanceOf(path, item.wuxing);
   out.push({
     text: `${RARITY_NAMES[item.rarity]} · ${SLOT_NAME[item.slot]} · ${WUXING_NAMES[item.wuxing]}行 · ${item.tier} 重天`,
@@ -123,11 +136,23 @@ export function itemLines(item: GearItem, path: Wuxing | null): { text: string; 
   if (RESONANCE_LABEL[res]) {
     out.push({ text: `五行共鸣：${RESONANCE_LABEL[res]}`, color: res === 'clash' ? '#f85149' : '#4ade80', size: 24 });
   }
-  item.base.forEach(l => out.push({ text: formatStat(l), color: '#f0e6d3', size: 30 }));
-  item.affixes.forEach(l => out.push({ text: `◆ ${formatStat(l)}`, color: '#79c0ff', size: 28 }));
+  // 显示数值含升阶加成
+  const g = gradeMult(item);
+  const scaled = (l: StatLine): StatLine => ({ stat: l.stat, value: l.value * g });
+  item.base.forEach(l => out.push({ text: formatStat(scaled(l)), color: '#f0e6d3', size: 30 }));
+  item.affixes.forEach(l => out.push({ text: `◆ ${formatStat(scaled(l))}`, color: '#79c0ff', size: 28 }));
   if (item.legend) {
     const d = LEGENDS[item.legend];
     out.push({ text: `【异能】${d.desc}`, color: '#ffa31a', size: 27 });
+  }
+  if (item.set) {
+    const set = SETS[item.set];
+    const n = equip ? (setCounts(equip)[item.set] ?? 0) : 0;
+    const on = (k: number) => (n >= k ? set.css : '#6e7681');
+    out.push({ text: `【${set.name}套装】身上 ${n}/5 件`, color: set.css, size: 28 });
+    out.push({ text: `(2) ${set.bonus2.map(formatStat).join('，')}`, color: on(2), size: 25 });
+    out.push({ text: `(3) ${set.bonus3.map(formatStat).join('，')}`, color: on(3), size: 25 });
+    out.push({ text: `(5) ${set.desc5}`, color: on(5), size: 25 });
   }
   return out;
 }

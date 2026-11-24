@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, RARITY_COLORS, RARITY_CSS,
+  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, RARITY_COLORS, RARITY_CSS, itemColor, itemCss,
   withCdr, meteorCd,
 } from '@xiyou/shared';
 import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
@@ -251,7 +251,7 @@ export class RiftHUDScene extends Phaser.Scene {
     for (const l of r.lootDots) {
       const p = toMap(l.x, l.y);
       if (!p) continue;
-      m.fillStyle(RARITY_COLORS[l.item.rarity], 1);
+      m.fillStyle(itemColor(l.item), 1);
       m.fillRect(p[0] - 3, p[1] - 3, 6, 6);
     }
     for (const mt of r.mateList) {
@@ -303,6 +303,7 @@ export class RiftHUDScene extends Phaser.Scene {
       `${TIER_NAMES[m.tier]} · 用时 ${fmtTime(m.ms)}${m.best ? '  新纪录！' : ''}`,
       `击杀 ${r.kills}　每分钟 ${m.ms > 0 ? Math.round((r.kills / m.ms) * 60000) : 0}`,
       `收获装备 ${m.collected} 件　玄晶 +${m.mats}`,
+      ...((m.essence ?? r.gotEss) > 0 ? [`${TIER_NAMES[m.tier]}精魄 +${m.essence ?? r.gotEss}`] : []),
     ];
     if (m.ok && m.tier < 9) lines.push(`已解锁 ${TIER_NAMES[m.tier + 1]}`);
     c.add(this.add.text(W / 2, 360, lines.join('\n'), {
@@ -313,7 +314,7 @@ export class RiftHUDScene extends Phaser.Scene {
     const best = (m.items ?? [...r.gotItems]).slice().sort((a, b) => b.rarity - a.rarity).slice(0, 8);
     best.forEach((it, i) => {
       c.add(this.add.text(W / 2, 640 + i * 46, it.name, {
-        fontFamily: SERIF, fontSize: '28px', fontStyle: it.rarity >= 3 ? 'bold' : 'normal', color: RARITY_CSS[it.rarity],
+        fontFamily: SERIF, fontSize: '28px', fontStyle: it.rarity >= 3 ? 'bold' : 'normal', color: itemCss(it),
       }).setOrigin(0.5, 0));
     });
 

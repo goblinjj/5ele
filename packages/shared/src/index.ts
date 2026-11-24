@@ -12,3 +12,5 @@ export * from './logic/LootGenerator.js';
 export * from './utils/SkillDisplay.js';
 export * from './rift/gear.js';
 export * from './rift/rift.js';
+export * from './rift/slots.js';
+export * from './rift/sets.js';

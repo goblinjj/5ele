@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  Wuxing, GearItem, RARITY_COLORS, RARITY_CSS, PlayerStats, RunPlayerInfo,
+  Wuxing, GearItem, RARITY_COLORS, RARITY_CSS, itemColor, itemCss, displayName, PlayerStats, RunPlayerInfo,
   RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn, SkillCode,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
   wxMult, withCdr, boltInterval, meteorCd, hasLegend, salvageValue,
@@ -16,6 +16,7 @@ import { net } from '../systems/net/Net.js';
 import { sfx } from '../systems/audio/Sfx.js';
 import { SANS } from '../ui/kit.js';
 import { DamageText } from '../systems/fx/DamageText.js';
+import { Avatar } from '../systems/avatar/Avatar.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 const FIRE_TINT = 0xff6a3c;
@@ -83,6 +84,10 @@ interface CEnemy {
   /** 受击后退的视觉偏移（只影响显示） */
   kx: number;
   ky: number;
+  /** 程序动态：前倾、受击后仰、步伐相位 */
+  lean: number;
+  tilt: number;
+  phase: number;
   hp: number;
   max: number;
   scale: number;
@@ -136,7 +141,7 @@ interface Loot {
 interface Mate {
   info: RunPlayerInfo;
   idx: number;
-  spr: Phaser.GameObjects.Sprite;
+  spr: Avatar;
   shadow: Phaser.GameObjects.Image;
   name: Phaser.GameObjects.Text;
   hpBg: Phaser.GameObjects.Rectangle;
@@ -160,7 +165,7 @@ export interface RunStartMsg {
 }
 
 export interface EndMsg {
-  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; items?: GearItem[];
+  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; essence?: number; items?: GearItem[];
 }
 
 /**
@@ -186,6 +191,7 @@ export class RiftScene extends Phaser.Scene {
   kills = 0;
   gotItems: GearItem[] = [];
   gotMats = 0;
+  gotEss = 0;
   down = false;
   /** 完美闪避赐予的必暴火球 */
   critCharges = 0;
@@ -198,7 +204,9 @@ export class RiftScene extends Phaser.Scene {
   cdGuard = 0;
 
   // 本地角色
-  private me!: Phaser.GameObjects.Sprite;
+  private me!: Avatar;
+  /** 人形纸娃娃的原点在脚下，逻辑坐标在身体中心 */
+  private static readonly FOOT = 50;
   private meShadow!: Phaser.GameObjects.Image;
   private meAura!: Phaser.GameObjects.Image;
   private guardRing!: Phaser.GameObjects.Image;
@@ -216,9 +224,9 @@ export class RiftScene extends Phaser.Scene {
   private pdDone = false;
   private guardT = 0;
   private guardStart = -1e9;
-  private hurtFlash = 0;
   private animState = '';
   private castAnim = 0;
+  private mateAtkT = new Map<number, number>();
   private sendMvT = 0;
   private sendHpT = 0;
   private hpDirty = false;
@@ -257,6 +265,7 @@ export class RiftScene extends Phaser.Scene {
     this.kills = 0;
     this.gotItems = [];
     this.gotMats = 0;
+    this.gotEss = 0;
     this.down = false;
     this.critCharges = 0;
     this.cdBolt = 400; this.cdRing = 0; this.cdMeteor = 0; this.cdDodge = 0; this.cdGuard = 0;
@@ -314,6 +323,11 @@ export class RiftScene extends Phaser.Scene {
       net.on('loot', (m: { id: string; x: number; y: number; item: GearItem }) => this.addLoot(m.id, m.x, m.y, m.item)),
       net.on('got', (m: { id: string; item?: GearItem; mats?: number }) => this.onGot(m.id, m.item, m.mats)),
       net.on('boss', (m: { id: number }) => this.onBoss(m.id)),
+      net.on('essence', (m: { tier: number; n: number }) => {
+        this.gotEss += m.n;
+        this.fx.floatText(this.x, this.y - 190, `${m.tier}重天精魄 +${m.n}`, '#e0b0ff', 30, 90, 1400);
+        sfx.shapeOk(Wuxing.FIRE);
+      }),
       net.on('down', (m: { p: number }) => this.onDown(m.p)),
       net.on('up', (m: { p: number }) => this.onUp(m.p)),
       net.on('end', (m: EndMsg) => this.onEnd(m)),
@@ -355,26 +369,13 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private makeSpirit(x: number, y: number, tint: number, glow: boolean = true): Phaser.GameObjects.Sprite {
-    const spr = this.textures.exists(PLAYER_ATLAS)
-      ? this.add.sprite(x, y, PLAYER_ATLAS, 'character_idle_0')
-      : this.add.sprite(x, y, '__DEFAULT');
-    spr.setScale(PLAYER_SCALE);
-    if (glow && spr.preFX) {
-      spr.preFX.setPadding(24);
-      spr.preFX.addGlow(tint, 2.5, 0, false, 0.1, 10);
-    }
-    if (this.anims.exists(`${PLAYER_ATLAS}_idle`)) spr.play(`${PLAYER_ATLAS}_idle`);
-    return spr;
-  }
-
   private createMe(): void {
     const tint = WX_TINT[this.path];
     this.meAura = this.add.image(this.x, this.y, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(tint).setScale(1.1).setAlpha(0.3).setDepth(-12);
     this.tweens.add({ targets: this.meAura, alpha: 0.16, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.meShadow = this.add.image(this.x, this.y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
     this.guardRing = this.add.image(this.x, this.y, 'fx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffe9a8).setVisible(false).setDepth(FX_DEPTH - 4);
-    this.me = this.makeSpirit(this.x, this.y, tint);
+    this.me = new Avatar(this, this.x, this.y + RiftScene.FOOT, this.players[this.myIdx].equip, 1.15);
   }
 
   private createMate(info: RunPlayerInfo, idx: number): void {
@@ -382,8 +383,9 @@ export class RiftScene extends Phaser.Scene {
     const x = RIFT_CENTER + Math.cos(ang) * 90;
     const y = RIFT_CENTER + Math.sin(ang) * 90;
     const tint = WX_TINT[info.path];
-    const shadow = this.add.image(x, y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
-    const spr = this.makeSpirit(x, y, tint, false).setAlpha(0.92);
+    const shadow = this.add.image(x, y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11).setVisible(false);
+    void tint;
+    const spr = new Avatar(this, x, y + RiftScene.FOOT, info.equip, 1.15);
     const name = this.add.text(x, y, info.name, {
       fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#79c0ff', stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5, 1).setDepth(FX_DEPTH - 2);
@@ -454,7 +456,7 @@ export class RiftScene extends Phaser.Scene {
 
     const en: CEnemy = {
       id: s.id, def, tier: s.tier, spr, shadow, ring, hpBg, hpFill, burnFx,
-      x: s.x, y: s.y, buf: [{ t: this.lastServerMs, x: s.x, y: s.y }], kx: 0, ky: 0, hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
+      x: s.x, y: s.y, buf: [{ t: this.lastServerMs, x: s.x, y: s.y }], kx: 0, ky: 0, lean: 0, tilt: 0, phase: Math.random() * 6.28, hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
     };
     spr.setAlpha(0).setScale(scale * 0.4);
     this.tweens.add({ targets: spr, alpha: 1, scale, duration: 320, ease: 'Back.easeOut' });
@@ -497,7 +499,13 @@ export class RiftScene extends Phaser.Scene {
       this.fx.shake(0.006, 160);
     }
     sfx.enemyDie(en.def.wuxing, en.tier > 0);
-    if (by === this.myIdx) this.kills++;
+    if (by === this.myIdx) {
+      this.kills++;
+      if (this.stats.setFx.includes('changsheng5') && !this.down) {
+        this.hp = Math.min(this.stats.maxHp, this.hp + Math.ceil(this.stats.maxHp * 0.02));
+        this.hpDirty = true;
+      }
+    }
     this.removeEnemy(en, true);
   }
 
@@ -508,6 +516,11 @@ export class RiftScene extends Phaser.Scene {
       const amt = d[i + 1], crit = d[i + 2] === 1, by = d[i + 3], burn = d[i + 4] === 1;
       en.hp = Math.max(0, en.hp - amt);
       const mine = by === this.myIdx;
+      if (!mine && !burn) {
+        const mt = this.mates.get(by);
+        const last = this.mateAtkT.get(by) ?? 0;
+        if (mt && this.time.now - last > 280) { this.mateAtkT.set(by, this.time.now); mt.spr.play('attack'); mt.spr.setFacing(en.x < mt.x ? -1 : 1); }
+      }
       const top = en.y - 307 * en.scale * 0.42;
       if (burn) {
         if (mine) this.dmgText.show(en.x, top, `${amt}`, 0xff9a4a, 22, 50, 600);
@@ -554,8 +567,7 @@ export class RiftScene extends Phaser.Scene {
       this.down = true;
       this.hp = 0;
       sfx.gameOver();
-      if (this.anims.exists(`${PLAYER_ATLAS}_die`)) this.me.play(`${PLAYER_ATLAS}_die`, true);
-      this.animState = 'die';
+      this.me.setDown(true);
     } else {
       const mt = this.mates.get(idx);
       if (mt) mt.down = true;
@@ -570,7 +582,7 @@ export class RiftScene extends Phaser.Scene {
       this.invuln = 1500;
       sfx.heal();
       this.fx.ring(this.x, this.y, 160, 0x3fb950, 500);
-      this.animState = '';
+      this.me.setDown(false);
     } else {
       const mt = this.mates.get(idx);
       if (mt) mt.down = false;
@@ -697,7 +709,7 @@ export class RiftScene extends Phaser.Scene {
         net.send({ t: 'pdodge' });
         this.critCharges = 4;
         this.fx.floatText(this.x, this.y - 150, '完美闪避', '#9fd8ff', 34, 80, 900);
-        this.fx.afterimage(this.me, 0x9fd8ff);
+        this.ghost();
         sfx.slowmoIn();
       }
       return;
@@ -711,6 +723,7 @@ export class RiftScene extends Phaser.Scene {
         this.fx.floatText(this.x, this.y - 150, '防反！', '#ffe9a8', 40, 90, 900);
         this.fx.shake(0.006, 140);
         this.cdGuard = 0;
+        if (this.stats.setFx.includes('xuanming5')) { this.invuln = 3000; this.fx.ring(this.x, this.y, 140, 0x6fb6ff, 600); }
         if (hasLegend(this.stats, 'jinwu_armor')) { this.cdRing = 0; this.castRing(); }
         return;
       }
@@ -722,7 +735,7 @@ export class RiftScene extends Phaser.Scene {
     const amt = Math.max(1, Math.round(dmg * mult * (1 - this.stats.dr / 100)));
     this.hp = Math.max(0, this.hp - amt);
     this.hpDirty = true;
-    this.hurtFlash = 160;
+    this.me.hurt();
     this.dmgText.show(this.x, this.y - 120, `-${amt}`, mult > 1 ? 0xff4d4d : 0xff8a80, mult > 1 ? 36 : 28, 60, 700);
     sfx.playerHurt(mult > 1);
     this.fx.shake(mult > 1 ? 0.007 : 0.004, 110);
@@ -754,6 +767,7 @@ export class RiftScene extends Phaser.Scene {
     this.fireBolt('b', this.x + this.facing * 20, this.y - 60, target, 1);
     this.facing = target.x < this.x ? -1 : 1;
     this.castAnim = 260;
+    this.me.play('attack');
     sfx.shoot();
   }
 
@@ -768,7 +782,6 @@ export class RiftScene extends Phaser.Scene {
     if (s === 'b') {
       // 出手：掌心一闪 + 身体后坐
       this.fx.flashGlow(x + Math.cos(ang) * 30, y + Math.sin(ang) * 30, 70, 0xffd27a, 120, 0.9);
-      this.fx.squash(this.me, PLAYER_SCALE, 0.9, 1.08, 100);
     }
   }
 
@@ -836,6 +849,8 @@ export class RiftScene extends Phaser.Scene {
     const push = (en.tier === 2 ? 4 : en.tier === 1 ? 9 : 18) * power;
     en.kx += dx * push;
     en.ky += dy * push;
+    // 受击后仰：朝飞来方向的反向歪一下
+    en.tilt += (dx >= 0 ? 1 : -1) * (en.tier === 2 ? 0.04 : 0.22) * power;
     en.spr.setTintFill(0xffffff);
     this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
     if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
@@ -870,6 +885,7 @@ export class RiftScene extends Phaser.Scene {
     net.send({ t: 'cast', s: 'A', x: Math.round(this.x), y: Math.round(this.y) });
     this.drawRing(this.x, this.y, FIRE.ringRadius * (1 + this.stats.area / 100), true);
     this.castAnim = 380;
+    this.me.play('cast');
   }
 
   private drawRing(x: number, y: number, r: number, mine: boolean): void {
@@ -895,9 +911,11 @@ export class RiftScene extends Phaser.Scene {
     const tx = best ? best.x : this.x + this.facing * 300;
     const ty = best ? best.y : this.y;
     this.cdMeteor = meteorCd(this.stats);
+    if (this.stats.setFx.includes('tiangang5')) this.critCharges = 5;
     net.send({ t: 'cast', s: 'B', x: Math.round(tx), y: Math.round(ty) });
     this.drawMeteor(tx, ty, true);
     this.castAnim = 420;
+    this.me.play('cast');
   }
 
   private drawMeteor(x: number, y: number, mine: boolean): void {
@@ -927,6 +945,9 @@ export class RiftScene extends Phaser.Scene {
   }
 
   private onRemoteCast(p: number, s: SkillCode, x: number, y: number): void {
+    if (s === 'm') { this.miniMeteor(x, y); return; }
+    if (s === 'L') { this.thunder(x, y); return; }
+    if (s === 'F') { this.fireField(x, y, p === this.myIdx ? FIRE.ringRadius * (1 + this.stats.area / 100) : FIRE.ringRadius); return; }
     if (s === 'H') {
       this.fx.flashGlow(x, y, FIRE.heartRadius, 0xff8a3c, 300, 0.8);
       this.fx.ring(x, y, FIRE.heartRadius, FIRE_TINT, 320, 0.2);
@@ -934,22 +955,68 @@ export class RiftScene extends Phaser.Scene {
       return;
     }
     if (p === this.myIdx) return;
+    this.mates.get(p)?.spr.play('cast');
     if (s === 'A') this.drawRing(x, y, FIRE.ringRadius, false);
     else if (s === 'B') this.drawMeteor(x, y, false);
+  }
+
+  // ───────────────────────── 套装效果表现 ─────────────────────────
+
+  /** 焚炎五件：小陨火 */
+  private miniMeteor(x: number, y: number): void {
+    const rock = this.add.image(x - 120, y - 420, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55).setDepth(FX_DEPTH);
+    this.tweens.add({
+      targets: rock, x, y, duration: 260, ease: 'Quad.easeIn',
+      onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 1),
+      onComplete: () => {
+        rock.destroy();
+        this.fx.flashGlow(x, y, 170, 0xffd27a, 300, 0.8);
+        this.fx.ring(x, y, 150, FIRE_TINT, 320, 0.2);
+        this.fx.burst(x, y, FIRE_TINT, 10);
+      },
+    });
+  }
+
+  /** 惊雷五件：落雷 */
+  private thunder(x: number, y: number): void {
+    const bolt = this.add.image(x, y - 40, 'fx_bolt').setTint(0xfff3a0).setBlendMode(Phaser.BlendModes.ADD)
+      .setOrigin(1, 0.5).setRotation(Math.PI / 2).setScale(7, 1.4).setDepth(FX_DEPTH + 1);
+    this.tweens.add({ targets: bolt, alpha: 0, scaleY: 0.3, duration: 220, onComplete: () => bolt.destroy() });
+    this.fx.flashGlow(x, y - 20, 140, 0xfff3a0, 220, 0.9);
+    this.fx.ring(x, y, 130, 0xfff3a0, 260, 0.2);
+    sfx.skill(Wuxing.METAL);
+  }
+
+  /** 坤元五件：火域，持续 3 秒 */
+  private fireField(x: number, y: number, r: number): void {
+    const disc = this.add.image(x, y, 'fx_disc').setTint(0xff7a3c).setBlendMode(Phaser.BlendModes.ADD)
+      .setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH - 1);
+    this.tweens.add({ targets: disc, alpha: 0.32, duration: 250 });
+    const ember = this.time.addEvent({
+      delay: 90, repeat: 32,
+      callback: () => {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
+        this.fx.ember(x + Math.cos(a) * d, y + Math.sin(a) * d, FIRE_TINT, 1, 10);
+      },
+    });
+    this.time.delayedCall(3000, () => {
+      ember.remove();
+      this.tweens.add({ targets: disc, alpha: 0, duration: 300, onComplete: () => disc.destroy() });
+    });
   }
 
   // ───────────────────────── 掉落 ─────────────────────────
 
   private addLoot(id: string, x: number, y: number, item: GearItem): void {
-    const c = RARITY_COLORS[item.rarity];
+    const c = itemColor(item);
     const beam = this.add.image(x, y - 90, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD)
       .setDisplaySize(item.rarity >= 3 ? 70 : 46, item.rarity >= 2 ? 360 : 180).setAlpha(item.rarity >= 2 ? 0.85 : 0.55).setDepth(FX_DEPTH - 7);
     const glow = this.add.image(x, y, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.6).setDepth(-15);
     this.tweens.add({ targets: [beam, glow], alpha: { from: beam.alpha, to: beam.alpha * 0.55 }, duration: 700, yoyo: true, repeat: -1 });
     let label: Phaser.GameObjects.Text | undefined;
-    if (item.rarity >= 2) {
-      label = this.add.text(x, y - 40, item.name, {
-        fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: RARITY_CSS[item.rarity], stroke: '#000', strokeThickness: 4,
+    if (item.rarity >= 2 || item.set) {
+      label = this.add.text(x, y - 40, item.set ? `【套】${item.name}` : item.name, {
+        fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: itemCss(item), stroke: '#000', strokeThickness: 4,
       }).setOrigin(0.5).setDepth(FX_DEPTH - 3);
     }
     if (item.rarity >= 3) {
@@ -996,7 +1063,7 @@ export class RiftScene extends Phaser.Scene {
         const key = bestSlotFor(prof.equip, prof.path, item);
         better = powerOf(statsWith(prof.equip, prof.path, key, item)) > powerOf(computeStats(prof.equip, prof.path));
       }
-      this.fx.floatText(this.x, this.y - 170, `${better ? '▲ ' : ''}${item.name}`, RARITY_CSS[item.rarity], item.rarity >= 3 ? 32 : 26, 80, 1300);
+      this.fx.floatText(this.x, this.y - 170, `${better ? '▲ ' : ''}${item.name}`, itemCss(item), item.rarity >= 3 ? 32 : 26, 80, 1300);
     } else if (mats) {
       this.gotMats += mats;
       this.fx.floatText(this.x, this.y - 150, `分解 +${mats} 玄晶`, '#c084fc', 22, 60, 900);
@@ -1016,7 +1083,6 @@ export class RiftScene extends Phaser.Scene {
     this.dodgeWin = Math.max(0, this.dodgeWin - dt);
     this.guardT = Math.max(0, this.guardT - dt);
     this.castAnim = Math.max(0, this.castAnim - dt);
-    this.hurtFlash = Math.max(0, this.hurtFlash - dt);
 
     if (!this.ended) {
       this.handleInput(dt);
@@ -1030,7 +1096,7 @@ export class RiftScene extends Phaser.Scene {
       inputManager.consumeJustPressed();
     }
 
-    this.updateMe();
+    this.updateMe(dt);
     this.updateEnemies(dt);
     this.updateMates(dt);
     this.updateTeles();
@@ -1067,7 +1133,7 @@ export class RiftScene extends Phaser.Scene {
       this.pdDone = false;
       this.cdDodge = DODGE.cooldown;
       sfx.dash();
-      this.fx.afterimage(this.me, 0x9fd8ff);
+      this.ghost();
     }
     if (guard && this.cdGuard <= 0) {
       this.guardT = GUARD.duration;
@@ -1081,7 +1147,7 @@ export class RiftScene extends Phaser.Scene {
       this.dashT -= dt;
       this.x += this.dashVx * sec;
       this.y += this.dashVy * sec;
-      if (Math.random() < 0.5) this.fx.afterimage(this.me, 0x9fd8ff);
+      if (Math.random() < 0.5) this.ghost();
     } else {
       const speed = PLAYER_BASE_SPEED * (1 + this.stats.move / 100) * (this.guardT > 0 ? 0.45 : 1);
       this.x += mx * speed * sec;
@@ -1120,30 +1186,31 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private updateMe(): void {
+  /** 遁的残影：一团淡蓝的光影 */
+  private ghost(): void {
+    const g = this.add.image(this.x, this.y - 10, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.5, 0.75).setAlpha(0.55).setDepth(this.y + RiftScene.FOOT - 1);
+    this.tweens.add({ targets: g, alpha: 0, scaleX: 0.3, duration: 260, onComplete: () => g.destroy() });
+  }
+
+  private updateMe(dt: number): void {
     const me = this.me;
-    me.setPosition(this.x, this.y);
-    me.setFlipX(this.facing < 0);
-    const foot = this.y + 50;
-    me.setDepth(foot);
-    this.meShadow.setPosition(this.x, foot);
+    const foot = this.y + RiftScene.FOOT;
+    me.setPosition(this.x, foot).setDepth(foot);
+    me.setFacing(this.facing);
+    me.setMoving(this.dashT > 0 ? 1 : Math.hypot(this.moveX, this.moveY));
+    me.setDashing(this.dashT > 0);
+    me.setGuarding(this.guardT > 0);
+    me.tick(dt);
+    if (!this.down && this.invuln > 0) me.setAlpha(0.6);
+    this.meShadow.setVisible(false);
     this.meAura.setPosition(this.x, this.y);
-    me.setAlpha(this.down ? 0.45 : this.invuln > 0 ? 0.6 : 1);
-    if (this.hurtFlash > 0) me.setTintFill(0xff6b6b); else me.clearTint();
 
     if (this.guardT > 0) {
       const p = this.guardT / GUARD.duration;
       this.guardRing.setVisible(true).setPosition(this.x, this.y - 20).setScale(1.25 + (1 - p) * 0.15).setAlpha(0.4 + p * 0.5);
     } else {
       this.guardRing.setVisible(false);
-    }
-
-    if (this.down) return;
-    const anim = this.castAnim > 0 ? 'atk' : Math.hypot(this.moveX, this.moveY) > 0.1 || this.dashT > 0 ? 'run' : 'idle';
-    if (anim !== this.animState) {
-      this.animState = anim;
-      const key = `${PLAYER_ATLAS}_${anim}`;
-      if (this.anims.exists(key)) me.play(key, true);
     }
   }
 
@@ -1158,9 +1225,17 @@ export class RiftScene extends Phaser.Scene {
       const decay = Math.exp(-dt / 70);
       en.kx *= decay;
       en.ky *= decay;
+      en.tilt *= Math.exp(-dt / 110);
+      // 序列帧只有 6 帧，叠一层程序动态让动作连贯：移动时前倾、步伐起伏
+      const vx = dt > 0 ? (dx / dt) * 1000 : 0;
+      const speed = dt > 0 ? (Math.hypot(dx, dy) / dt) * 1000 : 0;
+      const leanTo = Phaser.Math.Clamp(vx / 900, -0.12, 0.12) * (en.tier === 2 ? 0.4 : 1);
+      en.lean += (leanTo - en.lean) * (1 - Math.exp(-dt / 90));
+      const stride = Math.min(1, speed / 120);
+      const hop = -Math.abs(Math.sin(now / 1000 * 10 + en.phase)) * 6 * stride * (en.tier === 2 ? 0.5 : 1);
       const moving = Math.abs(dx) + Math.abs(dy) > dt * 0.05;
       if (Math.abs(dx) > 0.5 && now > en.atkUntil) en.spr.setFlipX(dx < 0);
-      en.spr.setPosition(en.x + en.kx, en.y + en.ky);
+      en.spr.setPosition(en.x + en.kx, en.y + en.ky + hop).setRotation(en.lean + en.tilt);
       const foot = en.y + 307 * en.scale * 0.36;
       en.spr.setDepth(foot);
       en.shadow.setPosition(en.x, foot);
@@ -1202,20 +1277,25 @@ export class RiftScene extends Phaser.Scene {
     return this.time.now + this.clockOffset - INTERP_DELAY;
   }
 
-  private updateMates(_dt: number): void {
+  private updateMates(dt: number): void {
     const rt = this.renderTime;
     for (const m of this.mates.values()) {
       const s = sampleAt(m.buf, rt);
+      const px = m.x;
       if (s) { m.x = s.x; m.y = s.y; }
-      m.spr.setPosition(m.x, m.y).setFlipX(m.f < 0).setDepth(m.y + 50).setAlpha(m.down ? 0.4 : 0.92);
+      const foot = m.y + RiftScene.FOOT;
+      m.spr.setPosition(m.x, foot).setDepth(foot);
+      m.spr.setFacing(m.f);
+      m.spr.setMoving(m.a === 1 || m.a === 2 ? 1 : Math.min(1, Math.abs(m.x - px) / Math.max(1, dt) * 3));
+      m.spr.setDashing(m.a === 2);
+      m.spr.setGuarding(m.a === 3);
+      m.spr.setDown(m.down);
+      m.spr.tick(dt);
       m.shadow.setPosition(m.x, m.y + 50);
       m.name.setPosition(m.x, m.y - 110);
       m.hpBg.setPosition(m.x, m.y - 96);
       m.hpFill.setPosition(m.x - 40, m.y - 96);
       m.hpFill.width = 80 * Phaser.Math.Clamp(m.hp / Math.max(1, m.max), 0, 1);
-      const anim = m.down ? 'die' : m.a === 1 || m.a === 2 ? 'run' : 'idle';
-      const key = `${PLAYER_ATLAS}_${anim}`;
-      if (m.spr.anims.currentAnim?.key !== key && this.anims.exists(key)) m.spr.play(key, true);
 
       // 倒地的同伴：靠近即可救援
       m.reviveRing.clear();

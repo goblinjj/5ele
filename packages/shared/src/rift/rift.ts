@@ -172,6 +172,12 @@ export interface ProfileView {
   maxTier: number;
   /** 各层最快通关（毫秒） */
   best: Record<number, number>;
+  /** 图鉴：已登记的部件键（永久） */
+  codex: string[];
+  /** 图鉴里收着的套装件（不占灵囊） */
+  vault: import('./gear.js').GearItem[];
+  /** 各层精魄 */
+  essence: Record<number, number>;
 }
 
 export interface RoomPlayerView {
@@ -196,6 +202,8 @@ export interface RunPlayerInfo {
   name: string;
   path: Wuxing;
   stats: PlayerStats;
+  /** 身上的装备（用于外显） */
+  equip: import('./gear.js').Equipped;
 }
 
 /**
@@ -241,8 +249,8 @@ export interface SpawnInfo {
   max: number;
 }
 
-/** 玩家技能代号：b 火球 · s 流火 · A 燎原 · B 焚天 · H 燎原之心爆裂（仅表现） */
-export type SkillCode = 'b' | 's' | 'A' | 'B' | 'H';
+/** 玩家技能代号：b 火球 · s 流火 · A 燎原 · B 焚天 · H 燎原之心爆裂 · m 焚炎陨火 · L 惊雷 · F 坤元火域（后四种仅表现） */
+export type SkillCode = 'b' | 's' | 'A' | 'B' | 'H' | 'm' | 'L' | 'F';
 
 export type C2S =
   | { t: 'hello'; did: string; name?: string }
@@ -252,6 +260,13 @@ export type C2S =
   | { t: 'unequip'; slot: string }
   | { t: 'salvage'; ids: string[] }
   | { t: 'autoSalvage'; r: number }
+  /** 图鉴：登记（灵囊 → 图鉴）/ 取出穿戴 / 穿上整套 / 合成缺的部件 */
+  | { t: 'register'; id: string }
+  | { t: 'withdraw'; id: string }
+  | { t: 'wearSet'; set: string }
+  | { t: 'craft'; set: string; piece: number }
+  /** 炼器：升阶 */
+  | { t: 'refine'; id: string }
   | { t: 'create'; tier: number }
   | { t: 'join'; code: string }
   | { t: 'leave' }
@@ -287,8 +302,9 @@ export type S2C =
   | { t: 'cast'; p: number; s: SkillCode; x: number; y: number }
   | { t: 'loot'; id: string; x: number; y: number; item: import('./gear.js').GearItem }
   | { t: 'got'; id: string; item?: import('./gear.js').GearItem; mats?: number }
+  | { t: 'essence'; tier: number; n: number }
   | { t: 'boss'; id: number }
   | { t: 'down'; p: number }
   | { t: 'up'; p: number }
-  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; items: import('./gear.js').GearItem[] }
+  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; essence: number; items: import('./gear.js').GearItem[] }
   | { t: 'pong'; c: number };

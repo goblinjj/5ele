@@ -3,7 +3,8 @@ import {
   C2S, S2C, RoomView, Wuxing, PATHS, EQUIP_SLOTS, EquipSlotKey, slotTypeOf,
   computeStats, powerOf, bestSlotFor, salvageValue, starterWeapon, MAX_PARTY, MAX_TIER,
 } from '@xiyou/shared';
-import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, STASH_CAP } from './store.js';
+import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, STASH_CAP, statsOf } from './store.js';
+import { putBack, register, withdraw, wearSet, craft, refine } from './forge.js';
 import { Run } from './run.js';
 
 /**
@@ -68,7 +69,7 @@ class Room {
       state: this.run ? 'run' : 'lobby',
       players: this.members.map(s => {
         const p = s.profile!;
-        return { id: p.did, name: p.name, path: p.path, power: powerOf(computeStats(p.equip, p.path)), host: s === this.host };
+        return { id: p.did, name: p.name, path: p.path, power: powerOf(statsOf(p)), host: s === this.host };
       }),
     };
   }
@@ -100,7 +101,8 @@ class Room {
     const members = this.members.map(s => ({
       id: s.id,
       profile: s.profile!,
-      stats: computeStats(s.profile!.equip, s.profile!.path),
+      stats: statsOf(s.profile!),
+      equip: s.profile!.equip,
       send: (m: S2C) => s.send(m),
     }));
     this.run = new Run(this.tier, members, () => {
@@ -189,8 +191,9 @@ export function onMessage(s: Session, raw: string): void {
       if (!slot || !EQUIP_SLOTS.includes(slot) || slotTypeOf(slot) !== item.slot) slot = bestSlotFor(p.equip, p.path, item);
       const old = p.equip[slot];
       p.stash.splice(idx, 1);
-      if (old) p.stash.splice(idx, 0, old);
       p.equip[slot] = item;
+      // 换下来的：登记过的套装件回图鉴，否则回灵囊原位置附近
+      if (old && !putBack(p, old)) p.stash.splice(idx, 0, old);
       markDirty(p);
       s.sendProfile();
       s.room?.sync();
@@ -200,8 +203,7 @@ export function onMessage(s: Session, raw: string): void {
     case 'unequip': {
       const slot = msg.slot as EquipSlotKey;
       if (!EQUIP_SLOTS.includes(slot) || !p.equip[slot]) return;
-      if (p.stash.length >= STASH_CAP) { s.send({ t: 'err', msg: '灵囊已满' }); return; }
-      p.stash.push(p.equip[slot]!);
+      if (!putBack(p, p.equip[slot]!)) { s.send({ t: 'err', msg: '灵囊已满' }); return; }
       p.equip[slot] = null;
       markDirty(p);
       s.sendProfile();
@@ -222,6 +224,24 @@ export function onMessage(s: Session, raw: string): void {
       markDirty(p);
       s.sendProfile();
       if (gain) s.send({ t: 'toast', msg: `分解获得 ${gain} 玄晶` });
+      break;
+    }
+
+    case 'register':
+    case 'withdraw':
+    case 'wearSet':
+    case 'craft':
+    case 'refine': {
+      const r = msg.t === 'register' ? register(p, msg.id)
+        : msg.t === 'withdraw' ? withdraw(p, msg.id)
+        : msg.t === 'wearSet' ? wearSet(p, msg.set)
+        : msg.t === 'craft' ? craft(p, msg.set, msg.piece | 0)
+        : refine(p, msg.id);
+      if (!r.ok) { s.send({ t: 'err', msg: r.msg }); return; }
+      markDirty(p);
+      s.sendProfile();
+      s.room?.sync();
+      if (r.msg) s.send({ t: 'toast', msg: r.msg });
       break;
     }
 

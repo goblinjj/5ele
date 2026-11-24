@@ -1,7 +1,7 @@
 import { promises as fs, existsSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import {
-  GearItem, Equipped, emptyEquipped, ProfileView, Wuxing,
+  GearItem, Equipped, emptyEquipped, ProfileView, Wuxing, computeStats,
 } from '@xiyou/shared';
 
 /**
@@ -23,6 +23,9 @@ export interface Profile {
   autoSalvage: number;
   maxTier: number;
   best: Record<number, number>;
+  codex: string[];
+  vault: GearItem[];
+  essence: Record<number, number>;
   created: number;
   seen: number;
 }
@@ -63,16 +66,24 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, stash: [], equip: emptyEquipped(),
-      mats: 0, autoSalvage: -1, maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
+      mats: 0, autoSalvage: -1, maxTier: 1, best: {}, codex: [], vault: [], essence: {}, created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
   // 兼容旧存档字段
   p.equip = { ...emptyEquipped(), ...p.equip };
   p.best ??= {};
+  p.codex ??= [];
+  p.vault ??= [];
+  p.essence ??= {};
   p.seen = Date.now();
   cache.set(did, p);
   return p;
+}
+
+/** 按存档算属性（含图鉴加成） */
+export function statsOf(p: Profile) {
+  return computeStats(p.equip, p.path, p.codex.length);
 }
 
 export function markDirty(p: Profile): void {
@@ -83,6 +94,7 @@ export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, stash: p.stash, stashCap: STASH_CAP, equip: p.equip,
     mats: p.mats, autoSalvage: p.autoSalvage, maxTier: p.maxTier, best: p.best,
+    codex: p.codex, vault: p.vault, essence: p.essence,
   };
 }
 

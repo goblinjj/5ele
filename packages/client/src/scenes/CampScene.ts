@@ -2,8 +2,10 @@ import Phaser from 'phaser';
 import {
   GearItem, EQUIP_SLOTS, EquipSlotKey, slotTypeOf, SLOT_NAME, PATHS, Wuxing, WUXING_NAMES,
   computeStats, powerOf, statsWith, bestSlotFor, salvageValue, RARITY_NAMES, RARITY_CSS,
-  TIER_NAMES, MAX_PARTY, ProfileView, RoomView,
+  TIER_NAMES, MAX_PARTY, ProfileView, RoomView, PlayerStats,
+  SETS, SET_ORDER, SetId, pieceKey, craftCost, refineCost, MAX_GRADE, displayName, CODEX_BONUS_PCT,
 } from '@xiyou/shared';
+import { Avatar } from '../systems/avatar/Avatar.js';
 import { applyRenderScale } from '../config/gameConfig.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/dims.js';
 import { WX_TINT } from '../config/worldConfig.js';
@@ -16,7 +18,7 @@ import { button, gearIcon, itemLines, toast, fmtTime, SERIF, SANS, GOLD, WX_CSS 
 const W = GAME_WIDTH;
 const H = GAME_HEIGHT;
 const COLS = 6;
-const ROWS = 5;
+const ROWS = 4;
 const CELL = 104;
 const PAGE = COLS * ROWS;
 
@@ -30,6 +32,8 @@ export class CampScene extends Phaser.Scene {
   private tier = 1;
   private offs: (() => void)[] = [];
   private statusText!: Phaser.GameObjects.Text;
+  private avatar!: Avatar;
+  private avatarSig = '';
 
   constructor() {
     super({ key: 'CampScene' });
@@ -43,6 +47,10 @@ export class CampScene extends Phaser.Scene {
     this.add.tileSprite(W / 2, H / 2, W, H, 'bg_ground').setTint(0x56656c).setAlpha(0.55);
     this.add.image(W / 2, H / 2, 'fx_vignette').setDisplaySize(W * 1.3, H * 1.2).setAlpha(0.8);
 
+    // 人形预览：穿什么显示什么
+    this.add.image(W / 2, 345, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.3, 0.5).setAlpha(0.25);
+    this.avatar = new Avatar(this, W / 2, 345, null, 1.7).setDepth(5).setVisible(false);
+    this.avatarSig = '';
     this.dyn = this.add.container(0, 0);
     this.popup = null;
     this.statusText = this.add.text(W - 20, 16, '', { fontFamily: SANS, fontSize: '20px', color: '#6e7681' }).setOrigin(1, 0).setDepth(50);
@@ -63,7 +71,8 @@ export class CampScene extends Phaser.Scene {
     this.cameras.main.fadeIn(400, 0, 0, 0);
   }
 
-  update(): void {
+  update(_t: number, delta: number): void {
+    if (this.avatar.visible) this.avatar.tick(Math.min(50, delta));
     const s = net.status === 'online' ? `在线 · ${net.rtt}ms` : net.status === 'connecting' ? '连接中…' : '离线，正在重连';
     if (this.statusText.text !== s) this.statusText.setText(s);
   }
@@ -85,6 +94,9 @@ export class CampScene extends Phaser.Scene {
       return;
     }
     this.tier = Math.max(1, Math.min(p.maxTier, this.tier));
+    this.avatar.setVisible(!!p.path);
+    const sig = Object.values(p.equip).map(i => (i ? `${i.id}${i.grade ?? 0}` : '-')).join('|');
+    if (sig !== this.avatarSig) { this.avatarSig = sig; this.avatar.setEquip(p.equip); }
     if (!p.path) {
       this.drawPathSelect();
       return;
@@ -127,39 +139,64 @@ export class CampScene extends Phaser.Scene {
 
   // ───────────────────────── 顶栏 ─────────────────────────
 
+  private stats(p: ProfileView): PlayerStats {
+    return computeStats(p.equip, p.path, p.codex.length);
+  }
+  private power(p: ProfileView, key?: EquipSlotKey, item?: GearItem | null): number {
+    return powerOf(key ? statsWith(p.equip, p.path, key, item ?? null, p.codex.length) : this.stats(p));
+  }
+
   private drawHeader(p: ProfileView): void {
     const d = this.dyn;
-    const stats = computeStats(p.equip, p.path);
-    const name = this.add.text(36, 40, `${p.name} ✎`, { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: '#f0e6d3' })
+    const stats = this.stats(p);
+    const name = this.add.text(36, 34, `${p.name} ✎`, { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: '#f0e6d3' })
       .setInteractive({ useHandCursor: true });
     name.on('pointerup', () => {
       const n = window.prompt('修改名号（最多 10 字）', p.name);
       if (n && n.trim()) { localStorage.setItem('5ele_name', n.trim()); net.send({ t: 'name', name: n.trim() }); }
     });
     d.add(name);
-    d.add(this.add.text(36, 90, PATHS[p.path!].name, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
-    d.add(this.add.text(W - 36, 46, `战力 ${powerOf(stats)}`, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(1, 0));
-    d.add(this.add.text(W - 36, 98, `玄晶 ${p.mats}`, { fontFamily: SANS, fontSize: '24px', color: '#c084fc' }).setOrigin(1, 0));
-    const line = `攻击 ${stats.attack}   生命 ${stats.maxHp}   暴击 ${Math.round(stats.crit)}%   攻速 +${Math.round(stats.aspd)}%`;
-    d.add(this.add.text(W / 2, 148, line, { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5, 0));
+    d.add(this.add.text(36, 82, PATHS[p.path!].name, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
+    d.add(this.add.text(W - 36, 40, `战力 ${powerOf(stats)}`, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(1, 0));
+    d.add(this.add.text(W - 36, 90, `玄晶 ${p.mats}`, { fontFamily: SANS, fontSize: '24px', color: '#c084fc' }).setOrigin(1, 0));
+
+    // 左侧属性
+    const lines = [
+      `攻击 ${stats.attack}`,
+      `生命 ${stats.maxHp}`,
+      `暴击 ${Math.round(stats.crit)}%`,
+      `暴伤 +${Math.round(stats.critDmg)}%`,
+      `攻速 +${Math.round(stats.aspd)}%`,
+      `冷却 -${Math.round(stats.cdr)}%`,
+    ];
+    d.add(this.add.text(36, 150, lines.join('\n'), { fontFamily: SANS, fontSize: '23px', color: '#8b949e', lineSpacing: 8 }));
+
+    // 右侧：图鉴入口与精魄
+    d.add(button(this, W - 110, 172, 170, 70, '图 鉴', () => this.showCodex(), { fontSize: 30, color: 0x3fe0a0 }));
+    d.add(this.add.text(W - 110, 212, `已登记 ${p.codex.length} 件\n攻击生命 +${p.codex.length * CODEX_BONUS_PCT}%`, {
+      fontFamily: SANS, fontSize: '20px', color: '#6ee7a0', align: 'center', lineSpacing: 4,
+    }).setOrigin(0.5, 0));
+    const ess = Object.entries(p.essence).filter(([, n]) => n > 0).map(([t, n]) => `${t}重 ×${n}`);
+    d.add(this.add.text(W - 110, 268, ess.length ? `精魄\n${ess.slice(-3).join('\n')}` : '精魄 —', {
+      fontFamily: SANS, fontSize: '19px', color: '#e0b0ff', align: 'center', lineSpacing: 2,
+    }).setOrigin(0.5, 0));
   }
 
   // ───────────────────────── 装备栏 ─────────────────────────
 
   private drawEquip(p: ProfileView): void {
     const d = this.dyn;
-    const size = 112;
+    const size = 100;
     const gap = (W - 60 - size * 5) / 4;
     EQUIP_SLOTS.forEach((key, i) => {
       const x = 30 + size / 2 + i * (size + gap);
-      const y = 262;
+      const y = 440;
       const it = p.equip[key];
-      const icon = gearIcon(this, x, y, size, it, SLOT_NAME[slotTypeOf(key)]);
-      d.add(icon);
-      d.add(this.add.text(x, y + size / 2 + 8, SLOT_NAME[slotTypeOf(key)], { fontFamily: SERIF, fontSize: '22px', color: '#6e7681' }).setOrigin(0.5, 0));
+      d.add(gearIcon(this, x, y, size, it, SLOT_NAME[slotTypeOf(key)]));
+      d.add(this.add.text(x, y + size / 2 + 4, SLOT_NAME[slotTypeOf(key)], { fontFamily: SERIF, fontSize: '20px', color: '#6e7681' }).setOrigin(0.5, 0));
       if (it) {
         const hit = this.add.rectangle(x, y, size, size, 0, 0).setInteractive({ useHandCursor: true });
-        hit.on('pointerup', () => this.showItem(it, key));
+        hit.on('pointerup', () => this.showItem(it, 'equip', key));
         d.add(hit);
       }
     });
@@ -168,19 +205,20 @@ export class CampScene extends Phaser.Scene {
   // ───────────────────────── 灵囊 ─────────────────────────
 
   private sortedStash(p: ProfileView): GearItem[] {
-    return [...p.stash].sort((a, b) => b.rarity - a.rarity || b.tier - a.tier);
+    return [...p.stash].sort((a, b) => (b.set ? 1 : 0) - (a.set ? 1 : 0) || b.rarity - a.rarity || b.tier - a.tier);
   }
 
   private drawStash(p: ProfileView): void {
     const d = this.dyn;
-    const top = 400;
+    const top = 524;
     d.add(this.add.text(36, top, `灵囊 ${p.stash.length}/${p.stashCap}`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }));
 
     const items = this.sortedStash(p);
     const pages = Math.max(1, Math.ceil(items.length / PAGE));
     this.page = Math.min(this.page, pages - 1);
     const gx = (W - COLS * CELL) / 2;
-    const gy = top + 50;
+    const gy = top + 44;
+    const cur = this.power(p);
     for (let i = 0; i < PAGE; i++) {
       const it = items[this.page * PAGE + i] ?? null;
       const x = gx + (i % COLS) * CELL + CELL / 2;
@@ -188,23 +226,21 @@ export class CampScene extends Phaser.Scene {
       d.add(gearIcon(this, x, y, CELL - 10, it));
       if (it) {
         // 比身上的好就标一个绿色箭头
-        const key = bestSlotFor(p.equip, p.path, it);
-        const delta = powerOf(statsWith(p.equip, p.path, key, it)) - powerOf(computeStats(p.equip, p.path));
-        if (delta > 0) {
-          d.add(this.add.text(x + CELL / 2 - 12, y + CELL / 2 - 10, '▲', { fontFamily: SANS, fontSize: '22px', color: '#3fb950', stroke: '#000', strokeThickness: 4 }).setOrigin(1, 1));
+        if (this.power(p, bestSlotFor(p.equip, p.path, it), it) > cur) {
+          d.add(this.add.text(x + CELL / 2 - 10, y + CELL / 2 - 22, '▲', { fontFamily: SANS, fontSize: '20px', color: '#3fb950', stroke: '#000', strokeThickness: 4 }).setOrigin(1, 1));
         }
         const hit = this.add.rectangle(x, y, CELL - 6, CELL - 6, 0, 0).setInteractive({ useHandCursor: true });
-        hit.on('pointerup', () => this.showItem(it, null));
+        hit.on('pointerup', () => this.showItem(it, 'stash'));
         d.add(hit);
       }
     }
-    const by = gy + ROWS * CELL + 44;
+    const by = gy + ROWS * CELL + 36;
     if (pages > 1) {
-      d.add(button(this, 90, by, 120, 64, '◀', () => { this.page = (this.page + pages - 1) % pages; this.refresh(); }, { fontSize: 28 }));
+      d.add(button(this, 90, by, 120, 60, '◀', () => { this.page = (this.page + pages - 1) % pages; this.refresh(); }, { fontSize: 28 }));
       d.add(this.add.text(200, by, `${this.page + 1}/${pages}`, { fontFamily: SANS, fontSize: '24px', color: '#8b949e' }).setOrigin(0.5));
-      d.add(button(this, 310, by, 120, 64, '▶', () => { this.page = (this.page + 1) % pages; this.refresh(); }, { fontSize: 28 }));
+      d.add(button(this, 310, by, 120, 60, '▶', () => { this.page = (this.page + 1) % pages; this.refresh(); }, { fontSize: 28 }));
     }
-    d.add(button(this, W - 150, by, 240, 64, '批量分解', () => this.showSalvage(p), { fontSize: 26, color: 0xc084fc }));
+    d.add(button(this, W - 150, by, 240, 60, '批量分解', () => this.showSalvage(p), { fontSize: 26, color: 0xc084fc }));
   }
 
   // ───────────────────────── 秘境面板 ─────────────────────────
@@ -308,10 +344,13 @@ export class CampScene extends Phaser.Scene {
     return { c, top };
   }
 
-  private showItem(item: GearItem, equippedAt: EquipSlotKey | null): void {
+  /**
+   * 装备详情
+   * @param from 来源：灵囊 / 身上 / 图鉴，决定下方的操作按钮
+   */
+  private showItem(item: GearItem, from: 'stash' | 'equip' | 'vault', equippedAt?: EquipSlotKey): void {
     const p = net.profile!;
-    const lines = itemLines(item, p.path);
-    // 先排版算高度
+    const lines = itemLines(item, p.path, p.equip);
     const texts: Phaser.GameObjects.Text[] = [];
     let y = 0;
     lines.forEach(l => {
@@ -320,46 +359,143 @@ export class CampScene extends Phaser.Scene {
         align: 'center', wordWrap: { width: W - 140, useAdvancedWrap: true }, lineSpacing: 4,
       }).setOrigin(0.5, 0);
       texts.push(t);
-      y += t.height + 12;
+      y += t.height + 10;
     });
 
     let compare = '';
     let compareColor = '#8b949e';
     const slot = equippedAt ?? bestSlotFor(p.equip, p.path, item);
-    if (!equippedAt) {
-      const cur = powerOf(computeStats(p.equip, p.path));
-      const next = powerOf(statsWith(p.equip, p.path, slot, item));
+    if (from !== 'equip') {
+      const cur = this.power(p);
+      const next = this.power(p, slot, item);
       const delta = next - cur;
       const old = p.equip[slot];
-      compare = `${old ? `替换 ${old.name}` : '穿戴到空栏位'}\n战力 ${cur} → ${next}（${delta >= 0 ? '+' : ''}${delta}）`;
+      compare = `${old ? `替换 ${displayName(old)}` : '穿戴到空栏位'}\n战力 ${cur} → ${next}（${delta >= 0 ? '+' : ''}${delta}）`;
       compareColor = delta > 0 ? '#3fb950' : delta < 0 ? '#f85149' : '#8b949e';
     }
-    const cmp = compare ? this.add.text(W / 2, y + 10, compare, { fontFamily: SANS, fontSize: '26px', color: compareColor, align: 'center', lineSpacing: 6 }).setOrigin(0.5, 0) : null;
-    if (cmp) y += cmp.height + 30;
+    const cmp = compare ? this.add.text(W / 2, y + 6, compare, { fontFamily: SANS, fontSize: '25px', color: compareColor, align: 'center', lineSpacing: 6 }).setOrigin(0.5, 0) : null;
+    if (cmp) y += cmp.height + 20;
 
-    // 图标 150 + 文字 y + 按钮区 140
-    const height = y + 300;
+    // 升阶信息
+    const g = item.grade ?? 0;
+    const rc = refineCost(item.tier, g);
+    const have = p.essence[item.tier] ?? 0;
+    const canRefine = g < MAX_GRADE && have >= rc.essence && p.mats >= rc.mats;
+    const refineText = g >= MAX_GRADE ? '已是最高阶' : `升阶 +${g + 1}：${item.tier}重天精魄 ${have}/${rc.essence} · 玄晶 ${p.mats}/${rc.mats}`;
+    const rt = this.add.text(W / 2, y + 6, refineText, { fontFamily: SANS, fontSize: '22px', color: canRefine ? '#e0b0ff' : '#6e7681', align: 'center' }).setOrigin(0.5, 0);
+    y += rt.height + 16;
+
+    const height = y + 150 + 220;
     const { c, top } = this.openPopup(height);
     c.add(gearIcon(this, W / 2, top + 80, 100, item));
     texts.forEach(t => { t.y += top + 150; c.add(t); });
     if (cmp) { cmp.y += top + 150; c.add(cmp); }
+    rt.y += top + 150;
+    c.add(rt);
 
-    const by = top + height - 70;
-    if (equippedAt) {
-      c.add(button(this, W / 2, by, 300, 84, '卸下', () => { net.send({ t: 'unequip', slot: equippedAt }); this.closePopup(); }));
+    const by1 = top + height - 170;
+    const by2 = top + height - 70;
+    const close = () => this.closePopup();
+    const refineBtn = (x: number, w: number) => button(this, x, by1, w, 80, `升阶`, () => { net.send({ t: 'refine', id: item.id }); close(); }, { color: 0xe0b0ff, disabled: !canRefine, fontSize: 28 });
+    if (from === 'equip') {
+      c.add(refineBtn(W / 2, 300));
+      c.add(button(this, W / 2, by2, 300, 80, '卸下', () => { net.send({ t: 'unequip', slot: equippedAt! }); close(); }));
+    } else if (from === 'vault') {
+      c.add(refineBtn(W / 2, 300));
+      c.add(button(this, W / 2, by2, 300, 80, '取出穿戴', () => { sfx.swap(item.wuxing); net.send({ t: 'withdraw', id: item.id }); close(); }));
     } else {
-      c.add(button(this, W / 2 - 160, by, 270, 84, '穿戴', () => { sfx.swap(item.wuxing); net.send({ t: 'equip', id: item.id, slot }); this.closePopup(); }));
-      c.add(button(this, W / 2 + 160, by, 270, 84, `分解 +${salvageValue(item)}`, () => { net.send({ t: 'salvage', ids: [item.id] }); this.closePopup(); }, { color: 0xc084fc, fontSize: 26 }));
+      if (item.set) {
+        const k = pieceKey(item.set, item.piece ?? 0);
+        const fresh = !p.codex.includes(k);
+        c.add(button(this, W / 2 - 160, by1, 270, 80, fresh ? '登记图鉴' : '替换图鉴', () => { net.send({ t: 'register', id: item.id }); close(); }, { color: 0x3fe0a0, fontSize: 28 }));
+        c.add(refineBtn(W / 2 + 160, 270));
+      } else {
+        c.add(refineBtn(W / 2, 300));
+      }
+      c.add(button(this, W / 2 - 160, by2, 270, 80, '穿戴', () => { sfx.swap(item.wuxing); net.send({ t: 'equip', id: item.id, slot }); close(); }));
+      c.add(button(this, W / 2 + 160, by2, 270, 80, `分解 +${salvageValue(item)}`, () => { net.send({ t: 'salvage', ids: [item.id] }); close(); }, { color: 0xc084fc, fontSize: 26 }));
     }
+  }
+
+  // ───────────────────────── 图鉴 ─────────────────────────
+
+  private showCodex(): void {
+    const p = net.profile;
+    if (!p) return;
+    const rowH = 196;
+    const height = 150 + SET_ORDER.length * rowH;
+    const { c, top } = this.openPopup(height);
+    c.add(this.add.text(W / 2, top + 30, '图 鉴', { fontFamily: SERIF, fontSize: '44px', fontStyle: 'bold', color: '#3fe0a0' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 92, `已登记 ${p.codex.length}/${SET_ORDER.length * 5} · 攻击与生命 +${p.codex.length * CODEX_BONUS_PCT}%`, {
+      fontFamily: SANS, fontSize: '22px', color: '#8b949e',
+    }).setOrigin(0.5, 0));
+
+    const equipped = new Set(Object.values(p.equip).filter(Boolean).map(i => `${i!.set}:${i!.piece}`));
+    SET_ORDER.forEach((id, row) => {
+      const set = SETS[id];
+      const y0 = top + 140 + row * rowH;
+      const unlocked = p.maxTier >= set.lo;
+      c.add(this.add.text(56, y0, `${set.name} · ${set.lo}~${set.hi}重天`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: unlocked ? set.css : '#484f58' }));
+      const inVault = p.vault.filter(v => v.set === id);
+      c.add(this.add.text(56, y0 + 40, `(5) ${set.desc5}`, {
+        fontFamily: SANS, fontSize: '18px', color: unlocked ? '#8b949e' : '#484f58',
+        wordWrap: { width: inVault.length ? W - 330 : W - 120, useAdvancedWrap: true },
+      }));
+      if (inVault.length) {
+        c.add(button(this, W - 130, y0 + 22, 170, 56, '穿整套', () => { net.send({ t: 'wearSet', set: id }); this.closePopup(); }, { fontSize: 24, color: set.color }));
+      }
+      set.pieces.forEach((pc, i) => {
+        const x = 96 + i * 132;
+        const y = y0 + 128;
+        const k = pieceKey(id, i);
+        const item = p.vault.find(v => v.set === id && v.piece === i) ?? null;
+        const registered = p.codex.includes(k);
+        const icon = gearIcon(this, x, y, 92, item, pc.kind);
+        if (!item) icon.setAlpha(registered ? 0.55 : 0.35);
+        c.add(icon);
+        if (!item && registered) {
+          c.add(this.add.text(x, y + 30, equipped.has(k) ? '穿戴中' : '已登记', { fontFamily: SANS, fontSize: '17px', color: '#6ee7a0', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5));
+        }
+        const hit = this.add.rectangle(x, y, 96, 96, 0, 0).setInteractive({ useHandCursor: true });
+        hit.on('pointerup', () => {
+          if (item) this.showItem(item, 'vault');
+          else this.showCraft(id, i);
+        });
+        c.add(hit);
+      });
+    });
+  }
+
+  /** 缺的部件：用精魄定向合成 */
+  private showCraft(id: SetId, piece: number): void {
+    const p = net.profile!;
+    const set = SETS[id];
+    const pc = set.pieces[piece];
+    const cost = craftCost(set);
+    const have = p.essence[set.lo] ?? 0;
+    const unlocked = p.maxTier >= set.lo;
+    const ok = unlocked && have >= cost.essence && p.mats >= cost.mats;
+    const { c, top } = this.openPopup(560);
+    c.add(gearIcon(this, W / 2, top + 90, 110, null, pc.kind));
+    c.add(this.add.text(W / 2, top + 170, pc.name, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: set.css }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 230, `${set.name}套装 · ${SLOT_NAME[pc.slot]}\n掉落于 ${set.lo}~${set.hi} 重天，病变核心掉率最高`, {
+      fontFamily: SANS, fontSize: '23px', color: '#8b949e', align: 'center', lineSpacing: 6,
+    }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 320, unlocked
+      ? `合成：${set.lo}重天精魄 ${have}/${cost.essence} · 玄晶 ${p.mats}/${cost.mats}`
+      : `需要先解锁 ${set.lo} 重天`, { fontFamily: SANS, fontSize: '24px', color: ok ? '#e0b0ff' : '#6e7681' }).setOrigin(0.5, 0));
+    c.add(button(this, W / 2 - 150, top + 470, 260, 84, '返回', () => this.showCodex(), { color: 0x8b949e }));
+    c.add(button(this, W / 2 + 150, top + 470, 260, 84, '合成', () => { net.send({ t: 'craft', set: id, piece }); this.closePopup(); }, { color: set.color, disabled: !ok }));
   }
 
   private showSalvage(p: ProfileView): void {
     const { c, top } = this.openPopup(760);
     c.add(this.add.text(W / 2, top + 40, '批量分解', { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#c084fc' }).setOrigin(0.5, 0));
-    c.add(this.add.text(W / 2, top + 100, '不会分解比身上更好的装备', { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5, 0));
-    const cur = powerOf(computeStats(p.equip, p.path));
+    c.add(this.add.text(W / 2, top + 100, '不会分解套装件和比身上更好的装备', { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5, 0));
+    const cur = this.power(p);
     for (let r = 0; r <= 3; r++) {
-      const ids = p.stash.filter(it => it.rarity <= r && powerOf(statsWith(p.equip, p.path, bestSlotFor(p.equip, p.path, it), it)) <= cur).map(it => it.id);
+      // 不分解套装件，也不分解比身上更好的
+      const ids = p.stash.filter(it => !it.set && it.rarity <= r && this.power(p, bestSlotFor(p.equip, p.path, it), it) <= cur).map(it => it.id);
       const gain = p.stash.filter(it => ids.includes(it.id)).reduce((a, it) => a + salvageValue(it), 0);
       c.add(button(this, W / 2, top + 190 + r * 100, W - 160, 80, `${RARITY_NAMES[r]}及以下 · ${ids.length} 件 · +${gain}`, () => {
         if (ids.length) net.send({ t: 'salvage', ids });
