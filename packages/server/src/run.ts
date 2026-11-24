@@ -189,7 +189,18 @@ export class Run {
         break;
       }
       case 'pick': this.onPick(p, msg.id); break;
+      case 'ready': this.resync(p); break;
     }
+  }
+
+  /** 客户端切场景期间收不到消息，就绪后把场上状态完整补发一遍 */
+  private resync(p: RunPlayer): void {
+    const list: SpawnInfo[] = [];
+    for (const e of this.enemies.values()) if (!e.dead) list.push(this.spawnInfo(e));
+    if (list.length) p.send({ t: 'spawn', list });
+    if (this.boss && !this.boss.dead) p.send({ t: 'boss', id: this.boss.id });
+    for (const [id, l] of p.loot) p.send({ t: 'loot', id, x: l.x, y: l.y, item: l.item });
+    for (const q of this.players) if (q.down && !q.left) p.send({ t: 'down', p: q.idx });
   }
 
   // ───────────────────────── 主循环 ─────────────────────────

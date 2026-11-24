@@ -52,7 +52,7 @@ class NetClient {
       this.emit('status', this.status);
       this.send({ t: 'hello', did: this.did, name: localStorage.getItem('5ele_name') ?? undefined });
       window.clearInterval(this.pingTimer);
-      this.pingTimer = window.setInterval(() => this.send({ t: 'ping', c: performance.now() }), 3000);
+      this.pingTimer = window.setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000);
     };
     ws.onmessage = ev => {
       let msg: S2C;

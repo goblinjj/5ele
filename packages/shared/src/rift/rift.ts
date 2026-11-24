@@ -266,6 +266,8 @@ export type C2S =
   | { t: 'pdodge' }
   | { t: 'pick'; id: string }
   | { t: 'exit' }
+  /** 秘境场景已就绪：服务器重发当前全部状态 */
+  | { t: 'ready' }
   | { t: 'ping'; c: number };
 
 export type S2C =

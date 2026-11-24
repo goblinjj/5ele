@@ -23,6 +23,43 @@ const TELE_EDGE = 0xffd0c0;
 const TELE_DEPTH = -8;
 /** 玩家身体判定半径 */
 const BODY_R = 34;
+/** 远端实体按服务器时间回放，比最新快照晚这么多毫秒，用来吸收网络抖动 */
+const INTERP_DELAY = 150;
+/** 快照断档时最多外推这么久，之后原地等待 */
+const MAX_EXTRAPOLATE = 150;
+
+interface Sample {
+  t: number;
+  x: number;
+  y: number;
+}
+
+/** 在采样缓冲里按时间取位置：区间内线性插值，超出最新样本则短暂外推 */
+function sampleAt(buf: Sample[], t: number): Sample | null {
+  const n = buf.length;
+  if (!n) return null;
+  if (t <= buf[0].t) return buf[0];
+  for (let i = n - 1; i > 0; i--) {
+    const a = buf[i - 1], b = buf[i];
+    if (t >= a.t && t <= b.t) {
+      const k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+      return { t, x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+    }
+  }
+  const last = buf[n - 1];
+  if (n < 2) return last;
+  const prev = buf[n - 2];
+  const span = last.t - prev.t;
+  if (span <= 0) return last;
+  const ahead = Math.min(MAX_EXTRAPOLATE, t - last.t);
+  return { t, x: last.x + ((last.x - prev.x) / span) * ahead, y: last.y + ((last.y - prev.y) / span) * ahead };
+}
+
+function pushSample(buf: Sample[], s: Sample): void {
+  if (buf.length && buf[buf.length - 1].t >= s.t) return;
+  buf.push(s);
+  if (buf.length > 10) buf.shift();
+}
 
 interface CEnemy {
   id: number;
@@ -36,8 +73,7 @@ interface CEnemy {
   burnFx: Phaser.GameObjects.Image;
   x: number;
   y: number;
-  tx: number;
-  ty: number;
+  buf: Sample[];
   hp: number;
   max: number;
   scale: number;
@@ -98,8 +134,7 @@ interface Mate {
   reviveRing: Phaser.GameObjects.Graphics;
   x: number;
   y: number;
-  tx: number;
-  ty: number;
+  buf: Sample[];
   f: number;
   a: number;
   hp: number;
@@ -178,6 +213,10 @@ export class RiftScene extends Phaser.Scene {
   private hpDirty = false;
   private regenAcc = 0;
   private keys?: Record<string, Phaser.Input.Keyboard.Key>;
+  /** 服务器时间 - 本地时间 的估计（取延迟最小的那次，并缓慢衰减以跟上漂移） */
+  private clockOffset = NaN;
+  private lastServerMs = 0;
+  private hitSfxT = 0;
 
   // 世界对象
   private enemies = new Map<number, CEnemy>();
@@ -222,6 +261,8 @@ export class RiftScene extends Phaser.Scene {
     this.loot = new Map();
     this.mates = new Map();
     this.animState = '';
+    this.clockOffset = NaN;
+    this.lastServerMs = 0;
   }
 
   create(): void {
@@ -277,6 +318,8 @@ export class RiftScene extends Phaser.Scene {
     this.scene.launch('RiftHUDScene');
     this.scene.bringToTop('RiftHUDScene');
     sfx.roundStart();
+    // 切场景期间漏掉的消息（开局的妖异、掉落）由服务器补发
+    net.send({ t: 'ready' });
   }
 
   // ───────────────────────── 搭建 ─────────────────────────
@@ -335,7 +378,7 @@ export class RiftScene extends Phaser.Scene {
     const hpBg = this.add.rectangle(x, y, 84, 10, 0x000000, 0.7).setDepth(FX_DEPTH - 2);
     const hpFill = this.add.rectangle(x, y, 80, 6, 0x3fb950, 1).setOrigin(0, 0.5).setDepth(FX_DEPTH - 1);
     const reviveRing = this.add.graphics().setDepth(FX_DEPTH - 3);
-    this.mates.set(idx, { info, idx, spr, shadow, name, hpBg, hpFill, reviveRing, x, y, tx: x, ty: y, f: 1, a: 0, hp: info.stats.maxHp, max: info.stats.maxHp, down: false });
+    this.mates.set(idx, { info, idx, spr, shadow, name, hpBg, hpFill, reviveRing, x, y, buf: [], f: 1, a: 0, hp: info.stats.maxHp, max: info.stats.maxHp, down: false });
   }
 
   // ───────────────────────── 网络消息 ─────────────────────────
@@ -344,12 +387,14 @@ export class RiftScene extends Phaser.Scene {
     const now = this.time.now;
     this.progress = m.prog;
     this.elapsed = m.ms;
+    this.lastServerMs = m.ms;
+    const off = m.ms - now;
+    this.clockOffset = Number.isNaN(this.clockOffset) ? off : Math.max(off, this.clockOffset - 3);
     const e = m.e;
     for (let i = 0; i < e.length; i += 5) {
       const en = this.enemies.get(e[i]);
       if (!en) continue;
-      en.tx = e[i + 1];
-      en.ty = e[i + 2];
+      pushSample(en.buf, { t: m.ms, x: e[i + 1], y: e[i + 2] });
       en.hp = e[i + 3];
       en.flags = e[i + 4];
       en.seen = now;
@@ -360,8 +405,7 @@ export class RiftScene extends Phaser.Scene {
       if (idx === this.myIdx) continue;
       const mt = this.mates.get(idx);
       if (!mt) continue;
-      mt.tx = p[i + 1] as number;
-      mt.ty = p[i + 2] as number;
+      pushSample(mt.buf, { t: m.ms, x: p[i + 1] as number, y: p[i + 2] as number });
       mt.f = p[i + 3] as number;
       mt.a = p[i + 4] as number;
       mt.hp = p[i + 5] as number;
@@ -398,7 +442,7 @@ export class RiftScene extends Phaser.Scene {
 
     const en: CEnemy = {
       id: s.id, def, tier: s.tier, spr, shadow, ring, hpBg, hpFill, burnFx,
-      x: s.x, y: s.y, tx: s.x, ty: s.y, hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
+      x: s.x, y: s.y, buf: [{ t: this.lastServerMs, x: s.x, y: s.y }], hp: s.hp, max: s.max, scale, flags: 0, seen: this.time.now, anim: 'idle', atkUntil: 0,
     };
     spr.setAlpha(0).setScale(scale * 0.4);
     this.tweens.add({ targets: spr, alpha: 1, scale, duration: 320, ease: 'Back.easeOut' });
@@ -459,7 +503,8 @@ export class RiftScene extends Phaser.Scene {
       } else {
         this.fx.floatText(en.x, top, `${amt}`, '#8b949e', 18, 50, 500);
       }
-      // 受击：闪白 + 压扁
+      if (mine) continue;
+      // 同伴打中的：闪白 + 压扁
       en.spr.setTintFill(0xffffff);
       this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
       if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
@@ -719,6 +764,7 @@ export class RiftScene extends Phaser.Scene {
       if (t && (t.x - b.x) ** 2 + (t.y - 40 - b.y) ** 2 < 46 ** 2) {
         net.send({ t: 'hit', s: b.s, id: t.id, x: Math.round(t.x), y: Math.round(t.y) });
         this.fx.burst(b.x, b.y, FIRE_TINT, b.s === 'b' ? 8 : 4);
+        this.hitFeedback(t);
         if (b.s === 'b') {
           this.fx.flashGlow(b.x, b.y, FIRE.splashRadius, FIRE_TINT, 200, 0.5);
           if (hasLegend(this.stats, 'chiyan_feather')) this.splitFrom(t);
@@ -729,6 +775,19 @@ export class RiftScene extends Phaser.Scene {
       if (b.life <= 0 || !t) { b.img.destroy(); return false; }
       return true;
     });
+  }
+
+  /** 命中的手感在本地立刻给出（闪白、压扁、音效），伤害数字等服务器结算 */
+  private hitFeedback(en: CEnemy): void {
+    en.spr.setTintFill(0xffffff);
+    this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
+    if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
+    const now = this.time.now;
+    if (now - this.hitSfxT > 70) {
+      this.hitSfxT = now;
+      const m = wxMult(this.path, en.def.wuxing);
+      sfx.hit(m > 1, m < 1);
+    }
   }
 
   /** 赤炎羽：命中后迸出流火，飞向附近其他妖异 */
@@ -1032,14 +1091,15 @@ export class RiftScene extends Phaser.Scene {
   }
 
   private updateEnemies(dt: number): void {
-    const k = Math.min(1, (dt / 1000) * 14);
     const now = this.time.now;
+    const rt = this.renderTime;
     for (const en of this.enemies.values()) {
-      const dx = en.tx - en.x, dy = en.ty - en.y;
-      en.x += dx * k;
-      en.y += dy * k;
-      const moving = Math.abs(dx) + Math.abs(dy) > 3;
-      if (Math.abs(dx) > 2 && now > en.atkUntil) en.spr.setFlipX(dx < 0);
+      const s = sampleAt(en.buf, rt);
+      const dx = s ? s.x - en.x : 0, dy = s ? s.y - en.y : 0;
+      en.x += dx;
+      en.y += dy;
+      const moving = Math.abs(dx) + Math.abs(dy) > dt * 0.05;
+      if (Math.abs(dx) > 0.5 && now > en.atkUntil) en.spr.setFlipX(dx < 0);
       en.spr.setPosition(en.x, en.y);
       const foot = en.y + 307 * en.scale * 0.36;
       en.spr.setDepth(foot);
@@ -1076,11 +1136,17 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private updateMates(dt: number): void {
-    const k = Math.min(1, (dt / 1000) * 12);
+  /** 远端实体的回放时刻（服务器时间） */
+  private get renderTime(): number {
+    if (Number.isNaN(this.clockOffset)) return this.lastServerMs;
+    return this.time.now + this.clockOffset - INTERP_DELAY;
+  }
+
+  private updateMates(_dt: number): void {
+    const rt = this.renderTime;
     for (const m of this.mates.values()) {
-      m.x += (m.tx - m.x) * k;
-      m.y += (m.ty - m.y) * k;
+      const s = sampleAt(m.buf, rt);
+      if (s) { m.x = s.x; m.y = s.y; }
       m.spr.setPosition(m.x, m.y).setFlipX(m.f < 0).setDepth(m.y + 50).setAlpha(m.down ? 0.4 : 0.92);
       m.shadow.setPosition(m.x, m.y + 50);
       m.name.setPosition(m.x, m.y - 110);

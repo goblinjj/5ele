@@ -41,6 +41,7 @@ export class RiftHUDScene extends Phaser.Scene {
   private hpText!: Phaser.GameObjects.Text;
   private critText!: Phaser.GameObjects.Text;
   private downText!: Phaser.GameObjects.Text;
+  private netText!: Phaser.GameObjects.Text;
   private mateTexts: Phaser.GameObjects.Text[] = [];
   private endLayer: Phaser.GameObjects.Container | null = null;
   private controls: Phaser.GameObjects.GameObject[] = [];
@@ -74,6 +75,8 @@ export class RiftHUDScene extends Phaser.Scene {
       fontFamily: SERIF, fontSize: '26px', color: '#8b949e', backgroundColor: '#0d1117cc', padding: { x: 16, y: 8 },
     }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     leave.on('pointerup', () => this.confirmLeave());
+    // 延迟与帧率：分辨卡顿来自网络还是手机性能
+    this.netText = this.add.text(W - 30, 318, '', { fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0);
 
     this.createControls();
   }
@@ -136,6 +139,10 @@ export class RiftHUDScene extends Phaser.Scene {
     g.clear();
 
     this.topText.setText(`${TIER_NAMES[r.tier]}  ${fmtTime(r.elapsed)}`);
+    const fps = Math.round(this.game.loop.actualFps);
+    const rtt = net.rtt;
+    this.netText.setText(`延迟 ${rtt}ms · ${fps}帧`)
+      .setColor(rtt > 250 || fps < 30 ? '#f85149' : rtt > 120 || fps < 50 ? '#e3b23c' : '#3fb950');
 
     // 进度 / 核心血条
     const bx = 90, bw = W - 180, by = 76, bh = 40;
