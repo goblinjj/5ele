@@ -97,3 +97,13 @@ pnpm dev:client       # http://localhost:5173
 - `MapScene` / `BattleScene` / `RewardScene` 是早期回合制玩法的代码，当前流程已不可达。
 - 五行被动（`wuxing.MD` 中的破金、生机、寒息等）只在回合制 `BattleEngine` 中实现，实时战斗尚未接入。
 - 数值（妖异成长、掉率、技能倍率）只经过自动脚本粗测，需要真机试玩后再调。
+
+## 3D 模型预渲染（tools/render3d）
+
+人物用的是 3D 模型预渲染出来的序列帧，游戏里仍是 2D 精灵。
+
+- 源文件放在仓库根目录的 `model/`（Mixamo 下载的 FBX：一个带蒙皮的 `Idle.fbx`，其余动作 Without Skin）。这个目录不进版本库。
+- `tools/render3d/chars.json` 里配置每个角色：镜头角度、每段动作取哪一段时间、取几帧、游戏里播多久。
+- 生成：`cd tools/render3d && npm install`，然后在仓库根目录 `node tools/render3d/render.mjs hero`，输出 `packages/client/public/assets/hero/atlas.{png,json}`。
+- 挑动作区间：`node tools/render3d/render.mjs hero --sheet <目录>`，每段动作出一张带时间标注的预览图。
+- 图集每一帧带 `hand: [x, y, 角度, 缩短比例]`（右手握点与兵器朝向），`Avatar` 据此把程序画的兵器贴到手上；动作表在图集 JSON 的 `char.clips`。

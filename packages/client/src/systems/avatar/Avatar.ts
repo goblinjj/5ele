@@ -5,37 +5,25 @@ import {
 import { WX_TINT } from '../../config/worldConfig.js';
 
 /**
- * 人形纸娃娃：部件分开绘制，由程序按姿势参数驱动
+ * 人物：3D 模型预渲染出来的序列帧（tools/render3d 生成 assets/hero）
  *
- *  - 每一帧都是姿势插值，帧率多高就有多顺；状态切换时平滑过渡
- *  - 外显：兵器器型（剑 刃 杖 枪 扇）；衣袍取所修之道的五行色，镶边取境界色；
- *    修过的每一行化作一颗环绕腰间的灵珠；境界到了筑基脚下生出光环
- *  - 部件纹理按「款式 + 颜色」缓存在全局纹理管理器里，同样的装备只画一次
+ *  - 待机、奔跑、挥砍、直刺、出手、施法、受击、倒地各一段，按状态切换
+ *  - 兵器仍是程序画的：图集每一帧都记着右手握点和兵器朝向，兵器贴在手上跟着动，
+ *    所以换兵器、换品质不用重新渲染模型
+ *  - 修过的每一行化作一颗环绕腰间的灵珠；境界到了筑基脚下生出光环
  *
- * 坐标：容器原点在双脚中间，面朝右；所有部件纹理按 2 倍绘制再缩小，放大镜头也清晰。
+ * 坐标：容器原点在双脚中间，面朝右。
  */
 
+export const HERO_ATLAS = 'hero';
+/** 人物站立时在容器里的高度（像素，未乘外部缩放） */
+const BODY_H = 122;
 const S = 2;
-const SKIN = '#f3d9c6';
-const SKIN_SHADE = '#d9b59c';
-const HAIR = '#1b1d29';
+/** 兵器相对人物的大小 */
+const WPN = 0.85;
 
-type Style = 'robe' | 'armor' | 'spirit';
-
-interface Pose {
-  bob: number;
-  lean: number;
-  head: number;
-  legF: number;
-  legB: number;
-  armF: number;
-  armB: number;
-  /** 武器的世界角度（不是相对手臂） */
-  wpn: number;
-  squash: number;
-}
-
-const ZERO: Pose = { bob: 0, lean: 0, head: 0, legF: 0, legB: 0, armF: 0.25, armB: -0.15, wpn: -0.8, squash: 1 };
+interface ClipDef { frames: number; ms: number; loop: boolean; yoyo: boolean }
+interface CharMeta { cell: number; footX: number; footY: number; heightPx: number; clips: Record<string, ClipDef> }
 
 function hex(c: number): string {
   return '#' + c.toString(16).padStart(6, '0');
@@ -66,143 +54,6 @@ export interface AvatarLook {
   weapon: GearItem | null;
   path: Wuxing | null;
   cult: Energy | null;
-}
-
-/** 衣袍配色：主色取所修之道的五行色（压暗），镶边取境界色；未入道是一缕残魂 */
-function robeColors(look: AvatarLook | null): { main: number; trim: number; style: Style } {
-  if (!look?.path) return { main: 0xbfe0ff, trim: 0x9fd8ff, style: 'spirit' };
-  return { main: WX_TINT[look.path], trim: REALM_COLORS[look.cult ? realmIndex(look.cult) : 0], style: 'robe' };
-}
-
-// ───────────────────────── 部件纹理 ─────────────────────────
-
-function torsoTex(scene: Phaser.Scene, style: Style, main: number, trim: number): string {
-  const key = `av_torso_${style}_${main}_${trim}`;
-  // 56×74，髋部在 (28, 46)
-  return makeTex(scene, key, 56, 74, ctx => {
-    const base = style === 'spirit' ? 'rgba(200,230,255,0.85)' : shade(main, style === 'armor' ? 0.55 : 0.62);
-    const dark = style === 'spirit' ? 'rgba(140,190,235,0.9)' : shade(main, 0.38);
-    const tr = hex(trim);
-    // 下摆
-    ctx.fillStyle = dark;
-    ctx.beginPath();
-    if (style === 'armor') {
-      ctx.moveTo(14, 40); ctx.lineTo(42, 40); ctx.lineTo(46, 64); ctx.lineTo(10, 64); ctx.closePath();
-    } else {
-      ctx.moveTo(15, 40); ctx.lineTo(41, 40); ctx.quadraticCurveTo(50, 60, 52, 72); ctx.lineTo(4, 72); ctx.quadraticCurveTo(6, 60, 15, 40);
-    }
-    ctx.fill();
-    if (style === 'armor') {
-      // 甲片
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 1;
-      for (let x = 14; x <= 44; x += 6) { ctx.beginPath(); ctx.moveTo(x, 42); ctx.lineTo(x + 1, 63); ctx.stroke(); }
-    }
-    ctx.strokeStyle = tr;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    if (style === 'armor') { ctx.moveTo(10, 63); ctx.lineTo(46, 63); } else { ctx.moveTo(5, 71); ctx.lineTo(51, 71); }
-    ctx.stroke();
-
-    // 上身
-    ctx.fillStyle = base;
-    ctx.beginPath();
-    ctx.moveTo(16, 8); ctx.quadraticCurveTo(28, 2, 40, 8);
-    ctx.lineTo(42, 42); ctx.quadraticCurveTo(28, 46, 14, 42); ctx.closePath();
-    ctx.fill();
-    // 交领
-    ctx.strokeStyle = style === 'spirit' ? 'rgba(255,255,255,0.9)' : tr;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); ctx.moveTo(22, 6); ctx.lineTo(32, 24); ctx.lineTo(36, 7); ctx.stroke();
-    if (style === 'armor') {
-      // 护心镜与肩甲
-      ctx.fillStyle = tr;
-      ctx.beginPath(); ctx.arc(30, 26, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = shade(main, 0.75);
-      ctx.beginPath(); ctx.ellipse(16, 11, 8, 6, -0.3, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(40, 11, 8, 6, 0.3, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = tr; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(16, 11, 8, 6, -0.3, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(40, 11, 8, 6, 0.3, 0, Math.PI * 2); ctx.stroke();
-    }
-    // 腰带
-    ctx.fillStyle = style === 'spirit' ? 'rgba(160,210,255,1)' : tr;
-    ctx.fillRect(14, 36, 28, 5);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillRect(14, 36, 28, 1.5);
-    // 腰带垂绦
-    ctx.strokeStyle = style === 'spirit' ? 'rgba(160,210,255,0.9)' : tr;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(32, 41); ctx.quadraticCurveTo(34, 50, 31, 58); ctx.stroke();
-  });
-}
-
-function armTex(scene: Phaser.Scene, style: Style, main: number, trim: number): string {
-  const key = `av_arm_${style}_${main}_${trim}`;
-  // 14×38，肩在 (7, 3)
-  return makeTex(scene, key, 14, 38, ctx => {
-    ctx.fillStyle = style === 'spirit' ? 'rgba(200,230,255,0.85)' : shade(main, style === 'armor' ? 0.5 : 0.6);
-    ctx.beginPath();
-    ctx.moveTo(2, 4); ctx.quadraticCurveTo(7, -1, 12, 4); ctx.lineTo(style === 'robe' ? 13 : 11, 28); ctx.lineTo(style === 'robe' ? 1 : 3, 28); ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = style === 'spirit' ? 'rgba(255,255,255,0.9)' : hex(trim);
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(style === 'robe' ? 1 : 3, 27); ctx.lineTo(style === 'robe' ? 13 : 11, 27); ctx.stroke();
-    // 手
-    ctx.fillStyle = SKIN;
-    ctx.beginPath(); ctx.arc(7, 32, 4.6, 0, Math.PI * 2); ctx.fill();
-  });
-}
-
-function legTex(scene: Phaser.Scene, style: Style): string {
-  const key = `av_leg_${style}`;
-  // 14×44，髋在 (7, 2)
-  return makeTex(scene, key, 14, 44, ctx => {
-    ctx.fillStyle = style === 'spirit' ? 'rgba(170,210,245,0.85)' : '#2a2d3a';
-    ctx.beginPath(); ctx.moveTo(2, 2); ctx.lineTo(12, 2); ctx.lineTo(11, 34); ctx.lineTo(3, 34); ctx.closePath(); ctx.fill();
-    // 靴
-    ctx.fillStyle = style === 'spirit' ? 'rgba(220,240,255,0.95)' : '#15161d';
-    ctx.beginPath(); ctx.moveTo(2, 32); ctx.lineTo(11, 32); ctx.lineTo(14, 42); ctx.lineTo(2, 42); ctx.closePath(); ctx.fill();
-  });
-}
-
-function headTex(scene: Phaser.Scene): string {
-  // 40×46，颈在 (20, 44)
-  return makeTex(scene, 'av_head', 40, 46, ctx => {
-    // 颈
-    ctx.fillStyle = SKIN_SHADE;
-    ctx.fillRect(16, 34, 8, 11);
-    // 脸
-    ctx.fillStyle = SKIN;
-    ctx.beginPath(); ctx.ellipse(21, 25, 12.5, 13.5, 0, 0, Math.PI * 2); ctx.fill();
-    // 发：披发 + 发髻
-    ctx.fillStyle = HAIR;
-    ctx.beginPath();
-    ctx.moveTo(8, 27); ctx.quadraticCurveTo(6, 10, 20, 9); ctx.quadraticCurveTo(33, 9, 34, 20);
-    ctx.quadraticCurveTo(26, 17, 22, 21); ctx.quadraticCurveTo(15, 18, 13, 34); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.arc(14, 7, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#c9a24a';
-    ctx.fillRect(10, 9, 9, 2.5);
-    // 眼与眉
-    ctx.fillStyle = '#1b1d29';
-    ctx.beginPath(); ctx.ellipse(28.5, 25, 1.8, 2.4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 1.4; ctx.strokeStyle = '#1b1d29';
-    ctx.beginPath(); ctx.moveTo(26, 20.5); ctx.lineTo(31, 20); ctx.stroke();
-    // 腮红
-    ctx.fillStyle = 'rgba(230,120,110,0.35)';
-    ctx.beginPath(); ctx.arc(28, 30, 2.6, 0, Math.PI * 2); ctx.fill();
-  });
-}
-
-function ribbonTex(scene: Phaser.Scene, color: number): string {
-  const key = `av_ribbon_${color}`;
-  // 34×12，系结点在右端 (34, 6)
-  return makeTex(scene, key, 34, 12, ctx => {
-    ctx.fillStyle = hex(color);
-    ctx.beginPath();
-    ctx.moveTo(34, 5); ctx.quadraticCurveTo(18, 0, 2, 4); ctx.lineTo(6, 7); ctx.lineTo(1, 10); ctx.quadraticCurveTo(18, 8, 34, 8);
-    ctx.closePath(); ctx.fill();
-  });
 }
 
 /** 武器：握把在左端，沿 +x 延伸 */
@@ -272,38 +123,40 @@ function weaponTex(scene: Phaser.Scene, kind: string, wx: Wuxing, trim: number):
   }
 }
 
-// ───────────────────────── 纸娃娃 ─────────────────────────
+// ───────────────────────── 人物 ─────────────────────────
 
 export type AvatarAction = 'none' | 'attack' | 'slash' | 'cast';
+
+/** 未入道的残魂：整个人泛着冷光、半透明 */
+const SPIRIT_TINT = 0xbfe0ff;
 
 export class Avatar extends Phaser.GameObjects.Container {
   private baseScale: number;
   private facing = 1;
   private moving = 0;
   private dashing = false;
-  private guarding = false;
   private down = false;
   private action: AvatarAction = 'none';
   private actionT = 0;
   private actionDur = 1;
   private hurtT = 0;
+  private downT = 0;
   private t = Math.random() * 10;
-  private pose: Pose = { ...ZERO };
+  private loopT = 0;
+  private clip = '';
 
-  private rig!: Phaser.GameObjects.Container;
+  private meta!: CharMeta;
+  private k = 1;
+  private bodyTint = 0xffffff;
+  private bodyAlpha = 1;
+  private kind = '';
+  private spr!: Phaser.GameObjects.Sprite;
   private shadow!: Phaser.GameObjects.Image;
   private aura!: Phaser.GameObjects.Image;
-  private ribbon!: Phaser.GameObjects.Image;
-  private head!: Phaser.GameObjects.Image;
-  private torso!: Phaser.GameObjects.Image;
-  private legF!: Phaser.GameObjects.Image;
-  private legB!: Phaser.GameObjects.Image;
-  private armB!: Phaser.GameObjects.Image;
-  private armF!: Phaser.GameObjects.Container;
   private weapon?: Phaser.GameObjects.Image;
   private weaponGlow?: Phaser.GameObjects.Image;
+  private weaponLen = 0;
   private charms: Phaser.GameObjects.Image[] = [];
-  private flashables: Phaser.GameObjects.Image[] = [];
 
   constructor(scene: Phaser.Scene, x: number, y: number, look: AvatarLook | null, scale: number = 1) {
     super(scene, x, y);
@@ -312,11 +165,10 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.build(look);
   }
 
-  /** 换装：整体重建部件（纹理有缓存，开销很小） */
+  /** 换装：整体重建（纹理有缓存，开销很小） */
   setLook(look: AvatarLook | null): void {
     this.removeAll(true);
     this.charms = [];
-    this.flashables = [];
     this.weapon = undefined;
     this.weaponGlow = undefined;
     this.build(look);
@@ -325,7 +177,11 @@ export class Avatar extends Phaser.GameObjects.Container {
   private build(look: AvatarLook | null): void {
     const s = this.scene;
     const wpn = look?.weapon ?? null;
-    const { main, trim, style } = robeColors(look);
+    this.meta = (s.textures.get(HERO_ATLAS).customData as { char: CharMeta }).char;
+    this.k = BODY_H / this.meta.heightPx;
+    this.kind = wpn ? kindOf(wpn) : '';
+    this.bodyTint = look?.path ? 0xffffff : SPIRIT_TINT;
+    this.bodyAlpha = look?.path ? 1 : 0.82;
 
     // 筑基以上：脚下光环，取境界色
     const realm = look?.cult ? realmIndex(look.cult) : 0;
@@ -334,39 +190,23 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.shadow = s.add.image(0, 0, 'fx_shadow').setScale(1.0, 0.9).setAlpha(0.9);
     this.aura = s.add.image(0, -6, 'fx_ring').setTint(auraColor || 0x9fd8ff).setScale(0.62, 0.24)
       .setAlpha(auraColor ? 0.9 : 0).setBlendMode(Phaser.BlendModes.ADD);
-    this.add([this.shadow, this.aura]);
+    this.spr = s.add.sprite(0, 0, HERO_ATLAS, 'idle_0')
+      .setOrigin(this.meta.footX / this.meta.cell, this.meta.footY / this.meta.cell)
+      .setScale(this.k).setTint(this.bodyTint).setAlpha(this.bodyAlpha);
+    this.add([this.shadow, this.aura, this.spr]);
 
-    this.rig = s.add.container(0, 0);
-    this.add(this.rig);
-
-    const legKey = legTex(s, style);
-    this.legB = s.add.image(-4, -42, legKey).setOrigin(0.5, 2 / 44).setScale(1 / S).setTint(0xb8b8c4);
-    this.legF = s.add.image(5, -42, legKey).setOrigin(0.5, 2 / 44).setScale(1 / S);
-    const armKey = armTex(s, style, main, trim);
-    this.armB = s.add.image(-8, -74, armKey).setOrigin(0.5, 3 / 38).setScale(1 / S).setTint(0xb0b0bc);
-    this.torso = s.add.image(0, -40, torsoTex(s, style, main, trim)).setOrigin(0.5, 46 / 74).setScale(1 / S);
-    this.ribbon = s.add.image(-6, -110, ribbonTex(s, style === 'spirit' ? 0x9fd8ff : trim)).setOrigin(1, 0.5).setScale(1 / S);
-    this.head = s.add.image(2, -78, headTex(s)).setOrigin(0.5, 44 / 46).setScale(1 / S);
-
-    // 前臂 + 武器
-    this.armF = s.add.container(8, -74);
-    const armFront = s.add.image(0, 0, armKey).setOrigin(0.5, 3 / 38).setScale(1 / S);
-    this.armF.add(armFront);
     if (wpn) {
-      const w = weaponTex(s, kindOf(wpn), wpn.wuxing, itemColor(wpn));
-      const kind = kindOf(wpn);
-      const gripX = kind === '杖' || kind === '枪' ? 0.3 : 0.06;
-      this.weapon = s.add.image(0, 15, w.key).setOrigin(gripX, 0.5).setScale(1 / S);
+      const w = weaponTex(s, this.kind, wpn.wuxing, itemColor(wpn));
+      const gripX = this.kind === '杖' || this.kind === '枪' ? 0.3 : 0.06;
+      this.weaponLen = w.len;
       if (wpn.rarity >= 3 || (wpn.grade ?? 0) >= 5) {
-        this.weaponGlow = s.add.image(0, 15, 'fx_glow').setTint(itemColor(wpn)).setBlendMode(Phaser.BlendModes.ADD)
-          .setOrigin(0.5).setScale(w.len / 256 * 1.3, 0.22).setAlpha(0.5);
-        this.armF.add(this.weaponGlow);
+        this.weaponGlow = s.add.image(0, 0, 'fx_glow').setTint(itemColor(wpn)).setBlendMode(Phaser.BlendModes.ADD)
+          .setOrigin(0.5).setAlpha(0.5);
+        this.add(this.weaponGlow);
       }
-      this.armF.add(this.weapon);
+      this.weapon = s.add.image(0, 0, w.key).setOrigin(gripX, 0.5);
+      this.add(this.weapon);
     }
-
-    this.rig.add([this.legB, this.armB, this.legF, this.torso, this.ribbon, this.head, this.armF]);
-    this.flashables = [this.legB, this.legF, this.armB, armFront, this.torso, this.head];
 
     // 五行灵珠：修过的每一行一颗，环绕腰间
     for (const wx of WX_ORDER) {
@@ -377,7 +217,9 @@ export class Avatar extends Phaser.GameObjects.Container {
       this.add(orb);
     }
 
+    this.clip = '';
     this.setScale(this.baseScale * this.facing, this.baseScale);
+    this.show('idle', 0);
   }
 
   // ───────────────────────── 状态 ─────────────────────────
@@ -392,85 +234,52 @@ export class Avatar extends Phaser.GameObjects.Container {
   /** 0 = 站立，1 = 全速奔跑 */
   setMoving(k: number): void { this.moving = Phaser.Math.Clamp(k, 0, 1); }
   setDashing(v: boolean): void { this.dashing = v; }
-  setGuarding(v: boolean): void { this.guarding = v; }
-  setDown(v: boolean): void { this.down = v; }
+  setGuarding(_v: boolean): void { /* 这套动作里没有格挡 */ }
+  setDown(v: boolean): void {
+    if (v && !this.down) this.downT = 0;
+    this.down = v;
+  }
 
   play(action: AvatarAction): void {
     this.action = action;
     this.actionT = 0;
-    this.actionDur = action === 'cast' ? 420 : action === 'slash' ? 280 : 240;
+    this.actionDur = action === 'none' ? 1 : this.meta.clips[this.actionClip(action)].ms;
+  }
+
+  /** 挥砍：刃是单手快刀，其余双手抡；出手：枪是直刺，其余是推出一道气劲 */
+  private actionClip(action: AvatarAction): string {
+    if (action === 'slash') return this.kind === '刃' ? 'slash2' : 'slash';
+    if (action === 'attack') return this.kind === '枪' ? 'stab' : 'attack';
+    return 'cast';
   }
 
   hurt(): void {
-    this.hurtT = 180;
-    this.flashables.forEach(i => i.setTintFill(0xff6b6b));
-    this.scene.time.delayedCall(90, () => {
-      this.flashables.forEach(i => { if (!i.active) return; i.clearTint(); });
-      this.legB?.setTint(0xb8b8c4);
-      this.armB?.setTint(0xb0b0bc);
-    });
+    this.hurtT = this.meta.clips.hurt.ms;
+    this.spr.setTintFill(0xff6b6b);
+    this.scene.time.delayedCall(90, () => { if (this.spr.active) this.spr.setTint(this.bodyTint); });
   }
 
   // ───────────────────────── 每帧 ─────────────────────────
 
-  private target(): Pose {
-    const t = this.t;
-    const p: Pose = { ...ZERO };
-    if (this.down) {
-      return { ...p, lean: 0, armF: -0.4, armB: 0.3, wpn: 0.4, legF: 0.2, legB: -0.1, squash: 1 };
-    }
-    // 待机：呼吸
-    p.bob = Math.sin(t * 2.4) * 1.4;
-    p.armF = 0.22 + Math.sin(t * 2.4) * 0.04;
-    p.armB = -0.12 - Math.sin(t * 2.4) * 0.04;
-    p.head = Math.sin(t * 1.2) * 0.03;
-
-    // 跑动：腿臂反向摆，身体前倾、上下颠
-    if (this.moving > 0.05) {
-      const ph = t * 13;
-      const m = this.moving;
-      p.legF = Math.sin(ph) * 0.65 * m;
-      p.legB = -Math.sin(ph) * 0.65 * m;
-      p.armB = Math.sin(ph) * 0.55 * m - 0.1;
-      p.armF = 0.15 - Math.sin(ph) * 0.35 * m;
-      p.lean = 0.14 * m;
-      p.bob = -Math.abs(Math.sin(ph)) * 4 * m + 1;
-      p.wpn = -0.5;
-    }
-    if (this.guarding) {
-      p.armF = -1.25; p.wpn = -1.45; p.lean = -0.08; p.armB = -0.5;
-    }
-    if (this.dashing) {
-      p.lean = 0.5; p.legF = 0.8; p.legB = -0.6; p.armB = 1.0; p.armF = 0.9; p.wpn = 0.5; p.bob = -3;
-    }
-
-    // 出手：前臂前推，武器指向前方；施法：双手高举
-    if (this.action !== 'none') {
-      const k = this.actionT / this.actionDur;
-      const out = k < 0.35 ? Phaser.Math.Easing.Back.Out(k / 0.35) : 1 - Phaser.Math.Easing.Quadratic.InOut((k - 0.35) / 0.65);
-      if (this.action === 'slash') {
-        // 挥砍：从肩后抡到身前，再收回
-        const sw = Phaser.Math.Easing.Cubic.Out(Math.min(1, k / 0.55));
-        const back = k < 0.55 ? 0 : (k - 0.55) / 0.45;
-        p.armF = Phaser.Math.Linear(Phaser.Math.Linear(-2.7, -0.2, sw), p.armF, back);
-        p.wpn = Phaser.Math.Linear(Phaser.Math.Linear(-2.3, 0.75, sw), p.wpn, back);
-        p.lean = Phaser.Math.Linear(Phaser.Math.Linear(-0.1, 0.26, sw), p.lean, back);
-        p.armB = Phaser.Math.Linear(p.armB, 0.6, 1 - back);
-      } else if (this.action === 'attack') {
-        p.armF = Phaser.Math.Linear(p.armF, -1.5, out);
-        p.wpn = Phaser.Math.Linear(p.wpn, 0.05, out);
-        p.lean = Phaser.Math.Linear(p.lean, 0.12, out);
-        p.armB = Phaser.Math.Linear(p.armB, 0.5, out);
-      } else {
-        p.armF = Phaser.Math.Linear(p.armF, -2.7, out);
-        p.armB = Phaser.Math.Linear(p.armB, -2.5, out);
-        p.wpn = Phaser.Math.Linear(p.wpn, -1.57, out);
-        p.lean = Phaser.Math.Linear(p.lean, -0.1, out);
-        p.squash = 1 + 0.06 * out;
-      }
-    }
-    if (this.hurtT > 0) p.lean -= 0.35 * (this.hurtT / 180);
-    return p;
+  /** 摆到某段动作的进度 p（0..1），兵器跟到这一帧的手上 */
+  private show(clip: string, p: number): void {
+    const def = this.meta.clips[clip];
+    const i = Math.min(def.frames - 1, Math.max(0, Math.floor(p * def.frames)));
+    const name = `${clip}_${i}`;
+    if (this.spr.frame.name !== name) this.spr.setFrame(name);
+    if (!this.weapon) return;
+    const hand = (this.spr.frame.customData as { hand?: number[] }).hand;
+    if (!hand) return;
+    const x = (hand[0] - this.meta.footX) * this.k, y = (hand[1] - this.meta.footY) * this.k;
+    // 兵器指向镜头时会透视缩短，别缩得太短
+    const len = Phaser.Math.Clamp(hand[3], 0.45, 1);
+    // 长柄兵器平时拄在身侧竖着拿，出招时才跟着手走
+    const pole = (this.kind === '杖' || this.kind === '枪') && (clip === 'idle' || clip === 'run' || clip === 'hurt');
+    const rot = pole ? -1.32 : hand[2];
+    const k = pole ? 1 : len;
+    this.weapon.setPosition(x, y).setRotation(rot).setScale(k * WPN / S, WPN / S);
+    this.weaponGlow?.setPosition(x + Math.cos(rot) * this.weaponLen * k * 0.2, y + Math.sin(rot) * this.weaponLen * k * 0.2)
+      .setRotation(rot).setScale(this.weaponLen / 256 * 1.1 * k, 0.18);
   }
 
   tick(dt: number): void {
@@ -481,38 +290,40 @@ export class Avatar extends Phaser.GameObjects.Container {
     }
     this.hurtT = Math.max(0, this.hurtT - dt);
 
-    // 姿势平滑逼近目标：出手时跟得紧，其余放松
-    const tgt = this.target();
-    const rate = this.action !== 'none' || this.dashing ? 40 : 16;
-    const k = 1 - Math.exp(-rate * dt / 1000);
-    const p = this.pose;
-    (Object.keys(p) as (keyof Pose)[]).forEach(key => { p[key] += (tgt[key] - p[key]) * k; });
-
-    this.rig.setRotation(this.down ? -1.45 : p.lean * 0.6).setPosition(this.down ? -30 : 0, p.bob + (this.down ? -14 : 0));
-    this.rig.setScale(1, p.squash);
-    this.legF.setRotation(-p.legF);
-    this.legB.setRotation(-p.legB);
-    this.torso.setRotation(p.lean * 0.4);
-    this.head.setRotation(p.head + p.lean * 0.2);
-    this.armB.setRotation(p.armB);
-    this.armF.setRotation(p.armF);
-    if (this.weapon) {
-      const local = p.wpn - p.armF;
-      this.weapon.setRotation(local);
-      this.weaponGlow?.setRotation(local).setPosition(Math.cos(local) * 18, 15 + Math.sin(local) * 18);
+    const clips = this.meta.clips;
+    let clip: string, p: number;
+    if (this.down) {
+      this.downT += dt;
+      clip = 'die'; p = Math.min(0.999, this.downT / clips.die.ms);
+    } else if (this.action !== 'none') {
+      clip = this.actionClip(this.action); p = this.actionT / this.actionDur;
+    } else if (this.hurtT > 0 && this.moving <= 0.05) {
+      clip = 'hurt'; p = 1 - this.hurtT / clips.hurt.ms;
+    } else {
+      clip = this.moving > 0.05 ? 'run' : 'idle';
+      if (clip !== this.clip) this.loopT = 0;
+      const def = clips[clip];
+      // 跑得越快步子越密；冲刺再快一截
+      this.loopT += dt * (clip === 'run' ? (0.55 + 0.45 * this.moving) * (this.dashing ? 1.7 : 1) : 1);
+      const u = this.loopT / def.ms;
+      if (def.yoyo) { const m = u % 2; p = m < 1 ? m : 2 - m; } else p = u % 1;
+      p = Math.min(0.999, p);
     }
-    // 发带随动作飘
-    this.ribbon.setRotation(Math.sin(this.t * 3.1) * 0.18 + p.lean * 0.8 + this.moving * 0.35);
+    this.clip = clip;
+    this.show(clip, p);
+    this.spr.setRotation(this.dashing && !this.down ? 0.16 : 0);
 
     // 灵珠环绕
     const nOrb = Math.max(1, this.charms.length);
     this.charms.forEach((c, i) => {
       const a = this.t * 2.2 + (i / nOrb) * Math.PI * 2;
-      c.setPosition(Math.cos(a) * 30, -48 + Math.sin(a) * 9);
+      c.setPosition(Math.cos(a) * 30, -52 + Math.sin(a) * 9).setVisible(!this.down);
       // 转到身后时压暗
       c.setAlpha(Math.sin(a) > 0 ? 0.95 : 0.45);
     });
     if (this.aura.alpha > 0) this.aura.setAlpha(0.65 + Math.sin(this.t * 3) * 0.25);
-    this.setAlpha(this.down ? 0.55 : 1);
+    this.weapon?.setVisible(!this.down);
+    this.weaponGlow?.setVisible(!this.down);
+    this.setAlpha(this.down ? 0.6 : 1);
   }
 }

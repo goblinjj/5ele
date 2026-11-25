@@ -1,0 +1,110 @@
+<!doctype html><html><body style="margin:0;background:#333">
+<script type="importmap">{"imports":{"three":"/tools/render3d/node_modules/three/build/three.module.js","three/addons/":"/tools/render3d/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+// 渲染页：由 render.mjs 驱动。先 setup(配置) 载入模型与动作，再逐帧 pose() + 画进图集画布。
+const SS = 2; // 超采样倍数
+let renderer, scene, cam, root, mixer, hips, hips0, bones = {}, actions = {}, cfg, current;
+const loader = new FBXLoader();
+
+window.setup = async (c) => {
+  cfg = c;
+  const px = c.cell * SS;
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(px, px); renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x4a4250, 2.0));
+  const key = new THREE.DirectionalLight(0xfff0d8, 2.4); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x9fd0ff, 1.8); scene.add(rim);
+
+  root = await loader.loadAsync(c.base + c.skin);
+  const maps = [];
+  root.traverse(o => {
+    if (o.isBone) bones[o.name.replace(/^mixamorig:?/, '')] = o;
+    if (o.isMesh) {
+      o.frustumCulled = false;
+      for (const m of [].concat(o.material)) { m.shininess = 8; if (m.specular) m.specular.setScalar(0.12); if (m.map) maps.push(m.map); }
+    }
+  });
+  scene.add(root);
+  mixer = new THREE.AnimationMixer(root);
+  const clips = { [c.skin]: root.animations[0] };
+  for (const def of Object.values(c.clips)) {
+    if (clips[def.file]) continue;
+    const g = await loader.loadAsync(c.base + def.file);
+    clips[def.file] = g.animations.find(a => a.tracks.length) ;
+  }
+  for (const [f, clip] of Object.entries(clips)) actions[f] = mixer.clipAction(clip);
+  // 内嵌贴图是异步解码的，等它们都就绪再出图
+  for (let i = 0; i < 200 && maps.some(m => !(m.image && m.image.width)); i++) await new Promise(r => setTimeout(r, 50));
+  maps.forEach(m => { m.needsUpdate = true; });
+
+  hips = bones.Hips;
+  root.updateMatrixWorld(true);
+  const H = c.height;           // 模型身高（模型单位）
+  const half = H * c.zoom;      // 画面半高
+  cam = new THREE.OrthographicCamera(-half, half, half, -half, 1, H * 40);
+  const yaw = c.yaw * Math.PI / 180, pitch = c.pitch * Math.PI / 180, d = H * 10;
+  const ctr = new THREE.Vector3(0, H * c.centerY, 0);
+  cam.position.set(ctr.x + Math.sin(yaw) * Math.cos(pitch) * d, ctr.y + Math.sin(pitch) * d, ctr.z + Math.cos(yaw) * Math.cos(pitch) * d);
+  cam.lookAt(ctr); cam.updateMatrixWorld(true);
+  key.position.copy(cam.position).add(new THREE.Vector3(H * 3, H * 8, 0));
+  rim.position.set(-cam.position.x, H * 4, -cam.position.z);
+  window.sheet = document.createElement('canvas');
+  return { durations: Object.fromEntries(Object.entries(clips).map(([f, cl]) => [f, cl.duration])), bones: Object.keys(bones).length, maps: maps.map(m => [m.image && m.image.width, m.image && m.image.height]) };
+};
+
+const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3();
+function screen(p) { // 世界坐标 → 单元格内像素（原点在左上）
+  v.copy(p).project(cam);
+  return [(v.x * 0.5 + 0.5) * cfg.cell, (-v.y * 0.5 + 0.5) * cfg.cell];
+}
+
+/** 摆到某个动作的某一刻；keep = 保留多少根骨骼的水平位移（0 = 原地） */
+function pose(file, t, keep) {
+  if (current !== file) { mixer.stopAllAction(); actions[file].reset().play(); current = file; hips0 = null; }
+  mixer.setTime(0); root.updateMatrixWorld(true);
+  const p0 = hips.position.clone();
+  mixer.setTime(t);
+  hips.position.x = p0.x + (hips.position.x - p0.x) * keep;
+  hips.position.z = p0.z + (hips.position.z - p0.z) * keep;
+  // 起始帧的水平偏移也归零，保证所有动作脚下是同一个原点
+  root.updateMatrixWorld(true);
+  hips.getWorldPosition(a);
+  if (!hips0) { const s = hips.position.clone(); mixer.setTime(0); root.updateMatrixWorld(true); hips.getWorldPosition(b); hips0 = b.clone(); hips.position.copy(s); mixer.setTime(t); hips.position.x = p0.x + (hips.position.x - p0.x) * keep; hips.position.z = p0.z + (hips.position.z - p0.z) * keep; }
+  root.position.set(-hips0.x, 0, -hips0.z);
+  root.updateMatrixWorld(true);
+}
+
+/** 右手握点、兵器朝向（屏幕角度，y 向下）、透视缩短比例 */
+function hand() {
+  const g = n => bones[n].getWorldPosition(new THREE.Vector3());
+  const idx = g('RightHandIndex1'), pinky = g('RightHandPinky1'), mid = g('RightHandMiddle1'), wrist = g('RightHand');
+  const grip = wrist.clone().lerp(mid, 0.75);
+  const dir = idx.clone().sub(pinky).normalize();
+  const tip = grip.clone().addScaledVector(dir, cfg.height * 0.3);
+  const s0 = screen(grip), s1 = screen(tip);
+  const full = cfg.height * 0.3 / (2 * cfg.height * cfg.zoom) * cfg.cell;
+  const r = x => Math.round(x * 100) / 100;
+  return [r(s0[0]), r(s0[1]), r(Math.atan2(s1[1] - s0[1], s1[0] - s0[0])), r(Math.hypot(s1[0] - s0[0], s1[1] - s0[1]) / full)];
+}
+
+window.begin = (cols, rows) => { sheet.width = cols * cfg.cell; sheet.height = rows * cfg.cell; };
+window.draw = (file, t, keep, col, row) => {
+  pose(file, t, keep);
+  renderer.render(scene, cam);
+  const ctx = sheet.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(renderer.domElement, col * cfg.cell, row * cfg.cell, cfg.cell, cfg.cell);
+  return hand();
+};
+window.label = (text, col, row) => { const ctx = sheet.getContext('2d'); ctx.fillStyle = '#ff0'; ctx.font = '14px monospace'; ctx.fillText(text, col * cfg.cell + 4, row * cfg.cell + 16); };
+window.finish = (bg) => {
+  if (bg) { const c2 = document.createElement('canvas'); c2.width = sheet.width; c2.height = sheet.height; const x = c2.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(sheet, 0, 0); return c2.toDataURL('image/png'); }
+  return sheet.toDataURL('image/png');
+};
+window.ready = true;
+</script></body></html>

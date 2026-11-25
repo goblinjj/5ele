@@ -1,0 +1,10 @@
+{
+  "name": "render3d",
+  "private": true,
+  "type": "module",
+  "description": "把 3D 模型（FBX + Mixamo 动作）预渲染成游戏用的序列帧图集",
+  "dependencies": {
+    "puppeteer-core": "^23.0.0",
+    "three": "0.170.0"
+  }
+}

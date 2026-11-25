@@ -32,3 +32,6 @@ npm-debug.log*
 # Cache
 .cache/
 .parcel-cache/
+
+# 3D 源模型（Mixamo 授权不允许再分发原始文件），只提交渲染出来的图集
+/model/

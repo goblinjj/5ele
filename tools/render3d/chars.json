@@ -1,0 +1,80 @@
+{
+  "hero": {
+    "dir": "model",
+    "skin": "Idle.fbx",
+    "out": "packages/client/public/assets/hero",
+    "cell": 256,
+    "height": 178,
+    "zoom": 0.72,
+    "centerY": 0.5,
+    "yaw": -62,
+    "pitch": 12,
+    "clips": {
+      "idle": {
+        "file": "Idle.fbx",
+        "from": 0,
+        "to": 2.4,
+        "frames": 12,
+        "ms": 1700,
+        "loop": true,
+        "yoyo": true
+      },
+      "run": {
+        "file": "Running.fbx",
+        "frames": 12,
+        "ms": 560,
+        "loop": true
+      },
+      "slash": {
+        "file": "Great Sword Slash.fbx",
+        "from": 0.2,
+        "to": 0.95,
+        "frames": 10,
+        "ms": 340
+      },
+      "slash2": {
+        "file": "Sword And Shield Slash.fbx",
+        "from": 0.19,
+        "to": 1.03,
+        "frames": 10,
+        "ms": 340
+      },
+      "stab": {
+        "file": "Stabbing.fbx",
+        "from": 0.13,
+        "to": 1.07,
+        "frames": 10,
+        "ms": 320
+      },
+      "attack": {
+        "file": "Standing 1H Magic Attack 01.fbx",
+        "from": 0.43,
+        "to": 1.58,
+        "frames": 10,
+        "ms": 320
+      },
+      "cast": {
+        "file": "Standing 2H Cast Spell 01.fbx",
+        "from": 0.95,
+        "to": 1.95,
+        "frames": 10,
+        "ms": 480
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6,
+        "ms": 280
+      },
+      "die": {
+        "file": "Falling Back Death.fbx",
+        "from": 0.16,
+        "to": 1.7,
+        "frames": 12,
+        "ms": 800,
+        "keep": 0.55
+      }
+    }
+  }
+}
