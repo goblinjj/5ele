@@ -3,9 +3,9 @@ import { Wuxing, WUXING_CONQUERS, WUXING_GENERATES } from '../types/Wuxing.js';
 /**
  * 兵器与五行修炼
  *
- * 身上只有一件装备：兵器。器型决定出手方式（近战 / 远程），词条只管输出。
- * 其余的成长全部来自「五行能量」：妖异溃散后留下的能量，
- * 收集起来可以修炼五行（人物升级）、淬炼兵器（强化）。
+ * 身上只有一件装备：兵器。器型决定出手方式（近战 / 远程），词条只管输出；空手时以气劲御敌。
+ * 一切成长都来自「五行能量」：妖异溃散后留下的能量，
+ * 收集起来可以修炼五行（人物升级）、凝练兵器（按投入的五行比例定器型）、精炼兵器（威力指数增长，可能失败）。
  */
 
 export const WX_ORDER: Wuxing[] = [Wuxing.METAL, Wuxing.WOOD, Wuxing.WATER, Wuxing.FIRE, Wuxing.EARTH];
@@ -33,7 +33,7 @@ export type WeaponKind = '剑' | '刃' | '枪' | '杖' | '扇';
 export const WEAPON_KINDS: WeaponKind[] = ['剑', '刃', '枪', '杖', '扇'];
 
 export interface WeaponForm {
-  kind: WeaponKind;
+  kind: WeaponKind | '空手';
   /** 招式名 */
   move: string;
   melee: boolean;
@@ -61,6 +61,12 @@ export const WEAPON_FORMS: Record<WeaponKind, WeaponForm> = {
   枪: { kind: '枪', move: '突刺', melee: true, desc: '近战 · 直线突刺，贯穿一路上的妖异', interval: 700, range: 330, mult: 1.75, arc: 0, width: 96, bolts: 0, spread: 0, splash: false },
   杖: { kind: '杖', move: '灵弹', melee: false, desc: '远程 · 自动追敌的灵弹，命中后溅射', interval: 640, range: 560, mult: 1.0, arc: 0, width: 0, bolts: 1, spread: 0, splash: true },
   扇: { kind: '扇', move: '流火', melee: false, desc: '远程 · 一次扇出三道流火，中距离覆盖一片', interval: 720, range: 440, mult: 0.55, arc: 0, width: 0, bolts: 3, spread: 0.3, splash: false },
+};
+
+/** 空手：中距离的气劲，不追踪也不溅射，比任何兵器都弱 */
+export const UNARMED_FORM: WeaponForm = {
+  kind: '空手', move: '气劲', melee: false, desc: '中距离 · 掌出气劲，凝出兵器之前的权宜之计',
+  interval: 620, range: 340, mult: 0.9, arc: 0, width: 0, bolts: 1, spread: 0, splash: false,
 };
 
 // ───────────────────────── 词条 ─────────────────────────
@@ -176,9 +182,9 @@ export function kindOf(item: Pick<GearItem, 'kind' | 'name'>): WeaponKind {
   for (const k of WEAPON_KINDS) if (item.name.endsWith(k)) return k;
   return '杖';
 }
-/** 兵器的出手方式；空手时以掌风代杖 */
+/** 兵器的出手方式；空手时是气劲 */
 export function formOf(item: GearItem | null | undefined): WeaponForm {
-  return WEAPON_FORMS[item ? kindOf(item) : '杖'];
+  return item ? WEAPON_FORMS[kindOf(item)] : UNARMED_FORM;
 }
 
 export function itemCss(item: GearItem): string {
@@ -188,36 +194,74 @@ export function itemColor(item: GearItem): number {
   return RARITY_COLORS[item.rarity];
 }
 
-/** 淬炼：+1 ~ +10，每阶所有数值 +8%，消耗与兵器同属的五行能量，不会失败 */
+/**
+ * 精炼：+1 ~ +10，消耗与兵器同属的能量。
+ *   - 每次消耗固定（只看兵器的层数，不随阶数涨）
+ *   - 兵器的全部数值随阶数指数增长：每阶 ×1.15，+10 约为 4 倍
+ *   - 阶数越高越容易失败；失败时能量照扣、阶数不变
+ */
 export const MAX_GRADE = 10;
-export const GRADE_STEP = 0.08;
-export function gradeMult(item: GearItem): number {
-  return 1 + (item.grade ?? 0) * GRADE_STEP;
+export const GRADE_GROWTH = 1.15;
+export function gradeMult(item: Pick<GearItem, 'grade'>): number {
+  return Math.pow(GRADE_GROWTH, item.grade ?? 0);
 }
-export function refineCost(item: GearItem): number {
-  return Math.round(14 * ((item.grade ?? 0) + 1) * (1 + 0.3 * (item.tier - 1)));
+export function refineCost(item: Pick<GearItem, 'tier'>): number {
+  return Math.round(50 * (1 + 0.3 * (item.tier - 1)));
+}
+/** 从 grade 阶升到下一阶的成功率（百分数） */
+const REFINE_RATE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+export function refineRate(grade: number): number {
+  return REFINE_RATE[Math.max(0, Math.min(REFINE_RATE.length - 1, grade))];
 }
 export function displayName(item: GearItem): string {
   return item.grade ? `${item.name} +${item.grade}` : item.name;
 }
 
-/** 掉落品质：层数越高，好东西越多 */
-export function rollRarity(tier: number, minRarity: GearRarity = 0): GearRarity {
-  const w = [
-    55,
-    30,
-    12 * (1 + 0.12 * (tier - 1)),
-    2.6 * (1 + 0.3 * (tier - 1)),
-    0.45 * (1 + 0.4 * (tier - 1)),
-  ];
-  for (let i = 0; i < minRarity; i++) w[i] = 0;
-  const sum = w.reduce((a, b) => a + b, 0);
-  let r = Math.random() * sum;
-  for (let i = 0; i < w.length; i++) {
-    r -= w[i];
-    if (r <= 0) return i as GearRarity;
-  }
-  return 4;
+// ───────────────────────── 凝练兵器 ─────────────────────────
+
+/**
+ * 凝练：投入五行能量凝成一件兵器。
+ *   - 投得最多的一行为「主」，定兵器的五行
+ *   - 第二多的一行为「辅」，它与主的生克关系定器型：
+ *       辅远少于主（纯） → 杖　　辅生主 → 扇　　主生辅 → 枪　　辅克主 → 刃　　主克辅 → 剑
+ *   - 投入总量定品质：达到起步量为凡品，之后每翻一倍升一档
+ */
+export const FORGE_PURE = 0.25;
+export function forgeBase(tier: number): number {
+  return Math.round(30 * Math.pow(1.35, tier - 1));
+}
+export function forgeRarity(total: number, tier: number): GearRarity | -1 {
+  const q = total / forgeBase(tier);
+  if (q < 1) return -1;
+  return Math.min(4, Math.floor(Math.log2(q) + 1e-9)) as GearRarity;
+}
+/** 达到某一档品质所需的投入总量 */
+export function forgeNeed(rarity: number, tier: number): number {
+  return forgeBase(tier) * Math.pow(2, rarity);
+}
+
+export interface ForgeOutcome {
+  main: Wuxing;
+  sub: Wuxing | null;
+  kind: WeaponKind;
+  /** 主辅关系的说明，如「木生火」 */
+  why: string;
+}
+const WX_CN: Record<Wuxing, string> = {
+  [Wuxing.METAL]: '金', [Wuxing.WOOD]: '木', [Wuxing.WATER]: '水', [Wuxing.FIRE]: '火', [Wuxing.EARTH]: '土',
+};
+export function forgeOutcome(amounts: Energy): ForgeOutcome | null {
+  const sorted = WX_ORDER.map(wx => ({ wx, n: Math.max(0, amounts[wx] ?? 0) })).sort((a, b) => b.n - a.n);
+  if (sorted[0].n <= 0) return null;
+  const main = sorted[0].wx;
+  const m = WX_CN[main];
+  if (sorted[1].n < sorted[0].n * FORGE_PURE) return { main, sub: null, kind: '杖', why: `${m}气精纯` };
+  const sub = sorted[1].wx;
+  const u = WX_CN[sub];
+  if (WUXING_GENERATES[sub] === main) return { main, sub, kind: '扇', why: `${u}生${m}` };
+  if (WUXING_GENERATES[main] === sub) return { main, sub, kind: '枪', why: `${m}生${u}` };
+  if (WUXING_CONQUERS[sub] === main) return { main, sub, kind: '刃', why: `${u}克${m}` };
+  return { main, sub, kind: '剑', why: `${m}克${u}` };
 }
 
 /** 化去一件兵器，返还与它同属的五行能量 */
@@ -306,6 +350,8 @@ export interface PlayerStats {
   regen: number;
   /** 局内灵力上限 */
   qiMax: number;
+  /** 一局最多能带回的五行能量（各行合计） */
+  carry: number;
 }
 
 export const BASE_ATTACK = 10;
@@ -313,6 +359,12 @@ export const BASE_HP = 300;
 /** 基础回血（每秒） */
 export const BASE_REGEN = 2;
 export const BASE_QI = 100;
+/** 一局带回能量的上限：修为越深，容得下的越多 */
+export const BASE_CARRY = 150;
+export const CARRY_PER_LEVEL = 12;
+export function carryCap(cult: Energy): number {
+  return BASE_CARRY + CARRY_PER_LEVEL * energyTotal(cult);
+}
 
 /** 兵器词条 + 五行修为 → 属性 */
 export function computeStats(weapon: GearItem | null | undefined, path: Wuxing | null | undefined, cult: Energy): PlayerStats {
@@ -336,6 +388,7 @@ export function computeStats(weapon: GearItem | null | undefined, path: Wuxing |
     burn: sum.burn + fire * 5,
     regen: BASE_REGEN + wood * 0.4,
     qiMax: BASE_QI + water * 4,
+    carry: BASE_CARRY + CARRY_PER_LEVEL * (metal + wood + water + fire + earth),
   };
 }
 
@@ -350,11 +403,4 @@ export function formatStat(l: StatLine): string {
   const d = STAT_DEFS[l.stat];
   const v = d.pct ? `${Math.round(l.value * 10) / 10}%` : `${Math.round(l.value)}`;
   return `${d.name} +${v}`;
-}
-
-/** 新玩家的第一件兵器 */
-export function starterWeapon(path: Wuxing, kind: WeaponKind = '杖'): GearItem {
-  const it = generateItem(1, 0, path, kind);
-  it.base = [{ stat: 'atk', value: 6 }];
-  return it;
 }

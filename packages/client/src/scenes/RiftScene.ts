@@ -4,7 +4,7 @@ import {
   RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn, SkillCode,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
   wxMult, withCdr, attackInterval, meteorCd,
-  computeStats, powerOf, WeaponForm, formOf, WEAPON_FORMS, Energy, emptyEnergy, WX_ORDER,
+  computeStats, powerOf, WeaponForm, formOf, UNARMED_FORM, Energy, energyTotal, emptyEnergy, WX_ORDER,
   QI_START, qiGain, ORB_MAGNET, ORB_PICK,
 } from '@xiyou/shared';
 import { GAME_HEIGHT, applyRenderScale } from '../config/gameConfig.js';
@@ -127,17 +127,6 @@ interface MyBolt {
   scale: number;
 }
 
-interface Loot {
-  id: string;
-  item: GearItem;
-  x: number;
-  y: number;
-  beam: Phaser.GameObjects.Image;
-  glow: Phaser.GameObjects.Image;
-  label?: Phaser.GameObjects.Text;
-  picking: boolean;
-}
-
 /** 妖异残留的一团五行能量 */
 interface Orb {
   id: number;
@@ -183,7 +172,7 @@ export interface RunStartMsg {
 }
 
 export interface EndMsg {
-  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy; items?: GearItem[];
+  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy;
 }
 
 /**
@@ -207,13 +196,13 @@ export class RiftScene extends Phaser.Scene {
   bossId = 0;
   ended: EndMsg | null = null;
   kills = 0;
-  gotItems: GearItem[] = [];
   /** 本局吸纳的五行能量 */
   gained: Energy = emptyEnergy();
   /** 局内灵力：吸纳能量获得，放技能消耗 */
   qi = 0;
   /** 兵器的出手方式 */
-  form: WeaponForm = WEAPON_FORMS['杖'];
+  form: WeaponForm = UNARMED_FORM;
+  private weapon: GearItem | null = null;
   down = false;
   /** 完美闪避赐予的必暴出手 */
   critCharges = 0;
@@ -266,7 +255,6 @@ export class RiftScene extends Phaser.Scene {
   private teles: Tele[] = [];
   private ebolts: EBolt[] = [];
   private mybolts: MyBolt[] = [];
-  private loot = new Map<string, Loot>();
   private orbs = new Map<number, Orb>();
   private mates = new Map<number, Mate>();
 
@@ -288,10 +276,10 @@ export class RiftScene extends Phaser.Scene {
     this.bossId = 0;
     this.ended = null;
     this.kills = 0;
-    this.gotItems = [];
     this.gained = emptyEnergy();
     this.qi = Math.min(this.stats.qiMax, QI_START);
-    this.form = formOf(mine.weapon);
+    this.weapon = mine.weapon ?? null;
+    this.form = formOf(this.weapon);
     this.down = false;
     this.critCharges = 0;
     this.cdBolt = 400; this.cdRing = 0; this.cdMeteor = 0; this.cdDodge = 0; this.cdGuard = 0;
@@ -304,7 +292,6 @@ export class RiftScene extends Phaser.Scene {
     this.teles = [];
     this.ebolts = [];
     this.mybolts = [];
-    this.loot = new Map();
     this.orbs = new Map();
     this.mates = new Map();
     this.animState = '';
@@ -353,13 +340,11 @@ export class RiftScene extends Phaser.Scene {
       net.on('bolts', (m: { list: EnemyBoltSpawn[] }) => m.list.forEach(b => this.spawnEBolt(b))),
       net.on('stag', (m: { id: number; ms: number }) => this.onStagger(m.id)),
       net.on('cast', (m: { p: number; s: SkillCode; x: number; y: number }) => this.onRemoteCast(m.p, m.s, m.x, m.y)),
-      net.on('loot', (m: { id: string; x: number; y: number; item: GearItem }) => this.addLoot(m.id, m.x, m.y, m.item)),
-      net.on('got', (m: { id: string; item?: GearItem; wx?: Wuxing; n?: number }) => this.onGot(m.id, m.item, m.wx, m.n)),
       net.on('boss', (m: { id: number }) => this.onBoss(m.id)),
       net.on('down', (m: { p: number }) => this.onDown(m.p)),
       net.on('up', (m: { p: number }) => this.onUp(m.p)),
       net.on('end', (m: EndMsg) => this.onEnd(m)),
-      net.on('status', (st: string) => { if (st === 'offline' && !this.ended) this.onEnd({ ok: false, ms: this.elapsed, tier: this.tier, kills: [], best: false, energy: this.gained, items: this.gotItems }); }),
+      net.on('status', (st: string) => { if (st === 'offline' && !this.ended) this.onEnd({ ok: false, ms: this.elapsed, tier: this.tier, kills: [], best: false, energy: this.gained }); }),
     ];
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.offs.forEach(f => f());
@@ -818,8 +803,8 @@ export class RiftScene extends Phaser.Scene {
     const base = Math.atan2(target.y - 40 - oy, target.x - ox);
     for (let i = 0; i < form.bolts; i++) {
       const off = (i - (form.bolts - 1) / 2) * form.spread;
-      // 正中那发追踪目标，两侧的直线飞
-      this.fireBolt(ox, oy, base + off, off === 0 ? target.id : -1, form.bolts > 1 ? 0.75 : 1, (form.range + 160) / BOLT_SPEED * 1000);
+      // 兵器正中那发追踪目标，两侧的直线飞；空手的气劲不会拐弯
+      this.fireBolt(ox, oy, base + off, off === 0 && this.weapon ? target.id : -1, form.bolts > 1 || !this.weapon ? 0.75 : 1, (form.range + 160) / BOLT_SPEED * 1000);
     }
     this.fx.flashGlow(ox + Math.cos(base) * 30, oy + Math.sin(base) * 30, 70, 0xffd27a, 120, 0.9);
     this.castAnim = 260;
@@ -1092,78 +1077,23 @@ export class RiftScene extends Phaser.Scene {
     o.glow.destroy();
     o.core.destroy();
     net.send({ t: 'orb', id: o.id });
-    this.gained[o.wx] += o.n;
+    // 一局能带回的能量有上限：满了之后只化灵力
+    const room = this.stats.carry - energyTotal(this.gained);
+    const n = Math.max(0, Math.min(o.n, room));
+    this.gained[o.wx] += n;
+    if (room > 0 && room - n <= 0) {
+      (this.scene.get('RiftHUDScene') as any)?.banner?.('能量已满', '再吸纳的只化作灵力 · 提升修为可带回更多', 0xe3b23c);
+    }
     const qi = qiGain(this.path, o.wx, o.mt);
     this.qi = Math.min(this.stats.qiMax, this.qi + qi);
     const tint = WX_TINT[o.wx];
     this.fx.flashGlow(this.x, this.y - 30, o.mt ? 110 : 60, tint, 200, 0.6);
     if (o.mt) {
       this.fx.ring(this.x, this.y, 110, tint, 320);
-      this.fx.floatText(this.x, this.y - 150, `${WUXING_NAMES[o.wx]} +${o.n}`, WX_CSS[o.wx], 28, 70, 900);
+      if (n > 0) this.fx.floatText(this.x, this.y - 150, `${WUXING_NAMES[o.wx]} +${n}`, WX_CSS[o.wx], 28, 70, 900);
     }
     const now = this.time.now;
     if (now - this.orbSfxT > 90) { this.orbSfxT = now; sfx.pickup(o.wx); }
-  }
-
-  // ───────────────────────── 掉落 ─────────────────────────
-
-  private addLoot(id: string, x: number, y: number, item: GearItem): void {
-    const c = itemColor(item);
-    const beam = this.add.image(x, y - 90, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD)
-      .setDisplaySize(item.rarity >= 3 ? 70 : 46, item.rarity >= 2 ? 360 : 180).setAlpha(item.rarity >= 2 ? 0.85 : 0.55).setDepth(FX_DEPTH - 7);
-    const glow = this.add.image(x, y, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.6).setDepth(-15);
-    this.tweens.add({ targets: [beam, glow], alpha: { from: beam.alpha, to: beam.alpha * 0.55 }, duration: 700, yoyo: true, repeat: -1 });
-    let label: Phaser.GameObjects.Text | undefined;
-    if (item.rarity >= 2) {
-      label = this.add.text(x, y - 40, item.name, {
-        fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: itemCss(item), stroke: '#000', strokeThickness: 4,
-      }).setOrigin(0.5).setDepth(FX_DEPTH - 3);
-    }
-    if (item.rarity >= 3) {
-      sfx.shapeOk(item.wuxing);
-      this.fx.ring(x, y, 140, c, 600);
-      if (item.rarity === 4) {
-        this.fx.shake(0.006, 200);
-        (this.scene.get('RiftHUDScene') as any)?.banner?.('传说降世', item.name, c);
-      }
-    }
-    // 从掉落处弹出
-    beam.setScale(beam.scaleX, 0.01);
-    this.tweens.add({ targets: beam, scaleY: (item.rarity >= 2 ? 360 : 180) / 256, duration: 300, ease: 'Back.easeOut' });
-    this.loot.set(id, { id, item, x, y, beam, glow, label, picking: false });
-  }
-
-  private updateLoot(): void {
-    if (this.down) return;
-    const r = PICKUP_RADIUS;
-    for (const l of this.loot.values()) {
-      if (l.picking) continue;
-      if ((l.x - this.x) ** 2 + (l.y - this.y) ** 2 < r * r) {
-        l.picking = true;
-        net.send({ t: 'pick', id: l.id });
-      }
-    }
-  }
-
-  private onGot(id: string, item?: GearItem, wx?: Wuxing, n?: number): void {
-    const l = this.loot.get(id);
-    if (l) {
-      this.loot.delete(id);
-      this.tweens.killTweensOf([l.beam, l.glow]);
-      this.tweens.add({ targets: [l.beam, l.glow], alpha: 0, x: this.x, y: this.y - 40, duration: 220, onComplete: () => { l.beam.destroy(); l.glow.destroy(); } });
-      l.label?.destroy();
-    }
-    if (item) {
-      this.gotItems.push(item);
-      sfx.pickup(item.wuxing);
-      // 与手里的兵器对比（局内不换兵器，所以用存档里的做基准）
-      const prof = net.profile;
-      const better = !!prof && powerOf(computeStats(item, prof.path, prof.cult)) > powerOf(computeStats(prof.weapon, prof.path, prof.cult));
-      this.fx.floatText(this.x, this.y - 170, `${better ? '▲ ' : ''}${item.name}`, itemCss(item), item.rarity >= 3 ? 32 : 26, 80, 1300);
-    } else if (wx && n) {
-      this.gained[wx] += n;
-      this.fx.floatText(this.x, this.y - 150, `化去兵器 · ${WUXING_NAMES[wx]} +${n}`, WX_CSS[wx], 22, 60, 900);
-    }
   }
 
   // ───────────────────────── 每帧 ─────────────────────────
@@ -1183,7 +1113,6 @@ export class RiftScene extends Phaser.Scene {
     if (!this.ended) {
       this.handleInput(dt);
       this.updateAutoAttack();
-      this.updateLoot();
       this.regen(dt);
       this.sendState(dt);
     } else {
@@ -1430,10 +1359,6 @@ export class RiftScene extends Phaser.Scene {
 
   get enemyDots(): IterableIterator<CEnemy> {
     return this.enemies.values();
-  }
-
-  get lootDots(): IterableIterator<Loot> {
-    return this.loot.values();
   }
 
   get orbDots(): IterableIterator<Orb> {

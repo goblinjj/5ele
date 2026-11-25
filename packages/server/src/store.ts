@@ -25,7 +25,6 @@ export interface Profile {
   /** 五行能量与五行修为 */
   energy: Energy;
   cult: Energy;
-  autoSalvage: number;
   maxTier: number;
   best: Record<number, number>;
   created: number;
@@ -65,7 +64,7 @@ function migrate(raw: any): void {
     for (const [tier, n] of Object.entries(raw.essence ?? {})) ess += (Number(n) || 0) * 10 * (Number(tier) || 1);
     const share = Math.round((mats + ess) / 5);
     WX_ORDER.forEach(wx => { energy[wx] += share; });
-    delete raw.equip; delete raw.vault; delete raw.codex; delete raw.mats; delete raw.essence;
+    delete raw.equip; delete raw.vault; delete raw.autoSalvage; delete raw.codex; delete raw.mats; delete raw.essence;
   }
   raw.weapon ??= null;
   raw.stash = (raw.stash ?? []).filter((it: any) => it && WEAPON_KINDS.includes(it.kind));
@@ -118,7 +117,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, weapon: null, stash: [],
-      energy: emptyEnergy(), cult: emptyEnergy(), autoSalvage: -1, maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
+      energy: emptyEnergy(), cult: emptyEnergy(), maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
@@ -143,7 +142,7 @@ export function markDirty(p: Profile): void {
 export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
-    energy: p.energy, cult: p.cult, autoSalvage: p.autoSalvage, maxTier: p.maxTier, best: p.best,
+    energy: p.energy, cult: p.cult, maxTier: p.maxTier, best: p.best,
   };
 }
 

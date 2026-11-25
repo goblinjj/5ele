@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
-  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, itemColor, itemCss,
-  withCdr, meteorCd, WUXING_NAMES, Wuxing,
+  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD,
+  withCdr, meteorCd, WUXING_NAMES, Wuxing, energyTotal,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
 import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
@@ -54,6 +54,7 @@ export class RiftHUDScene extends Phaser.Scene {
   private hpText!: Phaser.GameObjects.Text;
   private qiText!: Phaser.GameObjects.Text;
   private wxTexts: Phaser.GameObjects.Text[] = [];
+  private carryText!: Phaser.GameObjects.Text;
   private critText!: Phaser.GameObjects.Text;
   private downText!: Phaser.GameObjects.Text;
   private netText!: Phaser.GameObjects.Text;
@@ -84,10 +85,11 @@ export class RiftHUDScene extends Phaser.Scene {
     this.hpText = this.add.text(30, 140, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.qiText = this.add.text(30, 176, '', { fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', color: '#dff6ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     // 本局吸纳的五行能量
+    this.carryText = this.add.text(30, 246, '', { fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', color: '#c9d1d9', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.wxTexts = WX_ROW.map((wx, i) => this.add.text(30 + i * 92, 212, '', {
       fontFamily: SANS, fontSize: '21px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4,
     }).setOrigin(0, 0.5));
-    this.critText = this.add.text(30, 246, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#9fd8ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
+    this.critText = this.add.text(250, 246, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#9fd8ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.downText = this.add.text(W / 2, H * 0.36, '', {
       fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#f85149', stroke: '#000', strokeThickness: 6, align: 'center',
     }).setOrigin(0.5);
@@ -230,6 +232,9 @@ export class RiftHUDScene extends Phaser.Scene {
     for (const c of [FIRE.ringCost, FIRE.meteorCost]) g.fillRect(30 + hpw * Math.min(1, c / r.stats.qiMax) - 1, 166, 2, 20);
     setTextIf(this.qiText, `灵力 ${Math.floor(r.qi)} / ${r.stats.qiMax}`);
     WX_ROW.forEach((wx, i) => setTextIf(this.wxTexts[i], `${WUXING_NAMES[wx]} ${r.gained[wx]}`));
+    const carried = energyTotal(r.gained);
+    const full = carried >= r.stats.carry;
+    setTextIf(this.carryText, full ? `带回 ${carried}/${r.stats.carry} 已满` : `带回 ${carried}/${r.stats.carry}`, full ? '#e3b23c' : '#c9d1d9');
     setTextIf(this.critText, r.critCharges > 0 ? `必暴 ×${r.critCharges}` : '');
 
     // 同伴
@@ -293,12 +298,6 @@ export class RiftHUDScene extends Phaser.Scene {
       m.fillStyle(WX_TINT[o.wx], 0.9);
       m.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
     }
-    for (const l of r.lootDots) {
-      const p = toMap(l.x, l.y);
-      if (!p) continue;
-      m.fillStyle(itemColor(l.item), 1);
-      m.fillRect(p[0] - 3, p[1] - 3, 6, 6);
-    }
     for (const mt of r.mateList) {
       const p = toMap(mt.x, mt.y);
       if (!p) continue;
@@ -327,7 +326,7 @@ export class RiftHUDScene extends Phaser.Scene {
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0, 0.7).setInteractive();
     c.add(shade);
     c.add(this.add.text(W / 2, H * 0.4, '撤离秘境？', { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量与兵器会自动收走', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量会自动收走（不超过带回上限）', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
     c.add(button(this, W / 2 - 150, H * 0.55, 240, 90, '继续', () => c.destroy(), { color: 0x8b949e }));
     c.add(button(this, W / 2 + 150, H * 0.55, 240, 90, '撤离', () => { net.send({ t: 'leave' }); this.backToCamp(); }));
   }
@@ -355,21 +354,12 @@ export class RiftHUDScene extends Phaser.Scene {
 
     // 本局吸纳的五行能量（含结算时自动收走的）
     const energy = m.energy ?? r.gained;
-    c.add(this.add.text(W / 2, 520, '吸纳能量', { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, 520, `带回能量 ${energyTotal(energy)} / ${r.stats.carry}`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5));
     WX_ROW.forEach((wx, i) => {
       const x = W / 2 + (i - 2) * 128;
       c.add(this.add.image(x, 600, 'fx_glow').setTint(WX_TINT[wx]).setBlendMode(Phaser.BlendModes.ADD).setScale(0.42).setAlpha(0.5));
       c.add(this.add.text(x, 588, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '44px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(0.5));
       c.add(this.add.text(x, 642, `+${energy[wx] ?? 0}`, { fontFamily: SANS, fontSize: '28px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0.5));
-    });
-
-    // 本局所得兵器
-    const best = (m.items ?? [...r.gotItems]).slice().sort((a, b) => b.rarity - a.rarity).slice(0, 8);
-    if (best.length) c.add(this.add.text(W / 2, 730, `所得兵器 ${best.length} 件`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5));
-    best.forEach((it, i) => {
-      c.add(this.add.text(W / 2, 770 + i * 46, it.name, {
-        fontFamily: SERIF, fontSize: '28px', fontStyle: it.rarity >= 3 ? 'bold' : 'normal', color: itemCss(it),
-      }).setOrigin(0.5, 0));
     });
 
     c.add(button(this, W / 2, H - 220, 420, 110, '返回营地', () => this.backToCamp(), { fontSize: 38 }));

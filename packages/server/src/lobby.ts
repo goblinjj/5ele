@@ -1,10 +1,10 @@
 import { WebSocket } from 'ws';
 import {
   C2S, S2C, RoomView, Wuxing, PATHS, WUXING_NAMES,
-  powerOf, salvageValue, starterWeapon, MAX_PARTY, MAX_TIER,
+  powerOf, salvageValue, MAX_PARTY, MAX_TIER,
 } from '@xiyou/shared';
 import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf } from './store.js';
-import { cultivate, refine } from './forge.js';
+import { cultivate, refine, forge } from './forge.js';
 import { Run } from './run.js';
 
 /**
@@ -174,12 +174,8 @@ export function onMessage(s: Session, raw: string): void {
       const def = PATHS[msg.path as Wuxing];
       if (!def?.available) { s.send({ t: 'err', msg: '此道尚未开放' }); return; }
       if (p.path) { s.send({ t: 'err', msg: '已入道，不可更改' }); return; }
+      // 入道时两手空空：兵器要靠自己吸纳的五行能量凝练
       p.path = def.wuxing;
-      // 入道赠两件本道凡兵：一远一近，体会器型的不同
-      if (!p.weapon) {
-        p.weapon = starterWeapon(def.wuxing, '杖');
-        if (!p.stash.length) p.stash.push(starterWeapon(def.wuxing, '剑'));
-      }
       markDirty(p);
       s.sendProfile();
       break;
@@ -217,8 +213,9 @@ export function onMessage(s: Session, raw: string): void {
     }
 
     case 'cultivate':
+    case 'forge':
     case 'refine': {
-      const r = msg.t === 'cultivate' ? cultivate(p, msg.wx) : refine(p, msg.id);
+      const r = msg.t === 'cultivate' ? cultivate(p, msg.wx) : msg.t === 'forge' ? forge(p, msg.tier, msg.amounts) : refine(p, msg.id);
       if (!r.ok) { s.send({ t: 'err', msg: r.msg }); return; }
       markDirty(p);
       s.sendProfile();
@@ -226,12 +223,6 @@ export function onMessage(s: Session, raw: string): void {
       if (r.msg) s.send({ t: 'toast', msg: r.msg });
       break;
     }
-
-    case 'autoSalvage':
-      p.autoSalvage = Math.max(-1, Math.min(3, msg.r | 0));
-      markDirty(p);
-      s.sendProfile();
-      break;
 
     case 'create': {
       if (!p.path) { s.send({ t: 'err', msg: '请先选择所修之道' }); return; }

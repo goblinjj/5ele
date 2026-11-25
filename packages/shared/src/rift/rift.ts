@@ -62,7 +62,7 @@ export const FIRE = {
 
 /**
  * 妖异溃散后留下一团与它同属的五行能量：
- *   - 收进存档，用于修炼与淬炼兵器（orbValue）
+ *   - 收进存档，用于修炼、凝练与精炼兵器（orbValue）；一局能带回的总量有上限（PlayerStats.carry）
  *   - 同时化作局内的「灵力」，技能要有足够灵力才放得出（qiGain）
  */
 export const QI_START = 50;
@@ -186,8 +186,6 @@ export interface ProfileView {
   energy: Energy;
   /** 五行修为（每行的重数） */
   cult: Energy;
-  /** 小于等于这个品质的兵器拾取时自动化去；-1 = 不化 */
-  autoSalvage: number;
   maxTier: number;
   /** 各层最快通关（毫秒） */
   best: Record<number, number>;
@@ -274,11 +272,12 @@ export type C2S =
   | { t: 'equip'; id: string }
   /** 化去兵器，返还同属能量 */
   | { t: 'salvage'; ids: string[] }
-  | { t: 'autoSalvage'; r: number }
   /** 修炼：某一行升一重 */
   | { t: 'cultivate'; wx: Wuxing }
-  /** 淬炼兵器：升一阶 */
+  /** 精炼兵器：尝试升一阶（可能失败） */
   | { t: 'refine'; id: string }
+  /** 凝练兵器：投入的五行能量 */
+  | { t: 'forge'; tier: number; amounts: Energy }
   | { t: 'create'; tier: number }
   | { t: 'join'; code: string }
   | { t: 'leave' }
@@ -294,9 +293,8 @@ export type C2S =
   | { t: 'hp'; hp: number }
   | { t: 'parry'; id: number }
   | { t: 'pdodge' }
-  /** 吸纳一团能量 / 拾取一件兵器 */
+  /** 吸纳一团能量 */
   | { t: 'orb'; id: number }
-  | { t: 'pick'; id: string }
   | { t: 'exit' }
   /** 秘境场景已就绪：服务器重发当前全部状态 */
   | { t: 'ready' }
@@ -322,11 +320,8 @@ export type S2C =
   | { t: 'bolts'; list: EnemyBoltSpawn[] }
   | { t: 'stag'; id: number; ms: number }
   | { t: 'cast'; p: number; s: SkillCode; x: number; y: number }
-  | { t: 'loot'; id: string; x: number; y: number; item: GearItem }
-  /** 兵器入匣；或被自动化去，返还 n 点 wx 能量 */
-  | { t: 'got'; id: string; item?: GearItem; wx?: Wuxing; n?: number }
   | { t: 'boss'; id: number }
   | { t: 'down'; p: number }
   | { t: 'up'; p: number }
-  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy; items: GearItem[] }
+  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy }
   | { t: 'pong'; c: number };

@@ -3,7 +3,8 @@ import {
   GearItem, PATHS, Wuxing, WUXING_NAMES, WUXING_GENERATES,
   computeStats, powerOf, salvageValue, RARITY_NAMES, RARITY_CSS,
   TIER_NAMES, MAX_PARTY, ProfileView, RoomView, PlayerStats,
-  refineCost, MAX_GRADE, displayName, formOf,
+  refineCost, refineRate, GRADE_GROWTH, MAX_GRADE, displayName, formOf, UNARMED_FORM, WEAPON_FORMS,
+  Energy, emptyEnergy, forgeBase, forgeRarity, forgeNeed, forgeOutcome,
   CULT, MAX_CULT, CULT_GAP, cultCost, cultBlock, motherOf, realmOf, realmIndex, REALM_COLORS, energyTotal,
 } from '@xiyou/shared';
 import { Avatar } from '../systems/avatar/Avatar.js';
@@ -38,6 +39,9 @@ export class CampScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private avatar!: Avatar;
   private avatarSig = '';
+  /** 凝练面板里正在投入的能量 */
+  private forgeAmt: Energy = emptyEnergy();
+  private forgeTier = 0;
 
   constructor() {
     super({ key: 'CampScene' });
@@ -94,6 +98,14 @@ export class CampScene extends Phaser.Scene {
     if (!p) {
       this.dyn.add(this.add.text(W / 2, H / 2, net.status === 'offline' ? '无法连接服务器\n正在重试…' : '正在连接…', {
         fontFamily: SERIF, fontSize: '36px', color: '#8b949e', align: 'center',
+      }).setOrigin(0.5));
+      return;
+    }
+    // 客户端比联机服务新：旧服务的存档里没有五行能量，别硬画
+    if (!p.energy || !p.cult) {
+      this.avatar.setVisible(false);
+      this.dyn.add(this.add.text(W / 2, H / 2, '联机服务尚未更新到新版本\n请稍后再试', {
+        fontFamily: SERIF, fontSize: '34px', color: '#e3b23c', align: 'center', lineSpacing: 12,
       }).setOrigin(0.5));
       return;
     }
@@ -177,6 +189,7 @@ export class CampScene extends Phaser.Scene {
       `回血 ${stats.regen.toFixed(1)}/秒`,
       `冷却 -${Math.round(stats.cdr)}%`,
       `灵力 ${stats.qiMax}`,
+      `每局带回 ${stats.carry}`,
     ];
     d.add(this.add.text(36, 134, lines.join('\n'), { fontFamily: SANS, fontSize: '20px', color: '#8b949e', lineSpacing: 6 }));
 
@@ -184,7 +197,13 @@ export class CampScene extends Phaser.Scene {
     const wx = W - 116, wy = 218;
     const it = p.weapon;
     d.add(gearIcon(this, wx, wy, 132, it, '空手'));
-    if (it) {
+    if (!it) {
+      d.add(this.add.text(wx, wy + 76, `${UNARMED_FORM.move} · 中距离`, { fontFamily: SANS, fontSize: '20px', color: '#9fd8ff' }).setOrigin(0.5, 0));
+      d.add(this.add.text(wx, wy + 104, '点此凝练兵器', { fontFamily: SERIF, fontSize: '21px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+      const hit = this.add.rectangle(wx, wy + 30, 200, 210, 0, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => this.showForge());
+      d.add(hit);
+    } else {
       const form = formOf(it);
       d.add(this.add.text(wx, wy + 76, displayName(it), {
         fontFamily: SERIF, fontSize: '21px', fontStyle: 'bold', color: RARITY_CSS[it.rarity], align: 'center', wordWrap: { width: 220, useAdvancedWrap: true },
@@ -321,7 +340,7 @@ export class CampScene extends Phaser.Scene {
       d.add(this.add.text(200, by, `${this.page + 1}/${pages}`, { fontFamily: SANS, fontSize: '24px', color: '#8b949e' }).setOrigin(0.5));
       d.add(button(this, 310, by, 120, 56, '▶', () => { this.page = (this.page + 1) % pages; this.refresh(); }, { fontSize: 26 }));
     }
-    d.add(button(this, W - 150, by, 240, 56, '批量化去', () => this.showSalvage(p), { fontSize: 24, color: 0xc084fc }));
+    d.add(button(this, W - 150, by, 240, 56, '凝练兵器', () => this.showForge(), { fontSize: 24 }));
   }
 
   // ───────────────────────── 秘境面板 ─────────────────────────
@@ -457,14 +476,15 @@ export class CampScene extends Phaser.Scene {
       y += cmp.height + 20;
     }
 
-    // 淬炼：消耗与兵器同属的能量
+    // 精炼：每次消耗固定，威力指数增长，阶数越高越容易失败（失败不退能量）
     const g = item.grade ?? 0;
     const cost = refineCost(item);
     const have = p.energy[item.wuxing];
     const canRefine = g < MAX_GRADE && have >= cost;
     const wxName = WUXING_NAMES[item.wuxing];
-    const refineText = g >= MAX_GRADE ? '已淬炼至最高阶' : `淬炼 +${g + 1}（全部数值再 +8%）：${wxName}行能量 ${have}/${cost}`;
-    const rt = this.add.text(W / 2, y + 6, refineText, { fontFamily: SANS, fontSize: '22px', color: canRefine ? WX_CSS[item.wuxing] : '#6e7681', align: 'center' }).setOrigin(0.5, 0);
+    const refineText = g >= MAX_GRADE ? '已精炼至最高阶'
+      : `精炼 +${g + 1}：全部数值 ×${GRADE_GROWTH} · 成功率 ${refineRate(g)}%\n${wxName}行能量 ${have}/${cost}${refineRate(g) < 100 ? ' · 失败不退' : ''}`;
+    const rt = this.add.text(W / 2, y + 6, refineText, { fontFamily: SANS, fontSize: '22px', color: canRefine ? WX_CSS[item.wuxing] : '#6e7681', align: 'center', lineSpacing: 6 }).setOrigin(0.5, 0);
     y += rt.height + 16;
 
     const height = y + 150 + (from === 'stash' ? 220 : 130);
@@ -478,10 +498,10 @@ export class CampScene extends Phaser.Scene {
     const by2 = top + height - 70;
     const by1 = by2 - 100;
     const close = () => this.closePopup();
-    const refineBtn = (bx: number, bw: number, byy: number) => button(this, bx, byy, bw, 80, '淬炼', () => {
+    const refineBtn = (bx: number, bw: number, byy: number) => button(this, bx, byy, bw, 80, '精炼', () => {
       sfx.shapeOk(item.wuxing);
       net.send({ t: 'refine', id: item.id });
-      // 留在详情里可以连着淬
+      // 留在详情里可以连着炼
       this.time.delayedCall(140, () => {
         const np = net.profile;
         const fresh = np && (np.weapon?.id === item.id ? np.weapon : np.stash.find(i => i.id === item.id));
@@ -497,28 +517,83 @@ export class CampScene extends Phaser.Scene {
     }
   }
 
-  private showSalvage(p: ProfileView): void {
-    const { c, top } = this.openPopup(760);
-    c.add(this.add.text(W / 2, top + 40, '批量化去', { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#c084fc' }).setOrigin(0.5, 0));
-    c.add(this.add.text(W / 2, top + 100, '兵器化去后返还同属的五行能量；比手里更强的不会动', { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5, 0));
-    const cur = this.power(p);
-    for (let r = 0; r <= 3; r++) {
-      // 比手里更强的留着
-      const ids = p.stash.filter(it => it.rarity <= r && this.power(p, it) <= cur).map(it => it.id);
-      const gain = p.stash.filter(it => ids.includes(it.id)).reduce((a, it) => a + salvageValue(it), 0);
-      c.add(button(this, W / 2, top + 190 + r * 100, W - 160, 80, `${RARITY_NAMES[r]}及以下 · ${ids.length} 件 · +${gain}`, () => {
-        if (ids.length) net.send({ t: 'salvage', ids });
-        this.closePopup();
-      }, { fontSize: 26, color: Phaser.Display.Color.HexStringToColor(RARITY_CSS[r]).color, disabled: !ids.length }));
+  // ───────────────────────── 凝练兵器 ─────────────────────────
+
+  /** 投入五行能量凝成兵器：主辅两行的生克定器型，总量定品质 */
+  private showForge(reset: boolean = true): void {
+    const p = net.profile;
+    if (!p) return;
+    if (reset) { this.forgeAmt = emptyEnergy(); this.forgeTier = p.maxTier; }
+    const tier = this.forgeTier = Math.max(1, Math.min(p.maxTier, this.forgeTier || p.maxTier));
+    const amt = this.forgeAmt;
+    CULT_ORDER.forEach(wx => { amt[wx] = Math.max(0, Math.min(p.energy[wx], amt[wx])); });
+    const total = CULT_ORDER.reduce((a, wx) => a + amt[wx], 0);
+    const base = forgeBase(tier);
+    const step = Math.max(5, Math.round(base / 6));
+    const out = forgeOutcome(amt);
+    const rarity: number = forgeRarity(total, tier);
+    const again = () => this.showForge(false);
+
+    const { c, top } = this.openPopup(1180);
+    c.add(this.add.text(W / 2, top + 30, '凝 练 兵 器', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 92, '投得最多的一行为主，定五行；第二多的为辅，主辅生克定器型', {
+      fontFamily: SANS, fontSize: '20px', color: '#8b949e',
+    }).setOrigin(0.5, 0));
+
+    // 层数：兵器的底子，层数越高起步量越大
+    const ty = top + 168;
+    c.add(button(this, 150, ty, 80, 56, '◀', () => { this.forgeTier = tier - 1; again(); }, { disabled: tier <= 1, fontSize: 24 }));
+    c.add(button(this, W - 150, ty, 80, 56, '▶', () => { this.forgeTier = tier + 1; again(); }, { disabled: tier >= p.maxTier, fontSize: 24 }));
+    c.add(this.add.text(W / 2, ty, `${TIER_NAMES[tier]}品阶 · 起步 ${base}`, { fontFamily: SERIF, fontSize: '28px', color: '#f0e6d3' }).setOrigin(0.5));
+
+    // 五行投入
+    CULT_ORDER.forEach((wx, i) => {
+      const y = top + 250 + i * 86;
+      const set = (n: number) => { amt[wx] = Math.max(0, Math.min(p.energy[wx], Math.round(n))); again(); };
+      c.add(this.add.text(70, y, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(0.5));
+      c.add(this.add.text(108, y + 14, `有 ${p.energy[wx]}`, { fontFamily: SANS, fontSize: '19px', color: '#6e7681' }).setOrigin(0, 0.5));
+      const role = out?.main === wx ? '主' : out?.sub === wx ? '辅' : '';
+      c.add(this.add.text(108, y - 14, role, { fontFamily: SERIF, fontSize: '21px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(0, 0.5));
+      c.add(button(this, 270, y, 76, 62, '－', () => set(amt[wx] - step), { fontSize: 30, color: WX_TINT[wx], disabled: amt[wx] <= 0 }));
+      c.add(this.add.text(366, y, `${amt[wx]}`, { fontFamily: SANS, fontSize: '34px', fontStyle: 'bold', color: amt[wx] > 0 ? '#f0e6d3' : '#484f58' }).setOrigin(0.5));
+      c.add(button(this, 462, y, 76, 62, '＋', () => set(amt[wx] + step), { fontSize: 30, color: WX_TINT[wx], disabled: amt[wx] >= p.energy[wx] }));
+      c.add(button(this, 590, y, 130, 62, '全投', () => set(p.energy[wx]), { fontSize: 24, color: WX_TINT[wx], disabled: amt[wx] >= p.energy[wx] }));
+    });
+
+    // 预览
+    const py = top + 700;
+    const g = this.add.graphics();
+    g.fillStyle(0x05080b, 0.9);
+    g.fillRoundedRect(60, py, W - 120, 250, 20);
+    g.lineStyle(2, out ? WX_TINT[out.main] : 0x30363d, 0.9);
+    g.strokeRoundedRect(60, py, W - 120, 250, 20);
+    c.add(g);
+    if (!out) {
+      c.add(this.add.text(W / 2, py + 125, '投入五行能量，看看能凝出什么', { fontFamily: SERIF, fontSize: '26px', color: '#6e7681' }).setOrigin(0.5));
+    } else {
+      const form = WEAPON_FORMS[out.kind];
+      c.add(this.add.text(W / 2, py + 22, `${out.why} → ${WUXING_NAMES[out.main]}行 · ${out.kind}`, {
+        fontFamily: SERIF, fontSize: '36px', fontStyle: 'bold', color: WX_CSS[out.main],
+      }).setOrigin(0.5, 0));
+      c.add(this.add.text(W / 2, py + 76, form.desc, { fontFamily: SANS, fontSize: '22px', color: form.melee ? '#ffb36b' : '#9fd8ff' }).setOrigin(0.5, 0));
+      const quality = rarity < 0
+        ? `投入 ${total} / ${base}，还凝不成形`
+        : `投入 ${total} → ${RARITY_NAMES[rarity]}${rarity < 4 ? `（${forgeNeed(rarity + 1, tier)} 可达${RARITY_NAMES[rarity + 1]}）` : ''}`;
+      c.add(this.add.text(W / 2, py + 122, quality, {
+        fontFamily: SERIF, fontSize: '26px', fontStyle: 'bold', color: rarity < 0 ? '#f85149' : RARITY_CSS[rarity],
+      }).setOrigin(0.5, 0));
+      c.add(this.add.text(W / 2, py + 170, '纯一行→杖　辅生主→扇　主生辅→枪\n辅克主→刃　主克辅→剑', {
+        fontFamily: SANS, fontSize: '19px', color: '#6e7681', align: 'center', lineSpacing: 6,
+      }).setOrigin(0.5, 0));
     }
-    // 拾取时自动化去
-    const label = p.autoSalvage < 0 ? '关闭' : `${RARITY_NAMES[p.autoSalvage]}及以下`;
-    c.add(this.add.text(W / 2, top + 600, `拾取时自动化去：${label}`, { fontFamily: SERIF, fontSize: '28px', color: '#f0e6d3' }).setOrigin(0.5));
-    c.add(button(this, W / 2, top + 675, 300, 70, '切换', () => {
-      const next = p.autoSalvage >= 2 ? -1 : p.autoSalvage + 1;
-      net.send({ t: 'autoSalvage', r: next });
-      this.time.delayedCall(120, () => net.profile && this.showSalvage(net.profile));
-    }, { fontSize: 26 }));
+
+    const by = top + 1180 - 80;
+    c.add(button(this, W / 2 - 170, by, 240, 84, '清空', () => { this.forgeAmt = emptyEnergy(); again(); }, { color: 0x8b949e, fontSize: 28 }));
+    c.add(button(this, W / 2 + 130, by, 320, 84, '凝 练', () => {
+      sfx.shapeOk(out!.main);
+      net.send({ t: 'forge', tier, amounts: { ...amt } });
+      this.closePopup();
+    }, { disabled: !out || rarity < 0, fontSize: 32 }));
   }
 
   private showKeypad(): void {
