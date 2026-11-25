@@ -79,6 +79,7 @@ export function learn(p: Profile, id: SkillId): Result {
   const def = SKILLS[id];
   if (!def) return { ok: false, msg: '没有这门技能' };
   if (p.skills[id] !== undefined) return { ok: false, msg: `已经学会${def.name}` };
+  if ((p.cult[def.wuxing] ?? 0) < def.need) return { ok: false, msg: `${WUXING_NAMES[def.wuxing]}行修为要到 ${def.need} 重才能修习${def.name}` };
   if (p.energy[def.wuxing] < def.learn) return { ok: false, msg: `${WUXING_NAMES[def.wuxing]}行能量不足（${p.energy[def.wuxing]}/${def.learn}）` };
   p.energy[def.wuxing] -= def.learn;
   p.skills[id] = 0;

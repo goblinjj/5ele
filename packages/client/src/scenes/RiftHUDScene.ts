@@ -119,10 +119,11 @@ export class RiftHUDScene extends Phaser.Scene {
     this.btnDodge = this.roundButton(W - 128, H - 200, 74, '遁', 0x9fd8ff, 46, () => inputManager.pressDash());
     this.btnGuard = this.roundButton(W - 300, H - 140, 60, '御', 0xffe9a8, 40, () => inputManager.pressGuard());
     // 技能键：带了几门就出几个，上方标熟练度
-    const spots = [[W - 300, H - 320], [W - 150, H - 400]];
+    // 一排四个，在摇杆和遁、御的上方
+    const spots = [[W - 96, H - 430], [W - 228, H - 430], [W - 360, H - 430], [W - 492, H - 430]];
     this.skillBtns = this.rift.slots.slice(0, spots.length).map((id, i) => {
       const def = SKILLS[id];
-      const b = this.roundButton(spots[i][0], spots[i][1], 60, def.name, WX_TINT[def.wuxing], 30, () => inputManager.pressSkill(i), def.qi);
+      const b = this.roundButton(spots[i][0], spots[i][1], 54, def.name, WX_TINT[def.wuxing], 30, () => inputManager.pressSkill(i), def.qi);
       const rank = this.add.text(b.x, b.y - b.r - 14, SKILL_RANKS[Math.max(0, this.rift.skillLv[id])], { fontFamily: SERIF, fontSize: '19px', fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
       b.parts.push(rank);
       this.controls.push(rank);

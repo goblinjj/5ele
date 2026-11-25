@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  GearItem, PATHS, Wuxing, WUXING_NAMES,
+  GearItem, Wuxing, WUXING_NAMES, skillsOf,
   computeStats, powerOf, salvageValue, RARITY_NAMES, RARITY_CSS,
   TIER_NAMES, MAX_TIER, MAX_PARTY, ProfileView, RoomView, PlayerStats,
   refineCost, refineRate, GRADE_GROWTH, MAX_GRADE, displayName, formOf, UNARMED_FORM, WEAPON_FORMS,
@@ -61,6 +61,8 @@ export class CampScene extends Phaser.Scene {
   private forgeTier = 0;
   /** 当前打开的面板：存档更新后原样重开，面板里的数字才会跟着变 */
   private panel: 'cult' | 'arms' | 'skills' | 'rift' | null = null;
+  /** 技能面板正在看哪一行 */
+  private skillTab: Wuxing | null = null;
   private fx!: Fx;
   private idle!: IdleBattle;
   private idleTime: Phaser.GameObjects.Text | null = null;
@@ -148,66 +150,25 @@ export class CampScene extends Phaser.Scene {
       return;
     }
     this.tier = Math.max(1, Math.min(p.maxTier, this.tier));
-    this.avatar.setVisible(!!p.path);
-    this.idle.setActive(!!p.path);
+    this.avatar.setVisible(true);
+    this.idle.setActive(true);
     this.idle.setLoadout(formOf(p.weapon), p.loadout ?? []);
     // 队友也在场上一起打
-    this.idle.setMates(p.path ? (net.room?.players ?? []).filter(q => q.id !== net.did && q.path && q.cult).map(q => ({
+    this.idle.setMates((net.room?.players ?? []).filter(q => q.id !== net.did && q.cult).map(q => ({
       id: q.id, name: q.name,
       look: { weapon: q.weapon, path: q.path, cult: q.cult },
       form: formOf(q.weapon), skills: q.loadout ?? [],
       sig: `${q.path}|${q.weapon ? `${q.weapon.id}${q.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => q.cult[wx]).join(',')}`,
-    })) : []);
+    })));
     this.idleTime = this.idleAmt = this.idleBar = null;
     const sig = `${p.path}|${p.weapon ? `${p.weapon.id}${p.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => p.cult[wx]).join(',')}`;
     if (sig !== this.avatarSig) { this.avatarSig = sig; this.avatar.setLook({ weapon: p.weapon, path: p.path, cult: p.cult }); }
-    if (!p.path) {
-      this.drawPathSelect();
-      return;
-    }
     this.drawHeader(p);
     // 面板开着：按新存档重画
     if (this.popup && this.panel === 'cult') this.showCultPanel();
     else if (this.popup && this.panel === 'arms') this.showArms();
     else if (this.popup && this.panel === 'skills') this.showSkills();
     else if (this.popup && this.panel === 'rift') this.showRift();
-  }
-
-  // ───────────────────────── 入道 ─────────────────────────
-
-  private drawPathSelect(): void {
-    const d = this.dyn;
-    d.add(this.add.text(W / 2, 150, '择 一 道 而 修', { fontFamily: SERIF, fontSize: '52px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    d.add(this.add.text(W / 2, 225, '五行之道只能择其一，入道后不可更改', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
-    const order = [Wuxing.FIRE, Wuxing.METAL, Wuxing.WATER, Wuxing.WOOD, Wuxing.EARTH];
-    // 换了设备的老玩家：不用重新入道，输存档码接回来
-    const back = this.add.text(W / 2, 1462, '已有存档？输入存档码接回', { fontFamily: SANS, fontSize: '24px', color: '#79c0ff', backgroundColor: '#0d1117cc', padding: { x: 18, y: 10 } })
-      .setOrigin(0.5).setInteractive({ useHandCursor: true });
-    back.on('pointerup', () => {
-      const v = window.prompt('输入存档码');
-      if (v && v.trim()) net.send({ t: 'restore', code: v.trim() });
-    });
-    d.add(back);
-    order.forEach((wx, i) => {
-      const def = PATHS[wx];
-      const y = 340 + i * 220;
-      const g = this.add.graphics();
-      g.fillStyle(0x0d1117, 0.9);
-      g.fillRoundedRect(50, y - 90, W - 100, 190, 24);
-      g.lineStyle(3, WX_TINT[wx], def.available ? 1 : 0.3);
-      g.strokeRoundedRect(50, y - 90, W - 100, 190, 24);
-      d.add(g);
-      d.add(this.add.text(100, y - 60, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '84px', fontStyle: 'bold', color: WX_CSS[wx] }).setAlpha(def.available ? 1 : 0.35));
-      d.add(this.add.text(220, y - 62, `${def.name} · ${def.role}`, { fontFamily: SERIF, fontSize: '36px', fontStyle: 'bold', color: def.available ? '#f0e6d3' : '#6e7681' }));
-      d.add(this.add.text(220, y - 10, def.available ? def.desc : `${def.desc}（尚未开放）`, {
-        fontFamily: SERIF, fontSize: '24px', color: def.available ? '#c9d1d9' : '#484f58', wordWrap: { width: 420, useAdvancedWrap: true }, lineSpacing: 6,
-      }));
-      if (def.available) {
-        const hit = this.add.rectangle(W / 2, y + 5, W - 100, 190, 0, 0).setInteractive({ useHandCursor: true });
-        hit.on('pointerup', () => { sfx.unlock(); sfx.swap(wx); net.send({ t: 'path', path: wx }); });
-        d.add(hit);
-      }
-    });
   }
 
   // ───────────────────────── 顶栏 ─────────────────────────
@@ -231,7 +192,9 @@ export class CampScene extends Phaser.Scene {
       if (n && n.trim()) { localStorage.setItem('5ele_name', n.trim()); net.send({ t: 'name', name: n.trim() }); }
     });
     d.add(name);
-    d.add(this.add.text(36, 82, `${PATHS[p.path!].name} · ${realmOf(p.cult)}境`, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
+    // 境界与所修的两行（没有「择一道」了：属性由修炼和兵器决定）
+    const kinds0 = cultKinds(p.cult);
+    d.add(this.add.text(36, 82, `${realmOf(p.cult)}境 · ${kinds0.length ? `修${kinds0.map(wx => WUXING_NAMES[wx]).join('、')}` : '尚未修炼'}`, { fontFamily: SERIF, fontSize: '26px', color: p.path ? WX_CSS[p.path] : '#9fd8ff' }));
     d.add(this.add.text(W - 36, 34, `战力 ${powerOf(stats)}`, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(1, 0));
 
     // 队伍：一直挂在营地里，不用每局重组；点开是秘境面板
@@ -271,7 +234,7 @@ export class CampScene extends Phaser.Scene {
     this.idleTime = this.add.text(bx + 22, by + 12, '', { fontFamily: SERIF, fontSize: '24px', fontStyle: 'bold', color: '#d4a853' });
     this.idleAmt = this.add.text(bx + 22, by + 46, '', { fontFamily: SANS, fontSize: '20px', color: '#c9d1d9' });
     d.add([this.idleTime, this.idleAmt]);
-    d.add(button(this, bx + bw - 90, by + bh / 2, 150, 60, '领取', () => { sfx.shapeOk(p.path!); net.send({ t: 'idle' }); }, { fontSize: 28 }));
+    d.add(button(this, bx + bw - 90, by + bh / 2, 150, 60, '领取', () => { sfx.shapeOk(p.path ?? Wuxing.WATER); net.send({ t: 'idle' }); }, { fontSize: 28 }));
     this.updateIdle();
 
     // 五行能量：一行五个数；点一下切换这一行在秘境里捡不捡
@@ -291,7 +254,7 @@ export class CampScene extends Phaser.Scene {
     // 三个入口：能做点什么的时候亮起来
     const kinds = cultKinds(p.cult);
     const canCult = CULT_ORDER.some(wx => cultBlock(p.cult, p.energy, wx) === '');
-    const canLearn = SKILL_ORDER.some(id => p.skills?.[id] === undefined && p.energy[SKILLS[id].wuxing] >= SKILLS[id].learn);
+    const canLearn = SKILL_ORDER.some(id => p.skills?.[id] === undefined && p.cult[SKILLS[id].wuxing] >= SKILLS[id].need && p.energy[SKILLS[id].wuxing] >= SKILLS[id].learn);
     const total = CULT_ORDER.reduce((a, wx) => a + p.energy[wx], 0);
     const canForge = !p.weapon && total >= forgeBase(1);
     const entries: { label: string; sub: string; hot: boolean; open: () => void }[] = [
@@ -471,61 +434,80 @@ export class CampScene extends Phaser.Scene {
   // ───────────────────────── 技能修习 ─────────────────────────
 
   /** 技能要用五行能量修习才学得会；用得越多越熟练；带进秘境的最多两门 */
+  /** 技能面板：五行各十门，按页签看；修为够了、能量够了才能修习 */
   private showSkills(): void {
     const p = net.profile;
     if (!p) return;
-    const rowH = 178;
-    const { c, top } = this.openPopup(170 + SKILL_ORDER.length * rowH);
+    const rowH = 108;
+    const { c, top } = this.openPopup(196 + 10 * rowH);
     this.panel = 'skills';
+    const tab = this.skillTab ?? p.path ?? Wuxing.FIRE;
+    this.skillTab = tab;
     const loadout: SkillId[] = p.loadout ?? [];
-    c.add(this.add.text(W / 2, top + 26, '技 能', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
-    c.add(this.add.text(W / 2, top + 86, `越用越熟练，也可花能量参悟升级 · 等级越高范围越大 · 最多带 ${LOADOUT_MAX} 门`, { fontFamily: SANS, fontSize: '20px', color: '#8b949e' }).setOrigin(0.5, 0));
-    SKILL_ORDER.forEach((id, i) => {
-      const def = SKILLS[id];
-      const y0 = top + 136 + i * rowH;
+    c.add(this.add.text(W / 2, top + 22, '技 能', { fontFamily: SERIF, fontSize: '38px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 74, `已带 ${loadout.length}/${LOADOUT_MAX} 门 · 本行修为够了才能学后面的 · 越用越熟练`, { fontFamily: SANS, fontSize: '19px', color: '#8b949e' }).setOrigin(0.5, 0));
+
+    // 页签：五行，标出各学了几门
+    CULT_ORDER.forEach((wx, i) => {
+      const x = 52 + (i + 0.5) * ((W - 104) / 5), y = top + 138;
+      const on = wx === tab;
+      const learned = skillsOf(wx).filter(d => p.skills?.[d.id] !== undefined).length;
+      const g = this.add.graphics();
+      g.fillStyle(WX_TINT[wx], on ? 0.22 : 0.05);
+      g.fillRoundedRect(x - 58, y - 28, 116, 56, 14);
+      g.lineStyle(on ? 3 : 1.5, WX_TINT[wx], on ? 1 : 0.4);
+      g.strokeRoundedRect(x - 58, y - 28, 116, 56, 14);
+      c.add(g);
+      c.add(this.add.text(x - 14, y, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '32px', fontStyle: 'bold', color: WX_CSS[wx] }).setOrigin(0.5).setAlpha(on ? 1 : 0.7));
+      c.add(this.add.text(x + 14, y + 2, `${learned}/10`, { fontFamily: SANS, fontSize: '17px', color: '#8b949e' }).setOrigin(0, 0.5));
+      const hit = this.add.rectangle(x, y, 116, 56, 0, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => { sfx.click(); this.skillTab = wx; this.showSkills(); });
+      c.add(hit);
+    });
+
+    const cult = p.cult[tab] ?? 0;
+    const tint = WX_TINT[tab];
+    const KIND: Record<string, string> = { nova: '环身', strike: '落击', blades: '分袭', lance: '直线', zone: '区域', heal: '回复', guard: '护体', buff: '增益' };
+    skillsOf(tab).forEach((def, i) => {
+      const id = def.id;
+      const y0 = top + 184 + i * rowH;
       const uses = p.skills?.[id];
       const lv = skillLevel(uses);
-      const tint = WX_TINT[def.wuxing];
       const on = loadout.includes(id);
+      const locked = lv < 0 && cult < def.need;
       const g = this.add.graphics();
       g.fillStyle(on ? tint : 0x05080b, on ? 0.1 : 0.9);
-      g.fillRoundedRect(52, y0, W - 104, rowH - 14, 18);
-      g.lineStyle(on ? 3 : 2, tint, lv >= 0 ? 0.9 : 0.35);
-      g.strokeRoundedRect(52, y0, W - 104, rowH - 14, 18);
+      g.fillRoundedRect(52, y0, W - 104, rowH - 10, 14);
+      g.lineStyle(on ? 2.5 : 1.5, tint, lv >= 0 ? 0.9 : locked ? 0.15 : 0.45);
+      g.strokeRoundedRect(52, y0, W - 104, rowH - 10, 14);
       c.add(g);
-      c.add(this.add.text(76, y0 + 14, def.name, { fontFamily: SERIF, fontSize: '36px', fontStyle: 'bold', color: WX_CSS[def.wuxing] }).setAlpha(lv >= 0 ? 1 : 0.6));
-      c.add(this.add.text(168, y0 + 28, `${WUXING_NAMES[def.wuxing]}行 · 灵力 ${def.qi} · 冷却 ${def.cd / 1000} 秒`, { fontFamily: SANS, fontSize: '19px', color: '#6e7681' }));
-      c.add(this.add.text(76, y0 + 66, def.desc, { fontFamily: SANS, fontSize: '20px', color: '#c9d1d9', wordWrap: { width: W - 330, useAdvancedWrap: true }, lineSpacing: 4 }));
-      const bx = W - 140, by = y0 + 80;
-      if (lv < 0) {
-        const have = p.energy[def.wuxing];
-        c.add(this.add.text(bx, by - 52, `${WUXING_NAMES[def.wuxing]}能量 ${have}/${def.learn}`, { fontFamily: SANS, fontSize: '19px', color: have >= def.learn ? WX_CSS[def.wuxing] : '#6e7681' }).setOrigin(0.5));
-        c.add(button(this, bx, by, 150, 62, '修习', () => { sfx.shapeOk(def.wuxing); net.send({ t: 'learn', skill: id }); }, { color: tint, disabled: have < def.learn, fontSize: 26 }));
+      const dim = locked ? 0.45 : 1;
+      c.add(this.add.text(70, y0 + 8, def.name, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: WX_CSS[tab] }).setAlpha(lv >= 0 ? 1 : 0.7 * dim));
+      const head = `${KIND[def.kind]} · 灵力 ${def.qi} · 冷却 ${def.cd / 1000} 秒` + (lv >= 0
+        ? ` · ${SKILL_RANKS[lv]} ${lv} 级`
+        : '');
+      c.add(this.add.text(70 + def.name.length * 29 + 12, y0 + 16, head, { fontFamily: SANS, fontSize: '15px', color: lv >= 0 ? '#d4a853' : '#6e7681' }).setAlpha(dim));
+      // 学会了的：在说明后面接上现在的加成
+      const bonus = lv >= 0 ? `（现在：伤害 +${Math.round((skillDmgMult(lv) * skillBond(p.cult, tab) - 1) * 100)}%${def.kind === 'blades' || def.kind === 'lance' || def.kind === 'buff' ? '' : `，范围 ${Math.round(skillAreaMult(lv) * 100)}%`}，冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%）` : '';
+      c.add(this.add.text(70, y0 + 46, def.desc + bonus, { fontFamily: SANS, fontSize: '16px', color: '#c9d1d9', wordWrap: { width: W - 290, useAdvancedWrap: true }, lineSpacing: 2 }).setAlpha(dim));
+      const bx = W - 126;
+      if (locked) {
+        c.add(this.add.text(bx, y0 + 49, `${WUXING_NAMES[tab]}行修为\n${cult}/${def.need} 重`, { fontFamily: SANS, fontSize: '18px', color: '#6e7681', align: 'center', lineSpacing: 4 }).setOrigin(0.5));
+      } else if (lv < 0) {
+        const have = p.energy[tab];
+        c.add(button(this, bx, y0 + 36, 136, 48, '修习', () => { sfx.shapeOk(tab); net.send({ t: 'learn', skill: id }); }, { color: tint, disabled: have < def.learn, fontSize: 24 }));
+        c.add(this.add.text(bx, y0 + 80, `${WUXING_NAMES[tab]} ${have}/${def.learn}`, { fontFamily: SANS, fontSize: '17px', color: have >= def.learn ? WX_CSS[tab] : '#6e7681' }).setOrigin(0.5));
       } else {
-        const maxed = lv >= SKILL_MAX_LEVEL;
-        const lo = skillNeed(lv), hi = skillNeed(lv + 1);
-        c.add(this.add.text(bx, by - 52, `${SKILL_RANKS[lv]} · ${lv} 级`, { fontFamily: SERIF, fontSize: '22px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(0.5));
         const full = !on && loadout.length >= LOADOUT_MAX;
-        c.add(button(this, bx, by - 12, 150, 52, on ? '卸下' : '携带', () => {
+        c.add(button(this, bx, y0 + 28, 136, 42, on ? '卸下' : '携带', () => {
           if (full) { toast(this, `最多携带 ${LOADOUT_MAX} 门，先卸下一门`, '#f85149'); return; }
           net.send({ t: 'loadout', skills: on ? loadout.filter(k => k !== id) : [...loadout, id] });
-        }, { color: on ? 0x8b949e : full ? 0x6e7681 : tint, fontSize: 24 }));
+        }, { color: on ? 0x8b949e : full ? 0x6e7681 : tint, fontSize: 22 }));
         // 参悟：花本行能量直接升一级
-        if (!maxed) {
+        if (lv < SKILL_MAX_LEVEL) {
           const cost = skillTrainCost(uses!);
-          const have = p.energy[def.wuxing];
-          c.add(button(this, bx, by + 50, 150, 48, `参悟 ${WUXING_NAMES[def.wuxing]}${cost}`, () => { sfx.shapeOk(def.wuxing); net.send({ t: 'train', skill: id }); }, { color: tint, disabled: have < cost, fontSize: 21 }));
+          c.add(button(this, bx, y0 + 74, 136, 38, `参悟 ${cost}`, () => { sfx.shapeOk(tab); net.send({ t: 'train', skill: id }); }, { color: tint, disabled: p.energy[tab] < cost, fontSize: 19 }));
         }
-        // 熟练度进度与当前加成
-        const bw = W - 330;
-        const pct = maxed ? 1 : Phaser.Math.Clamp((uses! - lo) / (hi - lo), 0, 1);
-        g.fillStyle(0x000000, 0.7);
-        g.fillRoundedRect(76, y0 + 126, bw, 10, 5);
-        g.fillStyle(tint, 1);
-        if (pct > 0.01) g.fillRoundedRect(76, y0 + 126, bw * pct, 10, 5);
-        c.add(this.add.text(76, y0 + 140, `范围 ${Math.round(skillAreaMult(lv) * 100)}% · 伤害 +${Math.round((skillDmgMult(lv) * skillBond(p.cult, def.wuxing) - 1) * 100)}% · 冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%${maxed ? '' : ` · 再用 ${hi - uses!} 次升级`}`, {
-          fontFamily: SANS, fontSize: '17px', color: '#8b949e',
-        }));
       }
     });
   }

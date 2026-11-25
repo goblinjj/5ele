@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import {
-  C2S, S2C, RoomView, Wuxing, PATHS, WUXING_NAMES,
+  C2S, S2C, RoomView, Wuxing, WUXING_NAMES, mainWx,
   powerOf, salvageValue, MAX_PARTY, MAX_TIER, idleGain, WX_ORDER,
 } from '@xiyou/shared';
 import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf, didOfCode } from './store.js';
@@ -73,7 +73,7 @@ class Room {
       state: this.run ? 'run' : 'lobby',
       players: this.members.map(s => {
         const p = s.profile!;
-        return { id: p.did, name: p.name, path: p.path, power: powerOf(statsOf(p)), host: s === this.host, weapon: p.weapon, cult: p.cult, loadout: p.loadout };
+        return { id: p.did, name: p.name, path: mainWx(p.cult), power: powerOf(statsOf(p)), host: s === this.host, weapon: p.weapon, cult: p.cult, loadout: p.loadout };
       }),
     };
   }
@@ -217,16 +217,9 @@ export function onMessage(s: Session, raw: string): void {
       s.room?.sync();
       break;
 
-    case 'path': {
-      const def = PATHS[msg.path as Wuxing];
-      if (!def?.available) { s.send({ t: 'err', msg: '此道尚未开放' }); return; }
-      if (p.path) { s.send({ t: 'err', msg: '已入道，不可更改' }); return; }
-      // 入道时两手空空：兵器要靠自己吸纳的五行能量凝练
-      p.path = def.wuxing;
-      markDirty(p);
-      s.sendProfile();
+    case 'path':
+      // 「择一道」已取消，属性由修炼和兵器决定；老客户端发来的忽略掉
       break;
-    }
 
     case 'equip': {
       const idx = p.stash.findIndex(it => it.id === msg.id);
@@ -296,7 +289,6 @@ export function onMessage(s: Session, raw: string): void {
     }
 
     case 'create': {
-      if (!p.path) { s.send({ t: 'err', msg: '请先选择所修之道' }); return; }
       s.room?.remove(s);
       const room = new Room(newCode(), s);
       room.tier = Math.max(1, Math.min(room.maxTier, msg.tier | 0));
@@ -308,7 +300,6 @@ export function onMessage(s: Session, raw: string): void {
     }
 
     case 'join': {
-      if (!p.path) { s.send({ t: 'err', msg: '请先选择所修之道' }); return; }
       const room = rooms.get(String(msg.code).trim());
       if (!room) { s.send({ t: 'err', msg: '没有这个房间' }); return; }
       if (room === s.room) return;

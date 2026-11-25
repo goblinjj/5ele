@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { MONSTERS, MonsterDef, WeaponForm, UNARMED_FORM, SkillId, SKILLS, Wuxing } from '@xiyou/shared';
+import { MONSTERS, MonsterDef, WeaponForm, UNARMED_FORM, SkillId, SkillKind, SKILLS, Wuxing } from '@xiyou/shared';
 import { ENEMY_SCALE, WX_TINT } from '../../config/worldConfig.js';
 import { MONSTER_ATLAS_MAP } from '../world/SpawnSystem.js';
 import { Avatar, AvatarLook } from '../avatar/Avatar.js';
@@ -37,8 +37,13 @@ export function ensureCharAnims(scene: Phaser.Scene, atlases: string[]): void {
   }
 }
 
-const SHADER_OF: Record<SkillId, ShaderKind> = {
-  ring: 'fire', meteor: 'blast', blades: 'blade', frost: 'frost', bloom: 'bloom', bastion: 'bastion',
+/** 挂机演出里每种路数用哪套特效（只求看得出是哪一类，不求和秘境里一模一样） */
+const SHADER_OF: Record<SkillKind, ShaderKind> = {
+  nova: 'fire', strike: 'blast', blades: 'blade', lance: 'blade', zone: 'frost', heal: 'bloom', guard: 'bastion', buff: 'bastion',
+};
+const NATIVE: Record<ShaderKind, Wuxing | null> = {
+  fire: Wuxing.FIRE, blast: Wuxing.FIRE, frost: Wuxing.WATER, bloom: Wuxing.WOOD, bastion: Wuxing.EARTH, blade: Wuxing.METAL,
+  warnCircle: null, warnLane: null, impact: null, claw: null, wisp: null,
 };
 
 interface Mob {
@@ -321,22 +326,25 @@ export class IdleBattle {
     const near = this.mobs.filter(m => !m.dead && this.dist(h, m) < 230);
     if (!h.skills.length || near.length < 2) return false;
     const id = h.skills[h.skillIdx++ % h.skills.length];
-    const kind = SHADER_OF[id];
-    const tint = WX_TINT[SKILLS[id].wuxing];
+    const def = SKILLS[id];
+    if (!def) return false;
+    const kind = SHADER_OF[def.kind];
+    const tint = WX_TINT[def.wuxing];
+    const dye = NATIVE[kind] === def.wuxing ? undefined : { color: tint };
     h.avatar.play('cast');
     h.lockT = 460;
     const cx = h.x, cy = h.y - 30;
-    if (id === 'blades') {
+    if (def.kind === 'blades' || def.kind === 'lance') {
       near.forEach((m, i) => this.scene.time.delayedCall(i * 70, () => {
         const ang = Math.atan2(m.y - FOOT - (h.y - 70), m.x - h.x);
         const len = Math.hypot(m.x - h.x, m.y - FOOT - (h.y - 70)) + 60;
-        this.shader.play('blade', (h.x + m.x) / 2, (h.y - 70 + m.y - FOOT) / 2, len, 300, FX_DEPTH - 5, ang);
-        if (!this.shader.enabled) this.fx.slash((h.x + m.x) / 2, (h.y - 70 + m.y - FOOT) / 2, ang, len, 0xfff3c0);
+        this.shader.play('blade', (h.x + m.x) / 2, (h.y - 70 + m.y - FOOT) / 2, len, 300, FX_DEPTH - 5, ang, undefined, dye);
+        if (!this.shader.enabled) this.fx.slash((h.x + m.x) / 2, (h.y - 70 + m.y - FOOT) / 2, ang, len, tint);
       }));
-    } else if (id === 'bastion') {
-      this.shader.play(kind, cx, cy, 150, 1200, FX_DEPTH - 6, 0, () => ({ x: h.x, y: h.y - 30 }));
+    } else if (def.kind === 'guard' || def.kind === 'buff') {
+      this.shader.play(kind, cx, cy, 150, 1200, FX_DEPTH - 6, 0, () => ({ x: h.x, y: h.y - 30 }), dye);
     } else {
-      this.shader.play(kind, cx, cy, 440, id === 'frost' ? 900 : 600, FX_DEPTH - 6);
+      this.shader.play(kind, cx, cy, 440, def.kind === 'zone' ? 900 : 600, FX_DEPTH - 6, 0, undefined, dye);
     }
     if (!this.shader.enabled) this.fx.ring(cx, cy, 200, tint, 460, 0.1);
     this.fx.flashGlow(cx, cy, 100, tint, 260, 0.12);

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   GearItem, RARITY_NAMES, WUXING_NAMES, formOf, kindOf,
-  formatStat, resonanceOf, weaponBond, Energy, RESONANCE_LABEL, Wuxing,
+  formatStat, weaponBond, Energy, WUXING_CONQUERS, Wuxing,
   itemColor, itemCss, displayName, gradeMult, StatLine,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
@@ -121,10 +121,8 @@ export function itemLines(item: GearItem, path: Wuxing | null, cult?: Energy | n
     color: '#8b949e', size: 24,
   });
   out.push({ text: `【${form.kind}·${form.move}】${form.desc}`, color: form.melee ? '#ffb36b' : '#9fd8ff', size: 25 });
-  const res = resonanceOf(path, item.wuxing);
-  if (RESONANCE_LABEL[res]) {
-    out.push({ text: `五行共鸣：${RESONANCE_LABEL[res]}`, color: res === 'clash' ? '#f85149' : '#4ade80', size: 24 });
-  }
+  void path;
+  out.push({ text: `出手带${WUXING_NAMES[item.wuxing]}行之气：克${WUXING_NAMES[WUXING_CONQUERS[item.wuxing]]}系妖异（伤害 ×1.5），被${WUXING_NAMES[CONQUERED_BY[item.wuxing]]}系克（×0.7）`, color: '#8b949e', size: 21 });
   // 同属修为的加成
   const bond = weaponBond(cult, item.wuxing);
   out.push(bond > 1
@@ -137,6 +135,9 @@ export function itemLines(item: GearItem, path: Wuxing | null, cult?: Energy | n
   item.affixes.forEach(l => out.push({ text: `◆ ${formatStat(scaled(l))}`, color: '#79c0ff', size: 28 }));
   return out;
 }
+
+/** 谁克我 */
+const CONQUERED_BY = Object.fromEntries(Object.entries(WUXING_CONQUERS).map(([a, b]) => [b, a])) as Record<Wuxing, Wuxing>;
 
 /** 屏幕上方的提示条 */
 export function toast(scene: Phaser.Scene, msg: string, color: string = '#ffe9a8'): void {

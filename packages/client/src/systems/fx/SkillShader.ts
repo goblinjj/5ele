@@ -19,7 +19,7 @@ const HEAD = `
 precision mediump float;
 uniform float progress;
 uniform float seed;
-// 染色（妖异攻击按五行 / 危险色染；技能特效自带配色，不用它）
+// 染色：妖异攻击按五行 / 危险色染；技能特效自带本色，别的五行借用时才染
 uniform vec3 color;
 // 这段特效已经播了多少秒（不用全局时间：数值大了手机上精度不够，噪声会抖）
 uniform float life;
@@ -59,6 +59,8 @@ void main() {
   vec3 col = mix(vec3(0.75, 0.08, 0.02), vec3(1.0, 0.45, 0.08), smoothstep(0.1, 0.8, I));
   col = mix(col, vec3(1.0, 0.92, 0.6), smoothstep(0.9, 1.8, I));
   I *= 0.36; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.22);
 }`,
 
@@ -80,6 +82,8 @@ void main() {
   vec3 col = mix(vec3(0.8, 0.12, 0.02), vec3(1.0, 0.55, 0.12), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0, 0.97, 0.85), smoothstep(1.0, 2.2, I));
   I *= 0.36; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.25);
 }`,
 
@@ -106,6 +110,8 @@ void main() {
   vec3 col = mix(vec3(0.12, 0.35, 0.85), vec3(0.55, 0.9, 1.0), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0), smoothstep(1.0, 2.0, I));
   I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.2);
 }`,
 
@@ -127,6 +133,8 @@ void main() {
   vec3 col = mix(vec3(0.08, 0.55, 0.22), vec3(0.45, 1.0, 0.55), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0, 0.98, 0.7), smoothstep(0.9, 1.9, I) + petals * 0.4);
   I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.18);
 }`,
 
@@ -154,6 +162,8 @@ void main() {
   vec3 col = mix(vec3(0.55, 0.36, 0.08), vec3(1.0, 0.8, 0.3), smoothstep(0.1, 1.0, I));
   col = mix(col, vec3(1.0, 0.97, 0.8), smoothstep(1.1, 2.0, I));
   I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.14);
 }`,
 
@@ -172,6 +182,8 @@ void main() {
   float I = (core * 1.8 + halo) * along * flick * fade;
   vec3 col = mix(vec3(1.0, 0.75, 0.3), vec3(1.0), smoothstep(0.5, 1.6, I));
   I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
+  // 别的五行借用这套特效时染成自己的颜色（color 是白色 = 用本色）
+  col = mix(col, color * max(max(col.r, col.g), col.b) * 1.15, step(color.r + color.g + color.b, 2.9) * 0.88);
   gl_FragColor = vec4(col * I, I * 0.2);
 }`,
 

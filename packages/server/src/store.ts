@@ -2,7 +2,7 @@ import { promises as fs, existsSync, mkdirSync, readFileSync, readdirSync } from
 import path from 'path';
 import { randomBytes } from 'crypto';
 import {
-  GearItem, ProfileView, Wuxing, computeStats, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
+  GearItem, ProfileView, Wuxing, computeStats, mainWx, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
   kindOf, salvageValue, MAX_CULT, MAX_CULT_KINDS, cultSpent, SkillBook, SkillId, SKILLS, SKILL_ORDER, LOADOUT_MAX,
 } from '@xiyou/shared';
 
@@ -209,7 +209,7 @@ export function markDirty(p: Profile): void {
 
 export function viewOf(p: Profile): ProfileView {
   return {
-    name: p.name, code: p.code ?? '', path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
+    name: p.name, code: p.code ?? '', path: mainWx(p.cult), weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
     energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, skip: p.skip, maxTier: p.maxTier, best: p.best,
     idleSince: p.idleSince, now: Date.now(),
   };

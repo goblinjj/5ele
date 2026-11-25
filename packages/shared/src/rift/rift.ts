@@ -1,5 +1,6 @@
 import { Wuxing, WUXING_CONQUERS, WUXING_GENERATES } from '../types/Wuxing.js';
 import { PlayerStats, GearItem, Energy, WX_ORDER } from './gear.js';
+import { SkillId, SkillBook, SKILLS, skillCdMult } from './skills.js';
 
 /**
  * 秘境（刷怪副本）的共用参数：前后端必须一致
@@ -66,90 +67,7 @@ export const FIRE = {
   burnMs: 4000,
 } as const;
 
-// ───────────────────────── 技能：修习与熟练 ─────────────────────────
-
-/**
- * 技能不是天生就会的：要用对应的五行能量修习才学得会。
- * 学会之后用得越多越熟练——每升一级熟练度，伤害更高、冷却更短。
- */
-export type SkillId = 'ring' | 'meteor' | 'blades' | 'frost' | 'bloom' | 'bastion';
-export interface SkillDef {
-  id: SkillId;
-  name: string;
-  wuxing: Wuxing;
-  /** 修习所需的本行能量 */
-  learn: number;
-  /** 每次施放消耗的灵力与冷却（毫秒） */
-  qi: number;
-  cd: number;
-  desc: string;
-}
-export const SKILLS: Record<SkillId, SkillDef> = {
-  ring:    { id: 'ring',    name: '燎原', wuxing: Wuxing.FIRE,  learn: 40,  qi: 30, cd: 7000,  desc: '以自身为圆心放出火环，灼烧周围的妖异' },
-  meteor:  { id: 'meteor',  name: '焚天', wuxing: Wuxing.FIRE,  learn: 120, qi: 50, cd: 11000, desc: '召一颗陨火砸向妖异最密集处' },
-  blades:  { id: 'blades',  name: '万剑', wuxing: Wuxing.METAL, learn: 80,  qi: 40, cd: 8000,  desc: '剑气分袭最近的几只妖异（越熟练越多），必定暴击' },
-  frost:   { id: 'frost',   name: '寒潮', wuxing: Wuxing.WATER, learn: 80,  qi: 35, cd: 10000, desc: '寒气席卷四周，冻结妖异 2.2 秒' },
-  bloom:   { id: 'bloom',   name: '回春', wuxing: Wuxing.WOOD,  learn: 80,  qi: 40, cd: 14000, desc: '回复自身 30% 生命，荆棘刺伤四周；附近同伴回复 20%' },
-  bastion: { id: 'bastion', name: '磐石', wuxing: Wuxing.EARTH, learn: 80,  qi: 40, cd: 14000, desc: '震地伤敌，并得磐石护体 4 秒，所受伤害减少 70%' },
-};
-export const SKILL_ORDER: SkillId[] = ['ring', 'meteor', 'blades', 'frost', 'bloom', 'bastion'];
-/** 一局最多携带几门技能 */
-export const LOADOUT_MAX = 2;
-/** 各技能的数值（熟练度另乘伤害倍率） */
-export const SK = {
-  blades:  { count: 6, range: 520, mult: 2.4 },
-  frost:   { radius: 340, mult: 1.0, freezeMs: 2200 },
-  bloom:   { heal: 0.3, mateHeal: 0.2, radius: 300, mult: 0.9 },
-  bastion: { radius: 270, mult: 1.6, ms: 4000, block: 0.3 },
-} as const;
-/** 存档里记的是每个技能用过多少次；没有这一项 = 还没学会 */
-export type SkillBook = Partial<Record<SkillId, number>>;
-
-export const SKILL_MAX_LEVEL = 10;
-export const SKILL_RANKS = ['初学', '入门', '小成', '熟练', '精通', '大成', '圆融', '通玄', '化境', '登峰', '造极'] as const;
-/** 熟练到 level 级累计要用多少次 */
-export function skillNeed(level: number): number {
-  return 8 * level * level;
-}
-export function skillLevel(uses: number | undefined): number {
-  if (uses === undefined) return -1;
-  return Math.min(SKILL_MAX_LEVEL, Math.floor(Math.sqrt(Math.max(0, uses) / 8)));
-}
-/**
- * 技能范围随熟练度成长：刚学会只有四成半，每级 +5.5%，10 级才是完整范围。
- * 万剑则是剑气的数量随熟练度增加（3 → 6 道）。
- */
-export function skillAreaMult(level: number): number {
-  return 0.45 + 0.055 * Math.max(0, Math.min(SKILL_MAX_LEVEL, level));
-}
-/** 技能的作用半径：基础半径 × 熟练度 × 属性里的技能范围 */
-export function skillRadius(id: SkillId, level: number, s: Pick<PlayerStats, 'area'>): number {
-  const base = id === 'ring' ? FIRE.ringRadius : id === 'meteor' ? FIRE.meteorRadius
-    : id === 'frost' ? SK.frost.radius : id === 'bloom' ? SK.bloom.radius : id === 'bastion' ? SK.bastion.radius : SK.blades.range;
-  return base * skillAreaMult(level) * (id === 'blades' ? 1 : 1 + s.area / 100);
-}
-export function bladeCount(level: number): number {
-  return Math.min(SK.blades.count, 3 + Math.floor(Math.max(0, level) * 0.3));
-}
-
-/**
- * 参悟：不靠实战，直接花技能所属那一行的能量补满到下一级——离下一级还差几次，就按每次 3 点能量算。
- * 实战用得多的技能参悟就便宜，多余的能量也有了去处。
- */
-export const SKILL_TRAIN_PER_USE = 3;
-export function skillTrainCost(uses: number): number {
-  const lv = skillLevel(uses);
-  if (lv < 0 || lv >= SKILL_MAX_LEVEL) return 0;
-  return Math.max(1, skillNeed(lv + 1) - uses) * SKILL_TRAIN_PER_USE;
-}
-
-/** 每级熟练度：伤害 +12%，冷却 -3% */
-export function skillDmgMult(level: number): number {
-  return 1 + 0.12 * Math.max(0, level);
-}
-export function skillCdMult(level: number): number {
-  return 1 - 0.03 * Math.max(0, level);
-}
+export * from './skills.js';
 
 // ───────────────────────── 能量与灵力 ─────────────────────────
 
@@ -165,10 +83,11 @@ export function orbValue(tier: number, mtier: MonsterTier): number {
   return Math.max(1, Math.round(v * (mtier === 2 ? 16 : mtier === 1 ? 12 : 3)));
 }
 /** 一团能量化成多少灵力：生我之气最补，克我之气难以炼化 */
-export function qiGain(path: Wuxing, wx: Wuxing, mtier: MonsterTier): number {
+export function qiGain(path: Wuxing | null | undefined, wx: Wuxing, mtier: MonsterTier): number {
   const base = mtier === 0 ? 14 : 30;
   let m = 1;
-  if (WUXING_GENERATES[wx] === path) m = 1.5;
+  if (!path) m = 1;
+  else if (WUXING_GENERATES[wx] === path) m = 1.5;
   else if (wx === path) m = 1.2;
   else if (WUXING_CONQUERS[wx] === path) m = 0.6;
   return Math.round(base * m);
@@ -232,9 +151,13 @@ export function skillCd(id: SkillId, s: Pick<PlayerStats, 'cdr'>, level: number)
 
 // ───────────────────────── 五行克制 ─────────────────────────
 
-/** 攻击方五行 → 防御方五行的伤害倍率（单修一道，倍率比旧版温和） */
-export function wxMult(attacker: Wuxing, defender: Wuxing): number {
-  if (attacker === defender) return 1;
+/**
+ * 攻击方五行 → 防御方五行的伤害倍率。
+ * 攻击方：兵器出手看兵器的五行，技能看技能的五行；防御方：妖异的五行，或玩家主修的那一行。
+ */
+export function wxMult(attacker: Wuxing | null | undefined, defender: Wuxing | null | undefined): number {
+  // 无属性（空手、没修炼）：不克也不被克
+  if (!attacker || !defender || attacker === defender) return 1;
   if (WUXING_CONQUERS[attacker] === defender) return 1.5;   // 我克彼
   if (WUXING_GENERATES[defender] === attacker) return 1.2;  // 彼生我：借其气
   if (WUXING_CONQUERS[defender] === attacker) return 0.7;   // 彼克我
@@ -351,7 +274,8 @@ export interface RoomView {
 export interface RunPlayerInfo {
   id: string;
   name: string;
-  path: Wuxing;
+  /** 主修的那一行（修为最高的）；还没修炼是 null */
+  path: Wuxing | null;
   stats: PlayerStats;
   /** 兵器与修为（用于外显） */
   weapon: GearItem | null;
@@ -478,7 +402,8 @@ export type S2C =
   | { t: 'bolts'; list: EnemyBoltSpawn[] }
   /** 硬直；f = 1 表示是被冻住的 */
   | { t: 'stag'; id: number; ms: number; f?: 1 }
-  | { t: 'cast'; p: number; s: SkillId; x: number; y: number }
+  /** e = 1：连落几击里后面的那几击（施放者自己也要画） */
+  | { t: 'cast'; p: number; s: SkillId; x: number; y: number; e?: 1 }
   | { t: 'boss'; id: number }
   | { t: 'down'; p: number }
   | { t: 'up'; p: number }

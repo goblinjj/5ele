@@ -389,10 +389,18 @@ export function skillBond(cult: Energy | null | undefined, wx: Wuxing): number {
   return 1 + CULT_BOND.skill * cultLv(cult, wx);
 }
 
-export function computeStats(weapon: GearItem | null | undefined, path: Wuxing | null | undefined, cult: Energy): PlayerStats {
+/** 主修的那一行：修为最高的；一行都没修是 null。（早先开局要「择一道」，现在由修炼决定） */
+export function mainWx(cult: Energy | null | undefined): Wuxing | null {
+  let best: Wuxing | null = null, lv = 0;
+  for (const wx of WX_ORDER) if ((cult?.[wx] ?? 0) > lv) { lv = cult![wx]; best = wx; }
+  return best;
+}
+
+/** @param _path 已不参与计算（保留参数位，调用处不用改） */
+export function computeStats(weapon: GearItem | null | undefined, _path: Wuxing | null | undefined, cult: Energy): PlayerStats {
   const sum: Record<StatKey, number> = { atk: 0, atkPct: 0, aspd: 0, crit: 0, critDmg: 0, area: 0, burn: 0 };
   if (weapon) {
-    const m = RESONANCE_MULT[resonanceOf(path, weapon.wuxing)] * gradeMult(weapon) * weaponBond(cult, weapon.wuxing);
+    const m = gradeMult(weapon) * weaponBond(cult, weapon.wuxing);
     for (const l of [...weapon.base, ...weapon.affixes]) if (l.stat in sum) sum[l.stat] += l.value * m;
   }
   const c = (wx: Wuxing) => Math.max(0, Math.min(MAX_CULT, cult[wx] ?? 0));

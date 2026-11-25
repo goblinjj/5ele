@@ -8,7 +8,8 @@ import {
   REVIVE_RADIUS, REVIVE_MS,
   RIFT_VIEW, PACING, ORB_LIFE_MS, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  skillBond, attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
+  skillBond, mainWx, attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SkillDef, SKILLS, SKILL_ORDER, skillRadius, skillCount,
+  LANCE_WIDTH, ZONE_TICK_MS, STRIKE_DELAY, SKILL_AIM_RANGE,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty } from './store.js';
@@ -30,7 +31,11 @@ export interface RunMember {
 
 interface RunPlayer extends RunMember {
   idx: number;
-  path: Wuxing;
+  /** 主修的那一行（决定吸纳能量回多少灵力） */
+  path: Wuxing | null;
+  /** 增益技能：攻击提升多少、到什么时候 */
+  buffAtk: number;
+  buffUntil: number;
   x: number;
   y: number;
   f: number;
@@ -145,7 +150,7 @@ export class Run {
       return {
         ...m,
         idx,
-        path: m.profile.path ?? Wuxing.FIRE,
+        path: mainWx(m.profile.cult), buffAtk: 0, buffUntil: 0,
         x: RIFT_CENTER + Math.cos(ang) * 90,
         y: RIFT_CENTER + Math.sin(ang) * 90,
         f: 1, a: 0,
@@ -636,10 +641,12 @@ export class Run {
 
   // ───────────────────────── 玩家出手 ─────────────────────────
 
-  private roll(p: RunPlayer, e: Enemy, mult: number, useCrit: boolean, forceCrit: boolean = false): { amt: number; crit: boolean } {
+  /** @param wx 这一下的五行：不给就是兵器出手，按兵器的五行算克制（空手无属性） */
+  private roll(p: RunPlayer, e: Enemy, mult: number, useCrit: boolean, forceCrit: boolean = false, wx?: Wuxing): { amt: number; crit: boolean } {
     let crit = forceCrit || Math.random() < p.stats.crit / 100;
     if (useCrit && p.crits > 0) { p.crits--; crit = true; }
-    let amt = p.stats.attack * mult * wxMult(p.path, e.def.wuxing);
+    let amt = p.stats.attack * mult * wxMult(wx ?? p.profile.weapon?.wuxing, e.def.wuxing);
+    if (this.now < p.buffUntil) amt *= 1 + p.buffAtk;
     if (e.stagger > 0) amt *= STAGGER_BONUS;
     if (crit) amt *= 1 + p.stats.critDmg / 100;
     return { amt: Math.max(1, Math.round(amt * rand(0.92, 1.08))), crit };
@@ -657,7 +664,7 @@ export class Run {
   private ignite(p: RunPlayer, e: Enemy): void {
     if (e.dead) return;
     e.burnMs = FIRE.burnMs;
-    e.burnDps = Math.max(e.burnDps * 0.5, p.stats.attack * FIRE.burnDps * (1 + p.stats.burn / 100) * wxMult(p.path, e.def.wuxing));
+    e.burnDps = Math.max(e.burnDps * 0.5, p.stats.attack * FIRE.burnDps * (1 + p.stats.burn / 100) * wxMult(Wuxing.FIRE, e.def.wuxing));
     e.burnOwner = p;
   }
 
@@ -734,74 +741,108 @@ export class Run {
   private onCast(p: RunPlayer, id: SkillId, x: number, y: number): void {
     if (p.down || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const def = SKILLS[id];
-    const lv = def ? p.skillLv[id] : -1;
+    const lv = def ? p.skillLv[id] ?? -1 : -1;
     // 要学会、要带在身上
     if (!def || lv < 0 || !p.loadout.includes(id)) return;
     // 客户端冷却到点就会放，服务器这边留 15% 容差
     if (this.now - (p.lastCast[id] ?? -1e9) < skillCd(id, p.stats, lv) * 0.85) return;
-    if (id === 'meteor' && dist2(x, y, p.x, p.y) > (FIRE.meteorRange + 300) ** 2) return;
+    const aimed = def.kind === 'strike' || def.kind === 'zone' || def.kind === 'lance';
+    if (aimed && dist2(x, y, p.x, p.y) > (SKILL_AIM_RANGE + 300) ** 2) return;
     if (!this.spendQi(p, def.qi)) return;
     p.lastCast[id] = this.now;
     this.practice(p, id);
 
     const radius = skillRadius(id, lv, p.stats);
     // 技能威力：熟练度 × 同属修为的加成
-    const dm = skillDmgMult(lv) * skillBond(p.profile.cult, SKILLS[id].wuxing);
+    const mult = def.power * skillDmgMult(lv) * skillBond(p.profile.cult, def.wuxing);
     // 以自身为圆心的技能：允许客户端位置略有出入
     const near = dist2(x, y, p.x, p.y) < 250 ** 2;
     const cx = near ? x : p.x, cy = near ? y : p.y;
-    const tell = (tx: number, ty: number) => this.broadcast({ t: 'cast', p: p.idx, s: id, x: Math.round(tx), y: Math.round(ty) });
+    const tell = (tx: number, ty: number, extra: boolean = false) =>
+      this.broadcast({ t: 'cast', p: p.idx, s: id, x: Math.round(tx), y: Math.round(ty), ...(extra ? { e: 1 as const } : {}) });
 
-    switch (id) {
-      case 'ring':
+    switch (def.kind) {
+      case 'nova':
+      case 'heal':   // 回血由各客户端自己结算（生命是客户端权威），这里只管伤害
+      case 'guard':  // 减伤同样在客户端结算
         tell(cx, cy);
-        this.ring(p, cx, cy, radius, FIRE.ringMult * dm);
+        if (mult > 0) this.hitArea(p, def, cx, cy, radius, mult);
         break;
-      case 'meteor':
+      case 'buff':
+        tell(cx, cy);
+        p.buffAtk = def.atk;
+        p.buffUntil = this.now + def.ms;
+        break;
+      case 'strike': {
+        // 第一击落在客户端选的地方；后面几击各找附近的一只妖异砸
         tell(x, y);
-        this.later(FIRE.meteorDelay, () => this.ring(p, x, y, radius, FIRE.meteorMult * dm));
+        this.later(STRIKE_DELAY, () => this.hitArea(p, def, x, y, radius, mult));
+        for (let i = 1; i < def.count; i++) {
+          this.later(i * 240, () => {
+            const pool = this.enemiesNear(x, y, 420);
+            const t = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+            const px = t ? t.x : x + rand(-200, 200), py = t ? t.y : y + rand(-200, 200);
+            tell(px, py, true);
+            this.later(STRIKE_DELAY, () => this.hitArea(p, def, px, py, radius, mult));
+          });
+        }
         break;
+      }
       case 'blades': {
-        // 剑气分袭最近的几只，必定暴击；妖异不够就集中补刀
+        // 分袭最近的几只；妖异不够就集中补刀（补的那几道只有一半威力）
         tell(cx, cy);
-        const count = bladeCount(lv);
+        const count = skillCount(id, lv);
         const targets = this.enemiesNear(cx, cy, radius)
           .sort((a, b) => dist2(cx, cy, a.x, a.y) - dist2(cx, cy, b.x, b.y)).slice(0, count);
         if (!targets.length) break;
         for (let i = 0; i < count; i++) {
           const e = targets[i % targets.length];
-          this.later(120 + i * 70, () => {
-            if (e.dead) return;
-            const r = this.roll(p, e, SK.blades.mult * dm * (i < targets.length ? 1 : 0.5), false, true);
-            this.damage(p, e, r.amt, r.crit);
-          });
+          this.later(120 + i * 70, () => this.hitOne(p, def, e, mult * (i < targets.length ? 1 : 0.5)));
         }
         break;
       }
-      case 'frost':
-        tell(cx, cy);
-        for (const e of this.enemiesNear(cx, cy, radius)) {
-          const r = this.roll(p, e, SK.frost.mult * dm, false);
-          this.damage(p, e, r.amt, r.crit);
-          if (e.dead) continue;
-          // 冻结 = 硬直（核心只冻三成时间），打断正在蓄力的招式
-          e.stagger = Math.max(e.stagger, SK.frost.freezeMs * (e.tier === 2 ? 0.3 : 1));
-          e.attack = null;
-          if (e.state === 'windup' || e.state === 'lunge') { e.state = 'recover'; e.timer = 200; }
-          this.broadcast({ t: 'stag', id: e.id, ms: e.stagger, f: 1 });
+      case 'lance': {
+        // 从人朝目标点打出一道直线，沿途的都中
+        tell(x, y);
+        const dx = x - p.x, dy = y - p.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ux = dx / d, uy = dy / d;
+        for (const e of this.enemiesNear(p.x, p.y, radius + 60)) {
+          const along = (e.x - p.x) * ux + (e.y - p.y) * uy;
+          if (along < -30 || along > radius) continue;
+          const side = Math.abs((e.x - p.x) * uy - (e.y - p.y) * ux);
+          if (side > LANCE_WIDTH / 2 + (e.tier === 2 ? 110 : e.tier === 1 ? 50 : 30)) continue;
+          this.hitOne(p, def, e, mult);
         }
         break;
-      case 'bloom':
-        // 回血由各客户端自己结算（生命是客户端权威），这里只管荆棘
-        tell(cx, cy);
-        this.ring(p, cx, cy, radius, SK.bloom.mult * dm, false);
+      }
+      case 'zone': {
+        tell(x, y);
+        const ticks = Math.max(1, Math.floor(def.ms / ZONE_TICK_MS));
+        for (let i = 1; i <= ticks; i++) this.later(i * ZONE_TICK_MS, () => this.hitArea(p, def, x, y, radius, mult));
         break;
-      case 'bastion':
-        // 减伤同样在客户端结算
-        tell(cx, cy);
-        this.ring(p, cx, cy, radius, SK.bastion.mult * dm, false);
-        break;
+      }
     }
+  }
+
+  /** 技能打中一只：按技能自己的五行算克制，附带点燃 / 冻结 */
+  private hitOne(p: RunPlayer, def: SkillDef, e: Enemy, mult: number): void {
+    if (p.left || e.dead) return;
+    const r = this.roll(p, e, mult, false, def.crit, def.wuxing);
+    this.damage(p, e, r.amt, r.crit);
+    if (e.dead) return;
+    if (def.burn) this.ignite(p, e);
+    if (def.stagger > 0) {
+      // 冻结 = 硬直（首领只吃三成时间），打断正在蓄力的招式
+      e.stagger = Math.max(e.stagger, def.stagger * (e.tier === 2 ? 0.3 : 1));
+      e.attack = null;
+      if (e.state === 'windup' || e.state === 'lunge') { e.state = 'recover'; e.timer = 200; }
+      this.broadcast({ t: 'stag', id: e.id, ms: e.stagger, f: 1 });
+    }
+  }
+
+  private hitArea(p: RunPlayer, def: SkillDef, x: number, y: number, r: number, mult: number): void {
+    if (p.left) return;
+    for (const e of this.enemiesNear(x, y, r)) this.hitOne(p, def, e, mult);
   }
 
   /** 用一次，熟练一分（记在存档里，下一局生效） */
