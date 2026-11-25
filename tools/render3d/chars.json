@@ -20,21 +20,13 @@
         "file": "Running.fbx",
         "frames": 12,
         "ms": 560,
-        "loop": true
+        "loop": true,
+        "steady": 0.75
       },
       "slash": {
-        "file": "Great Sword Slash.fbx",
-        "from": 0.2,
-        "to": 0.95,
-        "frames": 10,
-        "ms": 340
-      },
-      "slash2": {
         "file": "Sword And Shield Slash.fbx",
-        "from": 0.19,
-        "to": 1.03,
-        "frames": 10,
-        "ms": 340
+        "frames": 12,
+        "ms": 420
       },
       "stab": {
         "file": "Stabbing.fbx",
@@ -56,13 +48,6 @@
         "to": 1.95,
         "frames": 10,
         "ms": 480
-      },
-      "hurt": {
-        "file": "Hit Reaction.fbx",
-        "from": 0.6,
-        "to": 1.9,
-        "frames": 6,
-        "ms": 280
       },
       "die": {
         "file": "Falling Back Death.fbx",
@@ -104,38 +89,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant punch.fbx",
         "from": 0.1,
         "to": 0.9,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -146,38 +136,43 @@
     "clips": {
       "idle": {
         "file": "Not So Scary Zombie Pack/zombie idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Not So Scary Zombie Pack/zombie running.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Not So Scary Zombie Pack/zombie punching.fbx",
         "from": 0.2,
         "to": 0.95,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
         "from": 0.25,
         "to": 1.5,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Not So Scary Zombie Pack/zombie attack.fbx",
         "from": 0.58,
         "to": 2.4,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -188,38 +183,44 @@
     "clips": {
       "idle": {
         "file": "Fighting Idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Running.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "steady": 0.75
       },
       "atk": {
         "file": "Stabbing.fbx",
         "from": 0.2,
         "to": 1.07,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Standing 1H Magic Attack 01.fbx",
         "from": 0.43,
         "to": 1.58,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -230,38 +231,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant punch.fbx",
         "from": 0.1,
         "to": 0.9,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -272,38 +278,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant punch.fbx",
         "from": 0.1,
         "to": 0.9,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -314,38 +325,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant roaring.fbx",
         "from": 1.0,
         "to": 3.4,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     },
     "light": 1.7
@@ -357,38 +373,44 @@
     "clips": {
       "idle": {
         "file": "Fighting Idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Running.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "steady": 0.75
       },
       "atk": {
         "file": "Stabbing.fbx",
         "from": 0.2,
         "to": 1.07,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Standing 1H Magic Attack 01.fbx",
         "from": 0.43,
         "to": 1.58,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -399,38 +421,44 @@
     "clips": {
       "idle": {
         "file": "Fighting Idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Running.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "steady": 0.75
       },
       "atk": {
         "file": "Stabbing.fbx",
         "from": 0.2,
         "to": 1.07,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Standing 1H Magic Attack 01.fbx",
         "from": 0.43,
         "to": 1.58,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -441,38 +469,43 @@
     "clips": {
       "idle": {
         "file": "Not So Scary Zombie Pack/zombie idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Not So Scary Zombie Pack/zombie running.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Not So Scary Zombie Pack/zombie punching.fbx",
         "from": 0.2,
         "to": 0.95,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
         "from": 0.25,
         "to": 1.5,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Not So Scary Zombie Pack/zombie attack.fbx",
         "from": 0.58,
         "to": 2.4,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -483,38 +516,43 @@
     "clips": {
       "idle": {
         "file": "Not So Scary Zombie Pack/zombie idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Not So Scary Zombie Pack/zombie running.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Not So Scary Zombie Pack/zombie punching.fbx",
         "from": 0.2,
         "to": 0.95,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
         "from": 0.25,
         "to": 1.5,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Not So Scary Zombie Pack/zombie attack.fbx",
         "from": 0.58,
         "to": 2.4,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     },
     "light": 1.6
@@ -526,38 +564,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant punch.fbx",
         "from": 0.1,
         "to": 0.9,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -568,38 +611,43 @@
     "clips": {
       "idle": {
         "file": "Creature Pack/mutant breathing idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Creature Pack/mutant run.fbx",
-        "frames": 6,
+        "frames": 8,
         "loop": true
       },
       "atk": {
         "file": "Creature Pack/mutant swiping.fbx",
         "from": 0.55,
         "to": 2.0,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Creature Pack/mutant punch.fbx",
         "from": 0.1,
         "to": 0.9,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Creature Pack/mutant dying.fbx",
         "from": 1.0,
         "to": 3.0,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     }
   },
@@ -610,38 +658,44 @@
     "clips": {
       "idle": {
         "file": "Fighting Idle.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "ms": 1700
       },
       "run": {
         "file": "Running.fbx",
-        "frames": 6,
-        "loop": true
+        "frames": 8,
+        "loop": true,
+        "steady": 0.75
       },
       "atk": {
         "file": "Stabbing.fbx",
         "from": 0.2,
         "to": 1.07,
-        "frames": 6
+        "frames": 8,
+        "ms": 620
       },
       "hurt": {
         "file": "Hit Reaction.fbx",
         "from": 0.6,
         "to": 1.9,
-        "frames": 6
+        "frames": 6,
+        "ms": 380
       },
       "magic": {
         "file": "Standing 1H Magic Attack 01.fbx",
         "from": 0.43,
         "to": 1.58,
-        "frames": 6
+        "frames": 8,
+        "ms": 720
       },
       "die": {
         "file": "Falling Back Death.fbx",
         "from": 0.16,
         "to": 1.7,
-        "frames": 6,
-        "keep": 0.4
+        "frames": 8,
+        "keep": 0.4,
+        "ms": 760
       }
     },
     "light": 1.5

@@ -139,7 +139,6 @@ export class Avatar extends Phaser.GameObjects.Container {
   private action: AvatarAction = 'none';
   private actionT = 0;
   private actionDur = 1;
-  private hurtT = 0;
   private downT = 0;
   private dashT = 1e9;
   private guarding = false;
@@ -251,15 +250,14 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.actionDur = action === 'none' ? 1 : this.meta.clips[this.actionClip(action)].ms;
   }
 
-  /** 挥砍：刃是单手快刀，其余双手抡；出手：枪是直刺，其余是推出一道气劲 */
+  /** 出手：枪是直刺，其余是推出一道气劲 */
   private actionClip(action: AvatarAction): string {
-    if (action === 'slash') return this.kind === '刃' ? 'slash2' : 'slash';
+    if (action === 'slash') return 'slash';
     if (action === 'attack') return this.kind === '枪' ? 'stab' : 'attack';
     return 'cast';
   }
 
   hurt(): void {
-    this.hurtT = this.meta.clips.hurt.ms;
     this.spr.setTintFill(0xff6b6b);
     this.scene.time.delayedCall(90, () => { if (this.spr.active) this.spr.setTint(this.bodyTint); });
   }
@@ -279,7 +277,7 @@ export class Avatar extends Phaser.GameObjects.Container {
     // 兵器指向镜头时会透视缩短，别缩得太短
     const len = Phaser.Math.Clamp(hand[3], 0.45, 1);
     // 站着不出招时兵器按固定的架势拿：长柄拄在身侧，刀剑斜指前上方；出招时才跟着手走
-    const rest = clip === 'idle' || clip === 'run' || clip === 'hurt' || clip === 'guard';
+    const rest = clip === 'idle' || clip === 'run' || clip === 'guard';
     const long = this.kind === '杖' || this.kind === '枪';
     const pole = rest && this.kind !== '扇';
     const rot = !pole ? hand[2] : long ? -1.32 : clip === 'guard' ? -1.15 : clip === 'run' ? -0.2 : -0.62;
@@ -295,7 +293,6 @@ export class Avatar extends Phaser.GameObjects.Container {
       this.actionT += dt;
       if (this.actionT >= this.actionDur) this.action = 'none';
     }
-    this.hurtT = Math.max(0, this.hurtT - dt);
 
     const clips = this.meta.clips;
     let clip: string, p: number;
@@ -306,13 +303,11 @@ export class Avatar extends Phaser.GameObjects.Container {
       // 遁：一个前滚翻，翻完还在冲就停在收势上
       this.dashT += dt;
       clip = 'dash'; p = Math.min(0.999, this.dashT / clips.dash.ms);
-    } else if (this.action !== 'none') {
+    } else if (this.action !== 'none' && this.moving <= 0.05) {
+      // 出招动作只在站定时做；边跑边打时腿不能停，招式交给刀光和气劲去表现
       clip = this.actionClip(this.action); p = this.actionT / this.actionDur;
-    } else if (this.hurtT > 0 && this.moving <= 0.05) {
-      clip = 'hurt'; p = 1 - this.hurtT / clips.hurt.ms;
     } else {
       clip = this.moving > 0.05 ? 'run' : this.guarding ? 'guard' : 'idle';
-      if (clip !== this.clip) this.loopT = 0;
       const def = clips[clip];
       // 跑得越快步子越密；冲刺再快一截
       this.loopT += dt * (clip === 'run' ? (0.55 + 0.45 * this.moving) : 1);

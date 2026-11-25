@@ -90,7 +90,7 @@ function screen(p) { // 世界坐标 → 单元格内像素（原点在左上）
  *    这样没勾 In Place 的跑步会变成原地跑，而待机、出招时脚不会在地上打滑。
  */
 const anchors = {};
-function pose(file, t, keep, from, to) {
+function pose(file, t, keep, from, to, steady) {
   if (current !== file) { mixer.stopAllAction(); actions[file].reset().play(); current = file; }
   const dur = actions[file].getClip().duration;
   from = from ?? 0; to = to ?? dur;
@@ -98,12 +98,22 @@ function pose(file, t, keep, from, to) {
   let an = anchors[key];
   if (!an) {
     root.position.set(0, 0, 0);
-    mixer.setTime(to); const p1 = hips.position.clone();
+    // 循环动作在恰好等于时长的那一刻会绕回开头，取终点要退一点点
+    mixer.setTime(Math.min(to, dur - 1e-3)); const p1 = hips.position.clone();
     mixer.setTime(from); const p0 = hips.position.clone();
     root.updateMatrixWorld(true);
-    an = anchors[key] = { p0, p1, w: hips.getWorldPosition(new THREE.Vector3()) };
+    // 髋部在这一段里的平均朝向：用来压住跑步时过大的左右拧身
+    const mean = new THREE.Quaternion(0, 0, 0, 0), q0 = hips.quaternion.clone();
+    for (let i = 0; i < 24; i++) {
+      mixer.setTime(from + (Math.min(to, dur - 1e-3) - from) * i / 24);
+      const q = hips.quaternion; const sgn = q.dot(q0) < 0 ? -1 : 1;
+      mean.x += q.x * sgn; mean.y += q.y * sgn; mean.z += q.z * sgn; mean.w += q.w * sgn;
+    }
+    mean.normalize();
+    mixer.setTime(from); root.updateMatrixWorld(true);
+    an = anchors[key] = { p0, p1, mean, w: hips.getWorldPosition(new THREE.Vector3()) };
   }
-  mixer.setTime(t);
+  mixer.setTime(Math.min(t, dur - 1e-3));
   if (typeof keep === 'number') {
     hips.position.x = an.p0.x + (hips.position.x - an.p0.x) * keep;
     hips.position.z = an.p0.z + (hips.position.z - an.p0.z) * keep;
@@ -112,6 +122,7 @@ function pose(file, t, keep, from, to) {
     hips.position.x -= (an.p1.x - an.p0.x) * u;
     hips.position.z -= (an.p1.z - an.p0.z) * u;
   }
+  if (steady) hips.quaternion.slerp(an.mean, steady);
   // 起始帧的髋部落在原点上方，保证所有动作脚下是同一个位置
   root.position.set(-an.w.x, 0, -an.w.z);
   root.updateMatrixWorld(true);
@@ -132,8 +143,8 @@ function hand() {
 }
 
 window.begin = (cols, rows) => { sheet.width = cols * cfg.cell; sheet.height = rows * cfg.cell; };
-window.draw = (file, t, keep, col, row, from, to) => {
-  pose(file, t, keep, from, to);
+window.draw = (file, t, keep, col, row, from, to, steady) => {
+  pose(file, t, keep, from, to, steady);
   renderer.render(scene, cam);
   const ctx = sheet.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
@@ -142,8 +153,8 @@ window.draw = (file, t, keep, col, row, from, to) => {
 };
 // 图集模式：每帧裁掉四周的透明边，最后紧凑排版
 const crops = [];
-window.capture = (file, t, keep, from, to) => {
-  pose(file, t, keep, from, to);
+window.capture = (file, t, keep, from, to, steady) => {
+  pose(file, t, keep, from, to, steady);
   renderer.render(scene, cam);
   const n = cfg.cell, c = document.createElement('canvas'); c.width = c.height = n;
   const ctx = c.getContext('2d', { willReadFrequently: true });

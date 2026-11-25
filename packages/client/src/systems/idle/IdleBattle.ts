@@ -18,17 +18,21 @@ import { SkillShader, ShaderKind } from '../fx/SkillShader.js';
 export function ensureCharAnims(scene: Phaser.Scene, atlases: string[]): void {
   for (const atlas of atlases) {
     if (!scene.textures.exists(atlas)) continue;
+    const tex = scene.textures.get(atlas);
+    // 预渲染的图集自带动作表（每段几帧、播多久）；老图集没有，按 6 帧的老规矩来
+    const clips = (tex.customData as { char?: { clips?: Record<string, { frames: number; ms: number; loop: boolean }> } }).char?.clips;
     for (const anim of ['idle', 'run', 'atk', 'hurt', 'magic', 'die']) {
       const key = `${atlas}_${anim}`;
       if (scene.anims.exists(key)) continue;
+      const def = clips?.[anim];
       const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < (def?.frames ?? 6); i++) {
         const f = `character_${anim}_${i}`;
-        if (scene.textures.get(atlas).has(f)) frames.push({ key: atlas, frame: f });
+        if (tex.has(f)) frames.push({ key: atlas, frame: f });
       }
-      if (frames.length) {
-        scene.anims.create({ key, frames, frameRate: anim === 'idle' ? 8 : 12, repeat: anim === 'idle' || anim === 'run' ? -1 : 0 });
-      }
+      if (!frames.length) continue;
+      const loop = anim === 'idle' || anim === 'run';
+      scene.anims.create({ key, frames, frameRate: def ? frames.length / (def.ms / 1000) : anim === 'idle' ? 8 : 12, repeat: loop ? -1 : 0 });
     }
   }
 }

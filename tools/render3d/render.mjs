@@ -88,11 +88,11 @@ try {
       for (let i = 0; i < def.frames; i++) {
         // 循环动作首尾相接，不取终点；一次性动作取满首尾
         const k = def.pingpong ? 1 - Math.abs(1 - 2 * i / def.frames) : def.loop && !def.yoyo ? i / def.frames : i / (def.frames - 1);
-        list.push({ clip, i, file: def.file, t: from + (to - from) * k, keep: def.keep ?? null, from, to });
+        list.push({ clip, i, file: def.file, t: from + (to - from) * k, keep: def.keep ?? null, from, to, steady: def.steady ?? 0 });
       }
     }
     const hands = [];
-    for (const f of list) hands.push(await page.evaluate((file, t, k, a, b) => window.capture(file, t, k, a, b), f.file, f.t, f.keep, f.from, f.to));
+    for (const f of list) hands.push(await page.evaluate((file, t, k, a, b, st) => window.capture(file, t, k, a, b, st), f.file, f.t, f.keep, f.from, f.to, f.steady));
     const packed = await page.evaluate(w => window.pack(w), cfg.atlasWidth ?? 2048);
     const frames = {};
     const prefix = cfg.prefix ?? '';
@@ -107,7 +107,7 @@ try {
     fs.writeFileSync(path.join(out, 'atlas.webp'), Buffer.from(packed.url.split(',')[1], 'base64'));
     // 脚底在单元格里的位置：模型原点投影
     const footY = (0.5 + (cfg.centerY * Math.cos(cfg.pitch * Math.PI / 180)) / (2 * cfg.zoom)) * cfg.cell;
-    const clips = Object.fromEntries(Object.entries(cfg.clips).map(([k, d]) => [k, { frames: d.frames, ms: d.ms, loop: !!d.loop, yoyo: !!d.yoyo }]));
+    const clips = Object.fromEntries(Object.entries(cfg.clips).map(([k, d]) => [k, { frames: d.frames, ms: d.ms ?? Math.round(((d.to ?? info.durations[d.file]) - (d.from ?? 0)) * 1000), loop: !!d.loop || !!d.pingpong, yoyo: !!d.yoyo }]));
     fs.writeFileSync(path.join(out, 'atlas.json'), JSON.stringify({ frames, meta: { image: 'atlas.webp', size: { w: packed.w, h: packed.h }, scale: 1 }, char: { cell: cfg.cell, footX: cfg.cell / 2, footY: Math.round(footY * 10) / 10, heightPx: Math.round(cfg.cell / (2 * cfg.zoom) * 10) / 10, clips } }));
     console.log(`${list.length} 帧 → ${path.join(cfg.out, 'atlas.webp')} (${packed.w}×${packed.h})`);
   }
