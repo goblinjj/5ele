@@ -11,13 +11,10 @@
     "pitch": 12,
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Sword And Shield Idle.fbx",
         "frames": 12,
-        "ms": 1700,
-        "loop": true,
-        "yoyo": true
+        "ms": 1900,
+        "loop": true
       },
       "run": {
         "file": "Running.fbx",
@@ -74,6 +71,19 @@
         "frames": 12,
         "ms": 800,
         "keep": 0.55
+      },
+      "guard": {
+        "file": "Standing Block Idle.fbx",
+        "frames": 8,
+        "ms": 1800,
+        "loop": true
+      },
+      "dash": {
+        "file": "Stand To Roll.fbx",
+        "from": 0.45,
+        "to": 1.65,
+        "frames": 9,
+        "ms": 300
       }
     }
   },
@@ -93,21 +103,19 @@
     "out": "packages/client/public/assets/monsters/獠牙怪",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Creature Pack/mutant breathing idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
       },
       "run": {
-        "file": "Running.fbx",
+        "file": "Creature Pack/mutant run.fbx",
         "frames": 6,
         "loop": true
       },
       "atk": {
-        "file": "Sword And Shield Slash.fbx",
-        "from": 0.28,
-        "to": 1.03,
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
         "frames": 6
       },
       "hurt": {
@@ -117,15 +125,15 @@
         "frames": 6
       },
       "magic": {
-        "file": "Standing 1H Magic Attack 01.fbx",
-        "from": 0.43,
-        "to": 1.58,
+        "file": "Creature Pack/mutant punch.fbx",
+        "from": 0.1,
+        "to": 0.9,
         "frames": 6
       },
       "die": {
-        "file": "Falling Back Death.fbx",
-        "from": 0.16,
-        "to": 1.7,
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
         "frames": 6,
         "keep": 0.4
       }
@@ -137,33 +145,31 @@
     "out": "packages/client/public/assets/monsters/青鳞蛇",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Not So Scary Zombie Pack/zombie idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
       },
       "run": {
-        "file": "Running.fbx",
+        "file": "Not So Scary Zombie Pack/zombie running.fbx",
         "frames": 6,
         "loop": true
       },
       "atk": {
-        "file": "Sword And Shield Slash.fbx",
-        "from": 0.28,
-        "to": 1.03,
+        "file": "Not So Scary Zombie Pack/zombie punching.fbx",
+        "from": 0.2,
+        "to": 0.95,
         "frames": 6
       },
       "hurt": {
-        "file": "Hit Reaction.fbx",
-        "from": 0.6,
-        "to": 1.9,
+        "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
+        "from": 0.25,
+        "to": 1.5,
         "frames": 6
       },
       "magic": {
-        "file": "Standing 1H Magic Attack 01.fbx",
-        "from": 0.43,
-        "to": 1.58,
+        "file": "Not So Scary Zombie Pack/zombie attack.fbx",
+        "from": 0.58,
+        "to": 2.4,
         "frames": 6
       },
       "die": {
@@ -181,11 +187,9 @@
     "out": "packages/client/public/assets/monsters/赤狐精",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Fighting Idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
       },
       "run": {
         "file": "Running.fbx",
@@ -225,21 +229,19 @@
     "out": "packages/client/public/assets/monsters/树妖",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Creature Pack/mutant breathing idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
       },
       "run": {
-        "file": "Running.fbx",
+        "file": "Creature Pack/mutant run.fbx",
         "frames": 6,
         "loop": true
       },
       "atk": {
-        "file": "Great Sword Slash.fbx",
-        "from": 0.24,
-        "to": 0.95,
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
         "frames": 6
       },
       "hurt": {
@@ -249,15 +251,15 @@
         "frames": 6
       },
       "magic": {
-        "file": "Standing 1H Magic Attack 01.fbx",
-        "from": 0.43,
-        "to": 1.58,
+        "file": "Creature Pack/mutant punch.fbx",
+        "from": 0.1,
+        "to": 0.9,
         "frames": 6
       },
       "die": {
-        "file": "Falling Back Death.fbx",
-        "from": 0.16,
-        "to": 1.7,
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
         "frames": 6,
         "keep": 0.4
       }
@@ -269,11 +271,94 @@
     "out": "packages/client/public/assets/monsters/石头精",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Creature Pack/mutant breathing idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
+      },
+      "run": {
+        "file": "Creature Pack/mutant run.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Creature Pack/mutant punch.fbx",
+        "from": 0.1,
+        "to": 0.9,
+        "frames": 6
+      },
+      "die": {
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
+        "frames": 6,
+        "keep": 0.4
+      }
+    }
+  },
+  "boss": {
+    "base": "_monster",
+    "skin": "Maw J Laygo.fbx",
+    "out": "packages/client/public/assets/monsters/首领",
+    "clips": {
+      "idle": {
+        "file": "Creature Pack/mutant breathing idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Creature Pack/mutant run.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Creature Pack/mutant roaring.fbx",
+        "from": 1.0,
+        "to": 3.4,
+        "frames": 6
+      },
+      "die": {
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
+        "frames": 6,
+        "keep": 0.4
+      }
+    },
+    "light": 1.7
+  },
+  "goblin": {
+    "base": "_monster",
+    "skin": "Ch34_nonPBR.fbx",
+    "out": "packages/client/public/assets/monsters/木魅",
+    "clips": {
+      "idle": {
+        "file": "Fighting Idle.fbx",
+        "frames": 6,
+        "loop": true
       },
       "run": {
         "file": "Running.fbx",
@@ -281,9 +366,9 @@
         "loop": true
       },
       "atk": {
-        "file": "Great Sword Slash.fbx",
-        "from": 0.24,
-        "to": 0.95,
+        "file": "Stabbing.fbx",
+        "from": 0.2,
+        "to": 1.07,
         "frames": 6
       },
       "hurt": {
@@ -307,17 +392,15 @@
       }
     }
   },
-  "boss": {
+  "vampire": {
     "base": "_monster",
-    "skin": "Maw J Laygo.fbx",
-    "out": "packages/client/public/assets/monsters/首领",
+    "skin": "Vampire A Lusth.fbx",
+    "out": "packages/client/public/assets/monsters/白面鬼",
     "clips": {
       "idle": {
-        "file": "Idle.fbx",
-        "from": 0,
-        "to": 2.4,
+        "file": "Fighting Idle.fbx",
         "frames": 6,
-        "pingpong": true
+        "loop": true
       },
       "run": {
         "file": "Running.fbx",
@@ -325,9 +408,9 @@
         "loop": true
       },
       "atk": {
-        "file": "Great Sword Slash.fbx",
-        "from": 0.24,
-        "to": 0.95,
+        "file": "Stabbing.fbx",
+        "from": 0.2,
+        "to": 1.07,
         "frames": 6
       },
       "hurt": {
@@ -337,9 +420,93 @@
         "frames": 6
       },
       "magic": {
-        "file": "Standing 2H Magic Area Attack 01.fbx",
-        "from": 0.19,
-        "to": 1.3,
+        "file": "Standing 1H Magic Attack 01.fbx",
+        "from": 0.43,
+        "to": 1.58,
+        "frames": 6
+      },
+      "die": {
+        "file": "Falling Back Death.fbx",
+        "from": 0.16,
+        "to": 1.7,
+        "frames": 6,
+        "keep": 0.4
+      }
+    }
+  },
+  "skeleton": {
+    "base": "_monster",
+    "skin": "Skeletonzombie T Avelange.fbx",
+    "out": "packages/client/public/assets/monsters/赤煞",
+    "clips": {
+      "idle": {
+        "file": "Not So Scary Zombie Pack/zombie idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Not So Scary Zombie Pack/zombie running.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Not So Scary Zombie Pack/zombie punching.fbx",
+        "from": 0.2,
+        "to": 0.95,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
+        "from": 0.25,
+        "to": 1.5,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Not So Scary Zombie Pack/zombie attack.fbx",
+        "from": 0.58,
+        "to": 2.4,
+        "frames": 6
+      },
+      "die": {
+        "file": "Falling Back Death.fbx",
+        "from": 0.16,
+        "to": 1.7,
+        "frames": 6,
+        "keep": 0.4
+      }
+    }
+  },
+  "yaku": {
+    "base": "_monster",
+    "skin": "Yaku J Ignite.fbx",
+    "out": "packages/client/public/assets/monsters/溺尸",
+    "clips": {
+      "idle": {
+        "file": "Not So Scary Zombie Pack/zombie idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Not So Scary Zombie Pack/zombie running.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Not So Scary Zombie Pack/zombie punching.fbx",
+        "from": 0.2,
+        "to": 0.95,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Not So Scary Zombie Pack/zombie reaction hit.fbx",
+        "from": 0.25,
+        "to": 1.5,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Not So Scary Zombie Pack/zombie attack.fbx",
+        "from": 0.58,
+        "to": 2.4,
         "frames": 6
       },
       "die": {
@@ -350,6 +517,133 @@
         "keep": 0.4
       }
     },
-    "light": 1.7
+    "light": 1.6
+  },
+  "peasant": {
+    "base": "_monster",
+    "skin": "Peasant Man.fbx",
+    "out": "packages/client/public/assets/monsters/土伯",
+    "clips": {
+      "idle": {
+        "file": "Creature Pack/mutant breathing idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Creature Pack/mutant run.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Creature Pack/mutant punch.fbx",
+        "from": 0.1,
+        "to": 0.9,
+        "frames": 6
+      },
+      "die": {
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
+        "frames": 6,
+        "keep": 0.4
+      }
+    }
+  },
+  "guard": {
+    "base": "_monster",
+    "skin": "castle_guard_01.fbx",
+    "out": "packages/client/public/assets/monsters/铁卫",
+    "clips": {
+      "idle": {
+        "file": "Creature Pack/mutant breathing idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Creature Pack/mutant run.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Creature Pack/mutant swiping.fbx",
+        "from": 0.55,
+        "to": 2.0,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Creature Pack/mutant punch.fbx",
+        "from": 0.1,
+        "to": 0.9,
+        "frames": 6
+      },
+      "die": {
+        "file": "Creature Pack/mutant dying.fbx",
+        "from": 1.0,
+        "to": 3.0,
+        "frames": 6,
+        "keep": 0.4
+      }
+    }
+  },
+  "rogue": {
+    "base": "_monster",
+    "skin": "Ch05_nonPBR.fbx",
+    "out": "packages/client/public/assets/monsters/玄冥客",
+    "clips": {
+      "idle": {
+        "file": "Fighting Idle.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "run": {
+        "file": "Running.fbx",
+        "frames": 6,
+        "loop": true
+      },
+      "atk": {
+        "file": "Stabbing.fbx",
+        "from": 0.2,
+        "to": 1.07,
+        "frames": 6
+      },
+      "hurt": {
+        "file": "Hit Reaction.fbx",
+        "from": 0.6,
+        "to": 1.9,
+        "frames": 6
+      },
+      "magic": {
+        "file": "Standing 1H Magic Attack 01.fbx",
+        "from": 0.43,
+        "to": 1.58,
+        "frames": 6
+      },
+      "die": {
+        "file": "Falling Back Death.fbx",
+        "from": 0.16,
+        "to": 1.7,
+        "frames": 6,
+        "keep": 0.4
+      }
+    },
+    "light": 1.5
   }
 }

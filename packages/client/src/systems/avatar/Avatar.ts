@@ -141,6 +141,8 @@ export class Avatar extends Phaser.GameObjects.Container {
   private actionDur = 1;
   private hurtT = 0;
   private downT = 0;
+  private dashT = 1e9;
+  private guarding = false;
   private t = Math.random() * 10;
   private loopT = 0;
   private clip = '';
@@ -233,8 +235,11 @@ export class Avatar extends Phaser.GameObjects.Container {
 
   /** 0 = 站立，1 = 全速奔跑 */
   setMoving(k: number): void { this.moving = Phaser.Math.Clamp(k, 0, 1); }
-  setDashing(v: boolean): void { this.dashing = v; }
-  setGuarding(_v: boolean): void { /* 这套动作里没有格挡 */ }
+  setDashing(v: boolean): void {
+    if (v && !this.dashing) this.dashT = 0;
+    this.dashing = v;
+  }
+  setGuarding(v: boolean): void { this.guarding = v; }
   setDown(v: boolean): void {
     if (v && !this.down) this.downT = 0;
     this.down = v;
@@ -273,9 +278,11 @@ export class Avatar extends Phaser.GameObjects.Container {
     const x = (hand[0] - this.meta.footX) * this.k, y = (hand[1] - this.meta.footY) * this.k;
     // 兵器指向镜头时会透视缩短，别缩得太短
     const len = Phaser.Math.Clamp(hand[3], 0.45, 1);
-    // 长柄兵器平时拄在身侧竖着拿，出招时才跟着手走
-    const pole = (this.kind === '杖' || this.kind === '枪') && (clip === 'idle' || clip === 'run' || clip === 'hurt');
-    const rot = pole ? -1.32 : hand[2];
+    // 站着不出招时兵器按固定的架势拿：长柄拄在身侧，刀剑斜指前上方；出招时才跟着手走
+    const rest = clip === 'idle' || clip === 'run' || clip === 'hurt' || clip === 'guard';
+    const long = this.kind === '杖' || this.kind === '枪';
+    const pole = rest && this.kind !== '扇';
+    const rot = !pole ? hand[2] : long ? -1.32 : clip === 'guard' ? -1.15 : clip === 'run' ? -0.2 : -0.62;
     const k = pole ? 1 : len;
     this.weapon.setPosition(x, y).setRotation(rot).setScale(k * WPN / S, WPN / S);
     this.weaponGlow?.setPosition(x + Math.cos(rot) * this.weaponLen * k * 0.2, y + Math.sin(rot) * this.weaponLen * k * 0.2)
@@ -295,23 +302,26 @@ export class Avatar extends Phaser.GameObjects.Container {
     if (this.down) {
       this.downT += dt;
       clip = 'die'; p = Math.min(0.999, this.downT / clips.die.ms);
+    } else if (this.dashing || this.dashT < clips.dash.ms) {
+      // 遁：一个前滚翻，翻完还在冲就停在收势上
+      this.dashT += dt;
+      clip = 'dash'; p = Math.min(0.999, this.dashT / clips.dash.ms);
     } else if (this.action !== 'none') {
       clip = this.actionClip(this.action); p = this.actionT / this.actionDur;
     } else if (this.hurtT > 0 && this.moving <= 0.05) {
       clip = 'hurt'; p = 1 - this.hurtT / clips.hurt.ms;
     } else {
-      clip = this.moving > 0.05 ? 'run' : 'idle';
+      clip = this.moving > 0.05 ? 'run' : this.guarding ? 'guard' : 'idle';
       if (clip !== this.clip) this.loopT = 0;
       const def = clips[clip];
       // 跑得越快步子越密；冲刺再快一截
-      this.loopT += dt * (clip === 'run' ? (0.55 + 0.45 * this.moving) * (this.dashing ? 1.7 : 1) : 1);
+      this.loopT += dt * (clip === 'run' ? (0.55 + 0.45 * this.moving) : 1);
       const u = this.loopT / def.ms;
       if (def.yoyo) { const m = u % 2; p = m < 1 ? m : 2 - m; } else p = u % 1;
       p = Math.min(0.999, p);
     }
     this.clip = clip;
     this.show(clip, p);
-    this.spr.setRotation(this.dashing && !this.down ? 0.16 : 0);
 
     // 灵珠环绕
     const nOrb = Math.max(1, this.charms.length);
@@ -322,8 +332,10 @@ export class Avatar extends Phaser.GameObjects.Container {
       c.setAlpha(Math.sin(a) > 0 ? 0.95 : 0.45);
     });
     if (this.aura.alpha > 0) this.aura.setAlpha(0.65 + Math.sin(this.t * 3) * 0.25);
-    this.weapon?.setVisible(!this.down);
-    this.weaponGlow?.setVisible(!this.down);
+    // 倒地和翻滚时兵器收起来
+    const armed = !this.down && clip !== 'dash';
+    this.weapon?.setVisible(armed);
+    this.weaponGlow?.setVisible(armed);
     this.setAlpha(this.down ? 0.6 : 1);
   }
 }

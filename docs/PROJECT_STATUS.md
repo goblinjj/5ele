@@ -106,6 +106,7 @@ pnpm dev:client       # http://localhost:5173
 - `tools/render3d/chars.json` 里配置每个角色：镜头角度、每段动作取哪一段时间、取几帧、游戏里播多久。
 - 生成：`cd tools/render3d && npm install`，然后在仓库根目录 `node tools/render3d/render.mjs hero`，输出 `packages/client/public/assets/hero/atlas.{webp,json}`（每帧裁掉透明边后紧凑排版）。
 - 妖异同样生成：`fang / snake / fox / tree / stone / boss` 分别对应獠牙怪、青鳞蛇、赤狐精、树妖、石头精和秘境首领，输出到 `assets/monsters/<名字>/`。妖异模型没有自己的动作文件，用的是老者那套动作按骨骼名重定向（髋部位移按髋高比例缩放）。
+- 另有七种新妖异（`goblin 木魅 / vampire 白面鬼 / skeleton 赤煞 / yaku 溺尸 / peasant 土伯 / guard 铁卫 / rogue 玄冥客`），数值在 `shared/rift/rift.ts` 的 `MONSTERS`，服务器从整张表里随机刷。巨怪用 Creature Pack 的动作，瘦长的用 Zombie Pack，人形用老者那套。
 - `--lineup --sheet <目录>`：把 `model/` 里所有带蒙皮的模型各摆 5 个姿势排成图，用来挑角色。
 - 挑动作区间：`node tools/render3d/render.mjs hero --sheet <目录>`，每段动作出一张带时间标注的预览图。
 - 图集每一帧带 `hand: [x, y, 角度, 缩短比例]`（右手握点与兵器朝向），`Avatar` 据此把程序画的兵器贴到手上；动作表在图集 JSON 的 `char.clips`。

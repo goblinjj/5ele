@@ -10,7 +10,10 @@ const name = process.argv[2];
 const sheetDir = process.argv.includes('--sheet') ? process.argv[process.argv.indexOf('--sheet') + 1] : null;
 const lineup = process.argv.includes('--lineup');
 const all = JSON.parse(fs.readFileSync(path.join(HERE, 'chars.json'), 'utf8'));
-const cfg = lineup ? all.hero : all[name] && { ...(all[name].base ? all[all[name].base] : {}), ...all[name] };
+// 临时配置（挑动作时用）：EXTRA=<json 文件>
+if (process.env.EXTRA) Object.assign(all, JSON.parse(fs.readFileSync(process.env.EXTRA, 'utf8')));
+const resolve = n => all[n] && { ...(all[n].base ? resolve(all[n].base) : {}), ...all[n] };
+const cfg = lineup ? all.hero : resolve(name);
 if (!cfg) { console.error('chars.json 里没有这个角色：' + name); process.exit(1); }
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
@@ -65,16 +68,18 @@ try {
   } else if (sheetDir) {
 
     fs.mkdirSync(sheetDir, { recursive: true });
-    for (const [clip, def] of Object.entries(cfg.clips)) {
-      const dur = info.durations[def.file], n = 16;
-      await page.evaluate(() => window.begin(8, 2));
+    // 每段动作一行、均匀取 8 帧，标上时间
+    const entries = Object.entries(cfg.clips), n = 8;
+    await page.evaluate((c, r) => window.begin(c, r), n, entries.length);
+    for (let r = 0; r < entries.length; r++) {
+      const [clip, def] = entries[r], dur = info.durations[def.file];
       for (let i = 0; i < n; i++) {
         const t = dur * i / n;
-        await page.evaluate((f, t, k, c, r, l) => { window.draw(f, t, k, c, r); window.label(l, c, r); }, def.file, t, def.keep ?? 0, i % 8, Math.floor(i / 8), t.toFixed(2));
+        await page.evaluate((f, t, k, c, r, l) => { window.draw(f, t, k, c, r); window.label(l, c, r); }, def.file, t, def.keep ?? 0, i, r, (i ? '' : clip + ' ') + t.toFixed(2));
       }
-      await save(path.join(sheetDir, `${name}_${clip}.png`), '#3a4350');
       console.log(clip, def.file, dur.toFixed(2) + 's');
     }
+    await save(path.join(sheetDir, `${name}.png`), '#3a4350');
   } else {
     const list = [];
     for (const [clip, def] of Object.entries(cfg.clips)) {

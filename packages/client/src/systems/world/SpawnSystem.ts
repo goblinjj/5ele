@@ -13,6 +13,13 @@ export const MONSTER_ATLAS_MAP: Record<string, string> = {
   '青鳞蛇': 'monster_green_snake',
   '赤狐精': 'monster_red_fox',
   '石头精': 'monster_stone_spirit',
+  '木魅': 'monster_wood_sprite',
+  '白面鬼': 'monster_pale_ghost',
+  '赤煞': 'monster_red_fiend',
+  '溺尸': 'monster_drowned',
+  '土伯': 'monster_earth_lord',
+  '铁卫': 'monster_iron_guard',
+  '玄冥客': 'monster_dark_rogue',
   /** 秘境首领：不分五行，单独一个模型 */
   '首领':   'monster_boss',
 };
@@ -23,6 +30,13 @@ const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
   monster_green_snake:  { json: 'assets/monsters/青鳞蛇/atlas.json', image: 'assets/monsters/青鳞蛇/atlas.webp' },
   monster_red_fox:      { json: 'assets/monsters/赤狐精/atlas.json',  image: 'assets/monsters/赤狐精/atlas.webp' },
   monster_stone_spirit: { json: 'assets/monsters/石头精/atlas.json',  image: 'assets/monsters/石头精/atlas.webp' },
+  monster_wood_sprite: { json: 'assets/monsters/木魅/atlas.json', image: 'assets/monsters/木魅/atlas.webp' },
+  monster_pale_ghost: { json: 'assets/monsters/白面鬼/atlas.json', image: 'assets/monsters/白面鬼/atlas.webp' },
+  monster_red_fiend: { json: 'assets/monsters/赤煞/atlas.json', image: 'assets/monsters/赤煞/atlas.webp' },
+  monster_drowned: { json: 'assets/monsters/溺尸/atlas.json', image: 'assets/monsters/溺尸/atlas.webp' },
+  monster_earth_lord: { json: 'assets/monsters/土伯/atlas.json', image: 'assets/monsters/土伯/atlas.webp' },
+  monster_iron_guard: { json: 'assets/monsters/铁卫/atlas.json', image: 'assets/monsters/铁卫/atlas.webp' },
+  monster_dark_rogue: { json: 'assets/monsters/玄冥客/atlas.json', image: 'assets/monsters/玄冥客/atlas.webp' },
   monster_boss:         { json: 'assets/monsters/首领/atlas.json',   image: 'assets/monsters/首领/atlas.webp' },
 };
 

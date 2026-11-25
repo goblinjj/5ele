@@ -268,6 +268,13 @@ export const MONSTERS: MonsterDef[] = [
   { kind: 'caster',  name: '赤狐精', atlas: '赤狐精', wuxing: Wuxing.FIRE,  hp: 26, dmg: 16, speed: 165, reach: 520, windup: 650, cooldown: 2400, size: 0 },
   { kind: 'brute',   name: '树妖',   atlas: '树妖',   wuxing: Wuxing.WOOD,  hp: 52, dmg: 24, speed: 145, reach: 140, windup: 720, cooldown: 2200, size: 135 },
   { kind: 'slammer', name: '石头精', atlas: '石头精', wuxing: Wuxing.EARTH, hp: 46, dmg: 26, speed: 135, reach: 170, windup: 900, cooldown: 2800, size: 185 },
+  { kind: 'swift',   name: '木魅',   atlas: '木魅',   wuxing: Wuxing.WOOD,  hp: 20, dmg: 12, speed: 285, reach: 115, windup: 400, cooldown: 1400, size: 105 },
+  { kind: 'caster',  name: '白面鬼', atlas: '白面鬼', wuxing: Wuxing.METAL, hp: 30, dmg: 18, speed: 150, reach: 560, windup: 720, cooldown: 2700, size: 0 },
+  { kind: 'charger', name: '赤煞',   atlas: '赤煞',   wuxing: Wuxing.FIRE,  hp: 30, dmg: 22, speed: 185, reach: 340, windup: 560, cooldown: 2500, size: 400 },
+  { kind: 'brute',   name: '溺尸',   atlas: '溺尸',   wuxing: Wuxing.WATER, hp: 58, dmg: 21, speed: 130, reach: 140, windup: 780, cooldown: 2300, size: 140 },
+  { kind: 'brute',   name: '土伯',   atlas: '土伯',   wuxing: Wuxing.EARTH, hp: 64, dmg: 22, speed: 125, reach: 135, windup: 760, cooldown: 2400, size: 130 },
+  { kind: 'slammer', name: '铁卫',   atlas: '铁卫',   wuxing: Wuxing.METAL, hp: 50, dmg: 28, speed: 130, reach: 175, windup: 950, cooldown: 3000, size: 195 },
+  { kind: 'caster',  name: '玄冥客', atlas: '玄冥客', wuxing: Wuxing.WATER, hp: 24, dmg: 15, speed: 175, reach: 500, windup: 600, cooldown: 2200, size: 0 },
 ];
 
 export const ELITE = { hpMult: 7, dmgMult: 1.6, sizeMult: 1.35, speedMult: 1.08 } as const;
