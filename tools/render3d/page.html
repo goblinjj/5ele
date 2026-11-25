@@ -6,7 +6,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // 渲染页：由 render.mjs 驱动。先 setup(配置) 载入模型与动作，再逐帧 pose() + 画进图集画布。
 const SS = 2; // 超采样倍数
-let renderer, scene, cam, root, mixer, hips, hips0, bones = {}, actions = {}, cfg, current;
+let renderer, scene, cam, root, mixer, hips, bones = {}, actions = {}, cfg, current;
 const loader = new FBXLoader();
 
 window.setup = async (c) => {
@@ -83,19 +83,37 @@ function screen(p) { // 世界坐标 → 单元格内像素（原点在左上）
   return [(v.x * 0.5 + 0.5) * cfg.cell, (-v.y * 0.5 + 0.5) * cfg.cell];
 }
 
-/** 摆到某个动作的某一刻；keep = 保留多少根骨骼的水平位移（0 = 原地） */
-function pose(file, t, keep) {
-  if (current !== file) { mixer.stopAllAction(); actions[file].reset().play(); current = file; hips0 = null; }
-  mixer.setTime(0); root.updateMatrixWorld(true);
-  const p0 = hips.position.clone();
+/**
+ * 摆到某个动作的某一刻。髋部的水平位移：
+ *  - keep 是数字：只保留这个比例（倒地这类要挪位置、又不能挪出画面的动作）
+ *  - 否则：保留动作自身的重心晃动，只扣掉 from→to 之间的匀速漂移。
+ *    这样没勾 In Place 的跑步会变成原地跑，而待机、出招时脚不会在地上打滑。
+ */
+const anchors = {};
+function pose(file, t, keep, from, to) {
+  if (current !== file) { mixer.stopAllAction(); actions[file].reset().play(); current = file; }
+  const dur = actions[file].getClip().duration;
+  from = from ?? 0; to = to ?? dur;
+  const key = file + '|' + from + '|' + to;
+  let an = anchors[key];
+  if (!an) {
+    root.position.set(0, 0, 0);
+    mixer.setTime(to); const p1 = hips.position.clone();
+    mixer.setTime(from); const p0 = hips.position.clone();
+    root.updateMatrixWorld(true);
+    an = anchors[key] = { p0, p1, w: hips.getWorldPosition(new THREE.Vector3()) };
+  }
   mixer.setTime(t);
-  hips.position.x = p0.x + (hips.position.x - p0.x) * keep;
-  hips.position.z = p0.z + (hips.position.z - p0.z) * keep;
-  // 起始帧的水平偏移也归零，保证所有动作脚下是同一个原点
-  root.updateMatrixWorld(true);
-  hips.getWorldPosition(a);
-  if (!hips0) { const s = hips.position.clone(); mixer.setTime(0); root.updateMatrixWorld(true); hips.getWorldPosition(b); hips0 = b.clone(); hips.position.copy(s); mixer.setTime(t); hips.position.x = p0.x + (hips.position.x - p0.x) * keep; hips.position.z = p0.z + (hips.position.z - p0.z) * keep; }
-  root.position.set(-hips0.x, 0, -hips0.z);
+  if (typeof keep === 'number') {
+    hips.position.x = an.p0.x + (hips.position.x - an.p0.x) * keep;
+    hips.position.z = an.p0.z + (hips.position.z - an.p0.z) * keep;
+  } else {
+    const u = to > from ? (t - from) / (to - from) : 0;
+    hips.position.x -= (an.p1.x - an.p0.x) * u;
+    hips.position.z -= (an.p1.z - an.p0.z) * u;
+  }
+  // 起始帧的髋部落在原点上方，保证所有动作脚下是同一个位置
+  root.position.set(-an.w.x, 0, -an.w.z);
   root.updateMatrixWorld(true);
 }
 
@@ -114,8 +132,8 @@ function hand() {
 }
 
 window.begin = (cols, rows) => { sheet.width = cols * cfg.cell; sheet.height = rows * cfg.cell; };
-window.draw = (file, t, keep, col, row) => {
-  pose(file, t, keep);
+window.draw = (file, t, keep, col, row, from, to) => {
+  pose(file, t, keep, from, to);
   renderer.render(scene, cam);
   const ctx = sheet.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
@@ -124,8 +142,8 @@ window.draw = (file, t, keep, col, row) => {
 };
 // 图集模式：每帧裁掉四周的透明边，最后紧凑排版
 const crops = [];
-window.capture = (file, t, keep) => {
-  pose(file, t, keep);
+window.capture = (file, t, keep, from, to) => {
+  pose(file, t, keep, from, to);
   renderer.render(scene, cam);
   const n = cfg.cell, c = document.createElement('canvas'); c.width = c.height = n;
   const ctx = c.getContext('2d', { willReadFrequently: true });

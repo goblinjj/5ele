@@ -48,7 +48,7 @@ try {
       try {
         const inf = await page.evaluate(c => window.setup(c), { ...cfg, height: 0, zoom: 0.8, skin, clips, base: `/${cfg.dir}/` });
         await page.evaluate((n) => window.begin(n, 1), shots.length);
-        for (let i = 0; i < shots.length; i++) await page.evaluate((f, t, c) => { window.draw(f, t, 0, c, 0); }, shots[i][0], shots[i][1], i);
+        for (let i = 0; i < shots.length; i++) await page.evaluate((f, t, c) => { window.draw(f, t, null, c, 0); }, shots[i][0], shots[i][1], i);
         await page.evaluate((l) => window.label(l, 0, 0), `${skin}  h=${inf.height.toFixed(0)}`);
         urls.push(await page.evaluate(() => window.finish('#3a4350')));
         console.log(skin, inf.height.toFixed(1), JSON.stringify(inf.maps));
@@ -75,7 +75,7 @@ try {
       const [clip, def] = entries[r], dur = info.durations[def.file];
       for (let i = 0; i < n; i++) {
         const t = dur * i / n;
-        await page.evaluate((f, t, k, c, r, l) => { window.draw(f, t, k, c, r); window.label(l, c, r); }, def.file, t, def.keep ?? 0, i, r, (i ? '' : clip + ' ') + t.toFixed(2));
+        await page.evaluate((f, t, k, c, r, l) => { window.draw(f, t, k, c, r); window.label(l, c, r); }, def.file, t, def.keep ?? null, i, r, (i ? '' : clip + ' ') + t.toFixed(2));
       }
       console.log(clip, def.file, dur.toFixed(2) + 's');
     }
@@ -88,11 +88,11 @@ try {
       for (let i = 0; i < def.frames; i++) {
         // 循环动作首尾相接，不取终点；一次性动作取满首尾
         const k = def.pingpong ? 1 - Math.abs(1 - 2 * i / def.frames) : def.loop && !def.yoyo ? i / def.frames : i / (def.frames - 1);
-        list.push({ clip, i, file: def.file, t: from + (to - from) * k, keep: def.keep ?? 0 });
+        list.push({ clip, i, file: def.file, t: from + (to - from) * k, keep: def.keep ?? null, from, to });
       }
     }
     const hands = [];
-    for (const f of list) hands.push(await page.evaluate((file, t, k) => window.capture(file, t, k), f.file, f.t, f.keep));
+    for (const f of list) hands.push(await page.evaluate((file, t, k, a, b) => window.capture(file, t, k, a, b), f.file, f.t, f.keep, f.from, f.to));
     const packed = await page.evaluate(w => window.pack(w), cfg.atlasWidth ?? 2048);
     const frames = {};
     const prefix = cfg.prefix ?? '';
