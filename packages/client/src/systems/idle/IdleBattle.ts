@@ -55,6 +55,11 @@ interface Mob {
   /** 离下一次出手还有多久；正在播哪段动作 */
   atkT: number;
   anim: string;
+  /** 被惊动了没有；没被惊动时在原地附近晃悠 */
+  aggro: boolean;
+  roamX: number;
+  roamY: number;
+  roamT: number;
 }
 
 const SCALE = ENEMY_SCALE;
@@ -64,9 +69,11 @@ const FOOT = 307 * SCALE * 0.36;
 const WALK = 170;
 /** 演出用的血量：妖异每下打掉多少、每秒回多少、倒下后躺多久 */
 const HP_MAX = 100;
-const MOB_DMG = 11;
+const MOB_DMG = 9;
 const REGEN = 1.5;
 const DOWN_MS = 3500;
+/** 残魂走到多近，妖异才会扑上来 */
+const AGGRO = 210;
 
 export interface IdleBounds { left: number; top: number; right: number; bottom: number }
 
@@ -156,15 +163,20 @@ export class IdleBattle {
     const def = MONSTERS[Math.floor(Math.random() * MONSTERS.length)];
     const atlas = MONSTER_ATLAS_MAP[def.atlas];
     if (!atlas || !this.scene.textures.exists(atlas)) return;
+    // 散落在场地各处，离残魂远一些；凭空凝出来
     const b = this.bounds;
-    const side = Math.random();
-    let x: number, y: number;
-    if (side < 0.4) { x = b.left - 130; y = Phaser.Math.Between(b.top, b.bottom); }
-    else if (side < 0.8) { x = b.right + 130; y = Phaser.Math.Between(b.top, b.bottom); }
-    else { x = Phaser.Math.Between(b.left, b.right); y = b.top - 150; }
+    let x = 0, y = 0;
+    for (let i = 0; i < 8; i++) {
+      x = Phaser.Math.Between(b.left - 30, b.right + 30);
+      y = Phaser.Math.Between(b.top, b.bottom);
+      if (Math.hypot(x - this.x, y - this.y) > 300) break;
+    }
     const spr = this.scene.add.sprite(x, y - FOOT, atlas, 'character_idle_0').setScale(SCALE).setDepth(y);
-    if (this.scene.anims.exists(`${atlas}_run`)) spr.play(`${atlas}_run`);
+    if (this.scene.anims.exists(`${atlas}_idle`)) spr.play(`${atlas}_idle`);
     const shadow = this.scene.add.image(x, y, 'fx_shadow').setScale(SCALE * 3).setDepth(y - 1);
+    spr.setAlpha(0); shadow.setAlpha(0);
+    this.scene.tweens.add({ targets: [spr, shadow], alpha: 1, duration: 420 });
+    this.fx.flashGlow(x, y - FOOT, 70, WX_TINT[def.wuxing], 380, 0.4);
     this.mobs.push({
       def, spr, shadow, x, y,
       hp: this.form.melee && this.form.kind !== '刃' ? 6 : 7,
@@ -173,12 +185,14 @@ export class IdleBattle {
       speed: def.speed * 0.62,
       dead: false,
       atkT: 200 + Math.random() * 400,
-      anim: 'run',
+      anim: 'idle',
+      aggro: false, roamX: x, roamY: y, roamT: 800 + Math.random() * 2500,
     });
   }
 
   private hit(m: Mob, power: number = 1): void {
     if (m.dead) return;
+    m.aggro = true;
     m.hp -= power;
     const d = Math.hypot(m.x - this.x, m.y - this.y) || 1;
     m.x += (m.x - this.x) / d * 10;
@@ -373,6 +387,25 @@ export class IdleBattle {
         if (m.anim !== 'atk' && m.anim !== 'magic') this.setAnim(m, 'idle');
       } else if (m.anim === 'atk' || m.anim === 'magic') {
         // 出手的动作没放完，站着不动
+      } else if (!m.aggro) {
+        // 靠近了才出击；平时在原地附近慢慢晃
+        if (d < AGGRO) { m.aggro = true; continue; }
+        m.roamT -= dt;
+        if (m.roamT <= 0) {
+          m.roamT = 2400 + Math.random() * 3000;
+          m.roamX = Phaser.Math.Clamp(m.x + Phaser.Math.Between(-70, 70), this.bounds.left - 30, this.bounds.right + 30);
+          m.roamY = Phaser.Math.Clamp(m.y + Phaser.Math.Between(-70, 70), this.bounds.top, this.bounds.bottom);
+        }
+        const rx = m.roamX - m.x, ry = m.roamY - m.y, rd = Math.hypot(rx, ry);
+        if (rd > 4) {
+          const step = Math.min(rd, m.speed * 0.35 * sec);
+          m.x += rx / rd * step; m.y += ry / rd * step;
+          this.setAnim(m, 'run');
+          m.spr.setPosition(m.x, m.y - FOOT).setFlipX(rx < 0).setDepth(m.y);
+          m.shadow.setPosition(m.x, m.y).setDepth(m.y - 1);
+          continue;
+        }
+        this.setAnim(m, 'idle');
       } else if (d > m.stop + 4) {
         const step = Math.min(d - m.stop, m.speed * sec);
         m.x += dx / d * step; m.y += dy / d * step;
@@ -389,8 +422,8 @@ export class IdleBattle {
 
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
-      this.spawnT = 450 + Math.random() * 650;
-      if (this.mobs.filter(m => !m.dead).length < 9) this.spawn();
+      this.spawnT = 900 + Math.random() * 1200;
+      if (this.mobs.filter(m => !m.dead).length < 5) this.spawn();
     }
     if (down) return;
     this.skillT -= dt;

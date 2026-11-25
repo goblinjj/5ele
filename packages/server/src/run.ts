@@ -6,7 +6,7 @@ import {
   PROGRESS_GOAL, PROGRESS_NORMAL, PROGRESS_ELITE,
   FIRE, GUARD, DODGE, PARRY_MULT, STAGGER_MS, STAGGER_BONUS, PERFECT_DODGE_CRITS,
   REVIVE_RADIUS, REVIVE_MS,
-  RIFT_VIEW, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
+  RIFT_VIEW, PACING, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
   attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
@@ -96,6 +96,13 @@ interface Enemy {
   burnDps: number;
   burnOwner: RunPlayer | null;
   bossStep: number;
+  /** 被惊动了没有；没被惊动时在出生点附近晃悠 */
+  aggro: boolean;
+  homeX: number;
+  homeY: number;
+  roamX: number;
+  roamY: number;
+  roamT: number;
   dead: boolean;
 }
 
@@ -322,7 +329,7 @@ export class Run {
   // ───────────────────────── 妖异生成 ─────────────────────────
 
   private get enemyCap(): number {
-    return Math.min(56, 30 + 8 * (this.alivePlayers.length - 1));
+    return Math.min(26, 14 + 4 * (this.alivePlayers.length - 1));
   }
 
   private updateSpawns(dt: number): void {
@@ -332,6 +339,12 @@ export class Run {
     const alive = [...this.enemies.values()].filter(e => !e.dead).length;
     const cap = this.boss ? Math.round(this.enemyCap * 0.45) : this.enemyCap;
     if (alive < cap * 0.75) this.spawnPack();
+    // 没被惊动、又离所有人都很远的：撤掉，好在人附近换一批（客户端两秒收不到它的消息就会清掉）
+    const ps = this.alivePlayers;
+    for (const e of this.enemies.values()) {
+      if (e.dead || e.aggro || e.tier === 2) continue;
+      if (ps.every(p => dist2(e.x, e.y, p.x, p.y) > PACING.despawn ** 2)) this.enemies.delete(e.id);
+    }
   }
 
   private spawnPack(distance?: number): void {
@@ -346,7 +359,7 @@ export class Run {
     const d = distance ?? edge + rand(90, 260);
     const cx = clampW(anchor.x + Math.cos(ang) * d);
     const cy = clampW(anchor.y + Math.sin(ang) * d);
-    const size = { swift: [5, 7], caster: [3, 4], charger: [3, 4], brute: [2, 3], slammer: [2, 3] }[def.kind];
+    const size = { swift: [3, 4], caster: [2, 3], charger: [2, 3], brute: [1, 2], slammer: [1, 2] }[def.kind];
     const n = Math.round(rand(size[0], size[1]));
     const eliteAt = Math.random() < 0.16 ? 0 : -1;
     const list: SpawnInfo[] = [];
@@ -360,7 +373,7 @@ export class Run {
   private makeEnemy(k: number, tier: MonsterTier, x: number, y: number): Enemy {
     const def = MONSTERS[k];
     const party = partyHpMult(this.alivePlayers.length);
-    let hp = def.hp * tierHpMult(this.tier) * party;
+    let hp = def.hp * tierHpMult(this.tier) * party * PACING.hpMult;
     let dmg = def.dmg * tierDmgMult(this.tier);
     let size = def.size;
     let speed = def.speed * rand(0.92, 1.08);
@@ -378,6 +391,7 @@ export class Run {
       target: null, retarget: 0, attack: null, lvx: 0, lvy: 0,
       stagger: 0, burnMs: 0, burnDps: 0, burnOwner: null,
       bossStep: 0, dead: false,
+      aggro: tier === 2, homeX: x, homeY: y, roamX: x, roamY: y, roamT: rand(600, 3000),
     };
     this.enemies.set(e.id, e);
     return e;
@@ -405,9 +419,22 @@ export class Run {
     const sec = dt / 1000;
 
     e.retarget -= dt;
-    if (e.retarget <= 0 || !e.target || e.target.down || e.target.left) {
-      e.retarget = 500;
-      e.target = this.nearestPlayer(e.x, e.y);
+    if (e.retarget <= 0 || (e.target && (e.target.down || e.target.left))) {
+      e.retarget = 350;
+      const near = this.nearestPlayer(e.x, e.y);
+      const d2 = near ? dist2(e.x, e.y, near.x, near.y) : Infinity;
+      if (e.tier === 2) {
+        e.target = near;
+      } else if (!e.aggro) {
+        // 靠近了才出击
+        if (near && d2 <= (e.tier === 1 ? PACING.eliteAggro : PACING.aggro) ** 2) this.alert(e, near);
+      } else if (!near || d2 > PACING.leash ** 2) {
+        // 追丢了：就地停下，重新晃悠
+        e.aggro = false; e.target = null;
+        e.homeX = e.x; e.homeY = e.y; e.roamX = e.x; e.roamY = e.y;
+      } else {
+        e.target = near;
+      }
     }
 
     if (e.stagger > 0) {
@@ -418,6 +445,7 @@ export class Run {
 
     switch (e.state) {
       case 'chase': {
+        if (!e.aggro) { this.wander(e, dt); break; }
         e.cd -= dt;
         const t = e.target;
         if (!t) return;
@@ -470,6 +498,34 @@ export class Run {
         break;
       }
     }
+  }
+
+  /** 惊动一只妖异：它和身边的同伴一起扑向这个人 */
+  private alert(e: Enemy, p: RunPlayer): void {
+    for (const o of this.enemies.values()) {
+      if (o.dead || o.aggro) continue;
+      if (o !== e && dist2(o.x, o.y, e.x, e.y) > PACING.packAggro ** 2) continue;
+      o.aggro = true;
+      o.target = p;
+      // 回过神来要一小会儿，不会刚照面就出手
+      o.cd = Math.max(o.cd, rand(350, 800));
+    }
+  }
+
+  /** 没被惊动：在出生点附近慢悠悠地晃 */
+  private wander(e: Enemy, dt: number): void {
+    e.roamT -= dt;
+    if (e.roamT <= 0) {
+      e.roamT = rand(2600, 5600);
+      e.roamX = clampW(e.homeX + rand(-120, 120));
+      e.roamY = clampW(e.homeY + rand(-120, 120));
+    }
+    const dx = e.roamX - e.x, dy = e.roamY - e.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 6) return;
+    const step = Math.min(d, e.speed * 0.3 * dt / 1000);
+    e.x += (dx / d) * step;
+    e.y += (dy / d) * step;
   }
 
   private nearestPlayer(x: number, y: number): RunPlayer | null {
@@ -563,6 +619,8 @@ export class Run {
       const ang = (i / n) * Math.PI * 2;
       const e = this.makeEnemy(Math.floor(Math.random() * MONSTERS.length), 0,
         clampW(boss.x + Math.cos(ang) * 200), clampW(boss.y + Math.sin(ang) * 200));
+      // 首领召来的，出来就动手
+      e.aggro = true;
       list.push(this.spawnInfo(e));
     }
     this.broadcast({ t: 'spawn', list });
@@ -581,6 +639,8 @@ export class Run {
 
   private damage(p: RunPlayer, e: Enemy, amt: number, crit: boolean, burn: boolean = false): void {
     if (e.dead) return;
+    // 挨了打自然就被惊动了
+    if (!e.aggro) this.alert(e, p);
     e.hp -= amt;
     this.dmgBatch.push(e.id, amt, crit ? 1 : 0, p.idx, burn ? 1 : 0);
     if (e.hp <= 0) this.kill(e, p);

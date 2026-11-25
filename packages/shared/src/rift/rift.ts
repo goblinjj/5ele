@@ -19,8 +19,15 @@ export const SNAPSHOT_EVERY = 2;
 
 /** 净化进度满 100 时病变核心现身 */
 export const PROGRESS_GOAL = 100;
-export const PROGRESS_NORMAL = 0.45;
-export const PROGRESS_ELITE = 5;
+export const PROGRESS_NORMAL = 1.4;
+export const PROGRESS_ELITE = 9;
+/**
+ * 砍怪的节奏：妖异少而耐打，一只要砍上好几下；平时在原地晃悠，人走近了才扑上来。
+ *  - hpMult：普通妖异血量在图鉴数值上再乘多少
+ *  - aggro / eliteAggro：多近才会被惊动；packAggro：一只被惊动，这么近的同伴一起上
+ *  - leash：追出这么远就放弃；despawn：没被惊动、离所有人都这么远的，悄悄撤掉换一批
+ */
+export const PACING = { hpMult: 3, aggro: 380, eliteAggro: 480, packAggro: 280, leash: 980, despawn: 2100 } as const;
 
 // ───────────────────────── 五行之道 ─────────────────────────
 
@@ -155,11 +162,11 @@ export const QI_START = 50;
 /** 一团能量的分量：层数越高越足；魁首 ×6，病变核心散成五行各一团 */
 export function orbValue(tier: number, mtier: MonsterTier): number {
   const v = 1 + 0.6 * (tier - 1);
-  return Math.max(1, Math.round(v * (mtier === 2 ? 8 : mtier === 1 ? 6 : 1)));
+  return Math.max(1, Math.round(v * (mtier === 2 ? 16 : mtier === 1 ? 12 : 3)));
 }
 /** 一团能量化成多少灵力：生我之气最补，克我之气难以炼化 */
 export function qiGain(path: Wuxing, wx: Wuxing, mtier: MonsterTier): number {
-  const base = mtier === 0 ? 6 : 20;
+  const base = mtier === 0 ? 14 : 30;
   let m = 1;
   if (WUXING_GENERATES[wx] === path) m = 1.5;
   else if (wx === path) m = 1.2;
@@ -282,7 +289,7 @@ export const MONSTERS: MonsterDef[] = [
   { kind: 'caster',  name: '玄冥客', atlas: '玄冥客', wuxing: Wuxing.WATER, hp: 24, dmg: 15, speed: 175, reach: 500, windup: 600, cooldown: 2200, size: 0 },
 ];
 
-export const ELITE = { hpMult: 7, dmgMult: 1.6, sizeMult: 1.35, speedMult: 1.08 } as const;
+export const ELITE = { hpMult: 4, dmgMult: 1.6, sizeMult: 1.35, speedMult: 1.08 } as const;
 export const BOSS = { hpMult: 42, dmgMult: 1.5, speed: 120, size: 260 } as const;
 export const ENEMY_BOLT_SPEED = 520;
 
