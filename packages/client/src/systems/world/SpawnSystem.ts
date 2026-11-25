@@ -13,14 +13,17 @@ export const MONSTER_ATLAS_MAP: Record<string, string> = {
   '青鳞蛇': 'monster_green_snake',
   '赤狐精': 'monster_red_fox',
   '石头精': 'monster_stone_spirit',
+  /** 秘境首领：不分五行，单独一个模型 */
+  '首领':   'monster_boss',
 };
 
 const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
-  monster_tree_demon:   { json: 'assets/monsters/树妖/atlas.json',  image: 'assets/monsters/树妖/atlas.png' },
-  monster_fang_beast:   { json: 'assets/monsters/獠牙怪/atlas.json', image: 'assets/monsters/獠牙怪/atlas.png' },
-  monster_green_snake:  { json: 'assets/monsters/青鳞蛇/atlas.json', image: 'assets/monsters/青鳞蛇/atlas.png' },
-  monster_red_fox:      { json: 'assets/monsters/赤狐精/atlas.json',  image: 'assets/monsters/赤狐精/atlas.png' },
-  monster_stone_spirit: { json: 'assets/monsters/石头精/atlas.json',  image: 'assets/monsters/石头精/atlas.png' },
+  monster_tree_demon:   { json: 'assets/monsters/树妖/atlas.json',  image: 'assets/monsters/树妖/atlas.webp' },
+  monster_fang_beast:   { json: 'assets/monsters/獠牙怪/atlas.json', image: 'assets/monsters/獠牙怪/atlas.webp' },
+  monster_green_snake:  { json: 'assets/monsters/青鳞蛇/atlas.json', image: 'assets/monsters/青鳞蛇/atlas.webp' },
+  monster_red_fox:      { json: 'assets/monsters/赤狐精/atlas.json',  image: 'assets/monsters/赤狐精/atlas.webp' },
+  monster_stone_spirit: { json: 'assets/monsters/石头精/atlas.json',  image: 'assets/monsters/石头精/atlas.webp' },
+  monster_boss:         { json: 'assets/monsters/首领/atlas.json',   image: 'assets/monsters/首领/atlas.webp' },
 };
 
 /** 各类妖异的基础移速 */

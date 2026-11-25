@@ -450,13 +450,12 @@ export class RiftScene extends Phaser.Scene {
   private spawnEnemy(s: SpawnInfo): void {
     if (this.enemies.has(s.id)) return;
     const def = MONSTERS[s.k];
-    const atlas = MONSTER_ATLAS_MAP[def.atlas];
+    const atlas = MONSTER_ATLAS_MAP[s.tier === 2 ? '首领' : def.atlas];
     const has = !!atlas && this.textures.exists(atlas);
     const spr = has ? this.add.sprite(s.x, s.y, atlas, 'character_idle_0') : this.add.sprite(s.x, s.y, '__DEFAULT');
     const scale = s.tier === 2 ? BOSS_SCALE : s.tier === 1 ? ELITE_SCALE : ENEMY_SCALE;
     if (has) spr.play(`${atlas}_idle`);
     const tint = WX_TINT[def.wuxing];
-    if (s.tier === 2) spr.setTint(0xc9a0ff);
     if (s.tier > 0 && spr.preFX) {
       spr.preFX.setPadding(24);
       spr.preFX.addGlow(s.tier === 2 ? 0xc9a0ff : tint, s.tier === 2 ? 4 : 3, 0, false, 0.1, 10);
@@ -491,7 +490,7 @@ export class RiftScene extends Phaser.Scene {
     };
     en.hpBg.setVisible(false); en.hpFill.setVisible(false); en.burnFx.setVisible(false);
     if (!animate) { destroy(); return; }
-    const atlas = MONSTER_ATLAS_MAP[en.def.atlas];
+    const atlas = MONSTER_ATLAS_MAP[en.tier === 2 ? '首领' : en.def.atlas];
     if (atlas && this.anims.exists(`${atlas}_die`)) en.spr.play(`${atlas}_die`, true);
     en.spr.setTintFill(0xffffff);
     this.time.delayedCall(70, () => { if (en.spr.active) en.spr.clearTint(); });
@@ -556,7 +555,7 @@ export class RiftScene extends Phaser.Scene {
       if (mine) continue;
       // 同伴打中的：闪白 + 压扁
       en.spr.setTintFill(0xffffff);
-      this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
+      this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); } });
       if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
     }
   }
@@ -659,7 +658,7 @@ export class RiftScene extends Phaser.Scene {
     this.teles.push({ a, start: now, end: now + a.windup, fill, edge, sh });
 
     if (en) {
-      const atlas = MONSTER_ATLAS_MAP[en.def.atlas];
+      const atlas = MONSTER_ATLAS_MAP[en.tier === 2 ? '首领' : en.def.atlas];
       const anim = en.def.kind === 'caster' || a.shape === 'bolt' ? 'magic' : 'atk';
       if (atlas && this.anims.exists(`${atlas}_${anim}`)) {
         en.spr.play(`${atlas}_${anim}`, true);
@@ -976,7 +975,7 @@ export class RiftScene extends Phaser.Scene {
     // 受击后仰：朝飞来方向的反向歪一下
     en.tilt += (dx >= 0 ? 1 : -1) * (en.tier === 2 ? 0.04 : 0.22) * power;
     en.spr.setTintFill(0xffffff);
-    this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); if (en.tier === 2) en.spr.setTint(0xc9a0ff); } });
+    this.time.delayedCall(60, () => { if (en.spr.active) { en.spr.clearTint(); } });
     if (en.tier !== 2) this.fx.squash(en.spr, en.scale, 1.12, 0.88, 120);
     const now = this.time.now;
     if (now - this.hitSfxT > 70) {
@@ -1062,29 +1061,29 @@ export class RiftScene extends Phaser.Scene {
     switch (id) {
       case 'ring': {
         const r = R;
-        sh.play('fire', x, y, r * 2.25, 820, FX_DEPTH - 7);
+        sh.play('fire', x, y, r * 2.25, 620, FX_DEPTH - 7);
         if (lite) { this.fx.ring(x, y, r, FIRE_TINT, 460, 0.1); this.fx.ring(x, y, r * 0.75, 0xffd27a, 380, 0.1); }
-        this.fx.radial(x, y, r, FIRE_TINT, mine ? 26 : 12);
-        this.fx.flashGlow(x, y, r, FIRE_TINT, 360, lite ? 0.6 : 0.3);
-        if (mine) { sfx.skill(Wuxing.FIRE); this.fx.shake(0.004, 120); }
+        this.fx.radial(x, y, r, FIRE_TINT, mine ? 10 : 5);
+        this.fx.flashGlow(x, y, r * 0.5, FIRE_TINT, 260, lite ? 0.4 : 0.12);
+        if (mine) sfx.skill(Wuxing.FIRE);
         break;
       }
       case 'meteor': {
         const r = R;
         const mark = this.add.image(x, y, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
         this.tweens.add({ targets: mark, alpha: 0.7, duration: 200 });
-        const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
+        const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5).setDepth(FX_DEPTH);
         this.tweens.add({
           targets: rock, x, y, duration: FIRE.meteorDelay, ease: 'Quad.easeIn',
-          onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 2),
+          onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 1),
           onComplete: () => {
             rock.destroy();
             mark.destroy();
-            sh.play('blast', x, y, r * 2.9, 760, FX_DEPTH - 6);
-            this.fx.flashGlow(x, y, r * 1.2, 0xffd27a, 420, lite ? 0.9 : 0.5);
+            sh.play('blast', x, y, r * 2.4, 560, FX_DEPTH - 6);
+            this.fx.flashGlow(x, y, r * 0.6, 0xffd27a, 280, lite ? 0.5 : 0.2);
             if (lite) this.fx.ring(x, y, r, FIRE_TINT, 420, 0.2);
-            this.fx.radial(x, y, r, FIRE_TINT, mine ? 30 : 14);
-            if (mine) { sfx.slam(); this.fx.shake(0.008, 180); }
+            this.fx.radial(x, y, r, FIRE_TINT, mine ? 12 : 6);
+            if (mine) { sfx.slam(); this.fx.shake(0.003, 100); }
           },
         });
         if (mine) sfx.skill(Wuxing.FIRE);
@@ -1095,7 +1094,7 @@ export class RiftScene extends Phaser.Scene {
         const targets = [...this.enemies.values()].filter(e => e.hp > 0 && (e.x - x) ** 2 + (e.y - y) ** 2 < (R + 60) ** 2)
           .sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - (b.x - x) ** 2 - (b.y - y) ** 2).slice(0, bladeCount(lv));
         const blades = bladeCount(lv);
-        this.fx.flashGlow(x, y - 60, 150, 0xfff3c0, 260, 0.8);
+        this.fx.flashGlow(x, y - 60, 80, 0xfff3c0, 200, 0.3);
         if (lite) this.fx.ring(x, y, 160, 0xf2e6c2, 300, 0.2);
         for (let i = 0; i < blades; i++) {
           const en = targets.length ? targets[i % targets.length] : null;
@@ -1109,46 +1108,46 @@ export class RiftScene extends Phaser.Scene {
             sh.play('blade', (sx + ex) / 2, (sy + ey) / 2, len, 300, FX_DEPTH - 5, ang);
             if (lite) this.fx.slash((sx + ex) / 2, (sy + ey) / 2, ang, len, 0xfff3c0);
             this.time.delayedCall(150, () => {
-              this.fx.burst(ex, ey, 0xfff3c0, 8);
-              this.fx.slash(ex, ey, ang + 1.2, 150, 0xffffff);
+              this.fx.burst(ex, ey, 0xfff3c0, 4);
+              this.fx.slash(ex, ey, ang + 1.2, 80, 0xffffff);
               if (en?.spr.active && mine) this.hitFeedback(en, Math.cos(ang), Math.sin(ang), 1.4);
             });
           });
         }
-        if (mine) { sfx.skill(Wuxing.METAL); this.fx.shake(0.004, 260); }
+        if (mine) sfx.skill(Wuxing.METAL);
         break;
       }
       case 'frost': {
         const r = R;
-        sh.play('frost', x, y, r * 2.25, 1500, FX_DEPTH - 8);
+        sh.play('frost', x, y, r * 2.25, 1000, FX_DEPTH - 8);
         if (lite) { this.fx.ring(x, y, r, 0x8fd8ff, 480, 0.1); this.fx.ring(x, y, r * 0.6, 0xffffff, 380, 0.1); }
-        this.fx.radial(x, y, r, 0x8fd8ff, mine ? 22 : 10);
-        this.fx.flashGlow(x, y, r, 0x8fd8ff, 420, lite ? 0.6 : 0.3);
-        if (mine) { sfx.skill(Wuxing.WATER); this.fx.shake(0.003, 140); }
+        this.fx.radial(x, y, r, 0x8fd8ff, mine ? 8 : 4);
+        this.fx.flashGlow(x, y, r * 0.5, 0x8fd8ff, 300, lite ? 0.4 : 0.12);
+        if (mine) sfx.skill(Wuxing.WATER);
         break;
       }
       case 'bloom': {
         const r = R;
         const at = who ?? { x, y };
-        sh.play('bloom', x, y, r * 2.25, 1300, FX_DEPTH - 8, 0, who ? () => at : mine ? () => ({ x: this.x, y: this.y }) : undefined);
+        sh.play('bloom', x, y, r * 2.25, 950, FX_DEPTH - 8, 0, who ? () => at : mine ? () => ({ x: this.x, y: this.y }) : undefined);
         if (lite) this.fx.ring(x, y, r, 0x6ee7a0, 520, 0.15);
-        this.fx.ember(x, y, 0x6ee7a0, mine ? 20 : 10, r * 0.7);
-        this.fx.flashGlow(x, y - 30, 160, 0x6ee7a0, 500, 0.5);
+        this.fx.ember(x, y, 0x6ee7a0, mine ? 8 : 4, r * 0.7);
+        this.fx.flashGlow(x, y - 30, 90, 0x6ee7a0, 360, 0.2);
         if (mine) sfx.skill(Wuxing.WOOD);
         break;
       }
       case 'bastion': {
         const r = R;
         // 震地一下，然后护罩跟着人走到时间结束
-        this.fx.ring(x, y, r, 0xe3b23c, 420, 0.15);
-        this.fx.radial(x, y, r, 0xe3b23c, mine ? 22 : 10);
+        this.fx.ring(x, y, r, 0xe3b23c, 360, 0.08);
+        this.fx.radial(x, y, r, 0xe3b23c, mine ? 8 : 4);
         const follow = mine ? () => ({ x: this.x, y: this.y - 30 }) : who ? () => ({ x: who.x, y: who.y - 30 }) : undefined;
-        sh.play('bastion', x, y - 30, 250, SK.bastion.ms, FX_DEPTH - 4, 0, follow);
+        sh.play('bastion', x, y - 30, 200, SK.bastion.ms, FX_DEPTH - 4, 0, follow);
         if (lite && mine) {
           const dome = this.add.image(x, y - 30, 'fx_ring').setTint(0xe3b23c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.85).setAlpha(0.8).setDepth(FX_DEPTH - 4);
           this.tweens.add({ targets: dome, alpha: 0.35, duration: 500, yoyo: true, repeat: Math.floor(SK.bastion.ms / 1000) - 1, onUpdate: () => dome.setPosition(this.x, this.y - 30), onComplete: () => dome.destroy() });
         }
-        if (mine) { sfx.skill(Wuxing.EARTH); sfx.slam(); this.fx.shake(0.006, 160); }
+        if (mine) { sfx.skill(Wuxing.EARTH); sfx.slam(); }
         break;
       }
     }
@@ -1410,7 +1409,7 @@ export class RiftScene extends Phaser.Scene {
         const want = moving ? 'run' : 'idle';
         if (en.anim !== want) {
           en.anim = want;
-          const atlas = MONSTER_ATLAS_MAP[en.def.atlas];
+          const atlas = MONSTER_ATLAS_MAP[en.tier === 2 ? '首领' : en.def.atlas];
           if (atlas && this.anims.exists(`${atlas}_${want}`)) { en.spr.play(`${atlas}_${want}`, true); en.spr.anims.timeScale = 1; }
         }
       }

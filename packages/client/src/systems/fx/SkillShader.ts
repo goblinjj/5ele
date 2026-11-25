@@ -58,6 +58,7 @@ void main() {
   float I = (front * 1.6 + tongues + embers) * fade * smoothstep(1.0, 0.9, r);
   vec3 col = mix(vec3(0.75, 0.08, 0.02), vec3(1.0, 0.45, 0.08), smoothstep(0.1, 0.8, I));
   col = mix(col, vec3(1.0, 0.92, 0.6), smoothstep(0.9, 1.8, I));
+  I *= 0.36; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.22);
 }`,
 
@@ -78,6 +79,7 @@ void main() {
   float I = (burst + core + shock + smoke) * smoothstep(1.0, 0.88, r);
   vec3 col = mix(vec3(0.8, 0.12, 0.02), vec3(1.0, 0.55, 0.12), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0, 0.97, 0.85), smoothstep(1.0, 2.2, I));
+  I *= 0.36; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.25);
 }`,
 
@@ -103,6 +105,7 @@ void main() {
   float I = (crystal + shards + front + mist) * fade * smoothstep(1.0, 0.9, r);
   vec3 col = mix(vec3(0.12, 0.35, 0.85), vec3(0.55, 0.9, 1.0), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0), smoothstep(1.0, 2.0, I));
+  I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.2);
 }`,
 
@@ -123,6 +126,7 @@ void main() {
   float I = (vines * 0.9 + petals * 1.4 + wave + heart) * fade * smoothstep(1.0, 0.9, r);
   vec3 col = mix(vec3(0.08, 0.55, 0.22), vec3(0.45, 1.0, 0.55), smoothstep(0.1, 0.9, I));
   col = mix(col, vec3(1.0, 0.98, 0.7), smoothstep(0.9, 1.9, I) + petals * 0.4);
+  I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.18);
 }`,
 
@@ -149,6 +153,7 @@ void main() {
   float I = ((cells * (0.35 + flow * 0.9) + rim) * pulse + shock) * dome * appear;
   vec3 col = mix(vec3(0.55, 0.36, 0.08), vec3(1.0, 0.8, 0.3), smoothstep(0.1, 1.0, I));
   col = mix(col, vec3(1.0, 0.97, 0.8), smoothstep(1.1, 2.0, I));
+  I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.14);
 }`,
 
@@ -166,6 +171,7 @@ void main() {
   float fade = 1.0 - smoothstep(0.7, 1.0, progress);
   float I = (core * 1.8 + halo) * along * flick * fade;
   vec3 col = mix(vec3(1.0, 0.75, 0.3), vec3(1.0), smoothstep(0.5, 1.6, I));
+  I *= 0.55; // 技能特效整体收敛：细、淡、不抢画面
   gl_FragColor = vec4(col * I, I * 0.2);
 }`,
 

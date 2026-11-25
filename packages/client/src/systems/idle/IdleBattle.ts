@@ -187,12 +187,12 @@ export class IdleBattle {
         if (!this.shader.enabled) this.fx.slash((this.x + m.x) / 2, (this.y - 120 + m.y - FOOT) / 2, ang, len, 0xfff3c0);
       }));
     } else if (id === 'bastion' || id === 'bloom') {
-      this.shader.play(kind, this.x, this.y - 70, id === 'bastion' ? 300 : 460, id === 'bastion' ? 1600 : 1200, FX_DEPTH - 6);
+      this.shader.play(kind, this.x, this.y - 70, id === 'bastion' ? 220 : 320, id === 'bastion' ? 1200 : 900, FX_DEPTH - 6);
     } else {
-      this.shader.play(kind, cx, cy, 560, id === 'frost' ? 1300 : 800, FX_DEPTH - 6);
+      this.shader.play(kind, cx, cy, 400, id === 'frost' ? 900 : 600, FX_DEPTH - 6);
     }
     if (!this.shader.enabled) this.fx.ring(cx, cy, 240, tint, 460, 0.1);
-    this.fx.flashGlow(cx, cy, 240, tint, 320, 0.3);
+    this.fx.flashGlow(cx, cy, 120, tint, 260, 0.12);
     this.scene.time.delayedCall(220, () => live.forEach(m => this.hit(m, 9)));
     return true;
   }

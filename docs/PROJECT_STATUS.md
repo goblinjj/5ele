@@ -104,6 +104,8 @@ pnpm dev:client       # http://localhost:5173
 
 - 源文件放在仓库根目录的 `model/`（Mixamo 下载的 FBX：一个带蒙皮的 `Idle.fbx`，其余动作 Without Skin）。这个目录不进版本库。
 - `tools/render3d/chars.json` 里配置每个角色：镜头角度、每段动作取哪一段时间、取几帧、游戏里播多久。
-- 生成：`cd tools/render3d && npm install`，然后在仓库根目录 `node tools/render3d/render.mjs hero`，输出 `packages/client/public/assets/hero/atlas.{png,json}`。
+- 生成：`cd tools/render3d && npm install`，然后在仓库根目录 `node tools/render3d/render.mjs hero`，输出 `packages/client/public/assets/hero/atlas.{webp,json}`（每帧裁掉透明边后紧凑排版）。
+- 妖异同样生成：`fang / snake / fox / tree / stone / boss` 分别对应獠牙怪、青鳞蛇、赤狐精、树妖、石头精和秘境首领，输出到 `assets/monsters/<名字>/`。妖异模型没有自己的动作文件，用的是老者那套动作按骨骼名重定向（髋部位移按髋高比例缩放）。
+- `--lineup --sheet <目录>`：把 `model/` 里所有带蒙皮的模型各摆 5 个姿势排成图，用来挑角色。
 - 挑动作区间：`node tools/render3d/render.mjs hero --sheet <目录>`，每段动作出一张带时间标注的预览图。
 - 图集每一帧带 `hand: [x, y, 角度, 缩短比例]`（右手握点与兵器朝向），`Avatar` 据此把程序画的兵器贴到手上；动作表在图集 JSON 的 `char.clips`。

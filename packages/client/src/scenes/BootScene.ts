@@ -36,7 +36,7 @@ export class BootScene extends Phaser.Scene {
     });
 
     this.load.atlas(PLAYER_ATLAS, 'assets/player/灵体残骸/atlas.png', 'assets/player/灵体残骸/atlas.json');
-    this.load.atlas(HERO_ATLAS, 'assets/hero/atlas.png', 'assets/hero/atlas.json');
+    this.load.atlas(HERO_ATLAS, 'assets/hero/atlas.webp', 'assets/hero/atlas.json');
     SpawnSystem.preloadAtlases(this);
   }
 

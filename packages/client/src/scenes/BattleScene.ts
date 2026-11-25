@@ -65,11 +65,11 @@ const MONSTER_ATLAS_MAP: Record<string, string> = {
  * 怪物图集路径映射
  */
 const MONSTER_ATLAS_PATHS: Record<string, { json: string; image: string }> = {
-  'monster_tree_demon': { json: 'assets/monsters/树妖/atlas.json', image: 'assets/monsters/树妖/atlas.png' },
-  'monster_fang_beast': { json: 'assets/monsters/獠牙怪/atlas.json', image: 'assets/monsters/獠牙怪/atlas.png' },
-  'monster_green_snake': { json: 'assets/monsters/青鳞蛇/atlas.json', image: 'assets/monsters/青鳞蛇/atlas.png' },
-  'monster_red_fox': { json: 'assets/monsters/赤狐精/atlas.json', image: 'assets/monsters/赤狐精/atlas.png' },
-  'monster_stone_spirit': { json: 'assets/monsters/石头精/atlas.json', image: 'assets/monsters/石头精/atlas.png' },
+  'monster_tree_demon': { json: 'assets/monsters/树妖/atlas.json', image: 'assets/monsters/树妖/atlas.webp' },
+  'monster_fang_beast': { json: 'assets/monsters/獠牙怪/atlas.json', image: 'assets/monsters/獠牙怪/atlas.webp' },
+  'monster_green_snake': { json: 'assets/monsters/青鳞蛇/atlas.json', image: 'assets/monsters/青鳞蛇/atlas.webp' },
+  'monster_red_fox': { json: 'assets/monsters/赤狐精/atlas.json', image: 'assets/monsters/赤狐精/atlas.webp' },
+  'monster_stone_spirit': { json: 'assets/monsters/石头精/atlas.json', image: 'assets/monsters/石头精/atlas.webp' },
 };
 
 /**
