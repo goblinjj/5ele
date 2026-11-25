@@ -1,5 +1,6 @@
-import { promises as fs, existsSync, mkdirSync, readFileSync } from 'fs';
+import { promises as fs, existsSync, mkdirSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
+import { randomBytes } from 'crypto';
 import {
   GearItem, ProfileView, Wuxing, computeStats, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
   kindOf, salvageValue, MAX_CULT, MAX_CULT_KINDS, cultSpent, SkillBook, SkillId, SKILLS, SKILL_ORDER, LOADOUT_MAX,
@@ -28,6 +29,8 @@ export interface Profile {
   /** 学会的技能与各自用过的次数 */
   skills: SkillBook;
   /** 带进秘境的技能 */
+  /** 存档码：换设备时凭它接回这份存档 */
+  code?: string;
   loadout: SkillId[];
   /** 不捡取的五行能量 */
   skip: Wuxing[];
@@ -114,6 +117,41 @@ const cache = new Map<string, Profile>();
 const dirty = new Set<string>();
 let flushing = false;
 
+// ───────────────────────── 存档码 ─────────────────────────
+
+/** 存档码 → 设备标识。启动时扫一遍存档建起来 */
+const codes = new Map<string, string>();
+/** 去掉了容易看错的 0 O 1 I */
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_LEN = 12;
+
+function newCode(): string {
+  for (;;) {
+    const b = randomBytes(CODE_LEN);
+    let c = '';
+    for (let i = 0; i < CODE_LEN; i++) c += CODE_CHARS[b[i] % CODE_CHARS.length];
+    if (!codes.has(c)) return c;
+  }
+}
+
+/** 玩家输入的存档码：忽略大小写、空格和横线 */
+export function didOfCode(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const c = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return c.length === CODE_LEN ? codes.get(c) ?? null : null;
+}
+
+function indexCodes(): void {
+  for (const f of readdirSync(PLAYER_DIR)) {
+    if (!f.endsWith('.json')) continue;
+    try {
+      const p = JSON.parse(readFileSync(path.join(PLAYER_DIR, f), 'utf8')) as Profile;
+      if (p.code && p.did) codes.set(p.code, p.did);
+    } catch { /* 坏档读的时候再处理 */ }
+  }
+}
+indexCodes();
+
 function fileOf(did: string): string {
   return path.join(PLAYER_DIR, `${did}.json`);
 }
@@ -151,6 +189,8 @@ export function loadProfile(did: string, name?: string): Profile {
   // 兼容旧存档字段
   if ((p as any).equip) dirty.add(did);
   migrate(p);
+  if (!p.code) { p.code = newCode(); dirty.add(did); }
+  codes.set(p.code, did);
   p.best ??= {};
   p.idleSince = Number(p.idleSince) || Date.now();
   p.seen = Date.now();
@@ -169,7 +209,7 @@ export function markDirty(p: Profile): void {
 
 export function viewOf(p: Profile): ProfileView {
   return {
-    name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
+    name: p.name, code: p.code ?? '', path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
     energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, skip: p.skip, maxTier: p.maxTier, best: p.best,
     idleSince: p.idleSince, now: Date.now(),
   };

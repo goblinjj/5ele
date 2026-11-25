@@ -100,6 +100,8 @@ export class CampScene extends Phaser.Scene {
       net.on('err', (m: { msg: string }) => toast(this, m.msg, '#f85149')),
       net.on('toast', (m: { msg: string }) => toast(this, m.msg)),
       net.on('runStart', (m: unknown) => this.enterRift(m)),
+      // 存档码对上了：本机换用那份存档，重新载入
+      net.on('restored', (m: { did: string }) => { localStorage.setItem('5ele_did', m.did); location.reload(); }),
     ];
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.offs.forEach(f => f()));
 
@@ -178,6 +180,14 @@ export class CampScene extends Phaser.Scene {
     d.add(this.add.text(W / 2, 150, '择 一 道 而 修', { fontFamily: SERIF, fontSize: '52px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
     d.add(this.add.text(W / 2, 225, '五行之道只能择其一，入道后不可更改', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
     const order = [Wuxing.FIRE, Wuxing.METAL, Wuxing.WATER, Wuxing.WOOD, Wuxing.EARTH];
+    // 换了设备的老玩家：不用重新入道，输存档码接回来
+    const back = this.add.text(W / 2, 1462, '已有存档？输入存档码接回', { fontFamily: SANS, fontSize: '24px', color: '#79c0ff', backgroundColor: '#0d1117cc', padding: { x: 18, y: 10 } })
+      .setOrigin(0.5).setInteractive({ useHandCursor: true });
+    back.on('pointerup', () => {
+      const v = window.prompt('输入存档码');
+      if (v && v.trim()) net.send({ t: 'restore', code: v.trim() });
+    });
+    d.add(back);
     order.forEach((wx, i) => {
       const def = PATHS[wx];
       const y = 340 + i * 220;
@@ -235,6 +245,11 @@ export class CampScene extends Phaser.Scene {
     }).setInteractive({ useHandCursor: true });
     chip.on('pointerup', () => { sfx.click(); this.showRift(); });
     d.add(chip);
+
+    const save = this.add.text(W - 36, 92, '存档码', { fontFamily: SANS, fontSize: '20px', color: '#8b949e', backgroundColor: '#0d1117cc', padding: { x: 12, y: 7 } })
+      .setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    save.on('pointerup', () => { sfx.click(); this.showSave(); });
+    d.add(save);
 
     // 手里的兵器：一行
     const it = p.weapon;
@@ -585,6 +600,28 @@ export class CampScene extends Phaser.Scene {
     g.lineStyle(3, GOLD, 0.7);
     g.strokeRoundedRect(24, top, W - 48, H - top - 30, 28);
     this.dyn.add(g);
+  }
+
+  /** 存档码：换设备时凭它接回存档 */
+  private showSave(): void {
+    const p = net.profile;
+    if (!p) return;
+    const { c, top } = this.openPopup(640);
+    const code = (p.code ?? '').replace(/(.{4})(?=.)/g, '$1-');
+    c.add(this.add.text(W / 2, top + 30, '存 档 码', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 150, code || '（联机服务还没更新）', { fontFamily: SANS, fontSize: '50px', fontStyle: 'bold', color: '#79c0ff' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, top + 200, '存档保存在服务器上，这台设备靠浏览器里的记号认出你。\n清除浏览器数据、换浏览器或换手机后，输入这串码就能接回来。\n它等同于密码：请自己记下来，不要给别人。', {
+      fontFamily: SANS, fontSize: '21px', color: '#8b949e', align: 'center', lineSpacing: 10, wordWrap: { width: W - 130, useAdvancedWrap: true },
+    }).setOrigin(0.5, 0));
+    c.add(button(this, W / 2, top + 400, W - 140, 96, '复制存档码', () => {
+      const done = () => toast(this, '已复制，找个地方存好');
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(done, () => window.prompt('长按复制存档码', code));
+      else window.prompt('长按复制存档码', code);
+    }, { fontSize: 32 }));
+    c.add(button(this, W / 2, top + 530, W - 140, 96, '输入存档码，接回旧存档', () => {
+      const v = window.prompt('输入要接回的存档码。\n这台设备会换成那份存档；现在这份仍留在服务器上，用它自己的码还能找回。');
+      if (v && v.trim()) net.send({ t: 'restore', code: v.trim() });
+    }, { fontSize: 28, color: 0x58a6ff }));
   }
 
   /** 秘境面板：选哪一重天、独自进还是组队；有队伍时是队伍面板 */

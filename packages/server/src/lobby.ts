@@ -3,7 +3,7 @@ import {
   C2S, S2C, RoomView, Wuxing, PATHS, WUXING_NAMES,
   powerOf, salvageValue, MAX_PARTY, MAX_TIER, idleGain, WX_ORDER,
 } from '@xiyou/shared';
-import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf } from './store.js';
+import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf, didOfCode } from './store.js';
 import { cultivate, uncultivate, learn, train, setLoadout, refine, forge } from './forge.js';
 import { Run } from './run.js';
 
@@ -17,6 +17,8 @@ export class Session {
   room: Room | null = null;
   /** 正在这一局秘境里（中途撤离的人留在队伍里，但不在局里） */
   inRun = false;
+  /** 最近几次试存档码的时刻（防止乱猜） */
+  restoreTries: number[] = [];
   /** 同一设备重复连接时，旧连接作废 */
   closed = false;
 
@@ -167,6 +169,19 @@ export function onMessage(s: Session, raw: string): void {
 
   const p = s.profile;
   if (!p) return;
+
+  // 用存档码接回旧存档：对上了就告诉客户端换用那份存档的设备标识
+  if (msg.t === 'restore') {
+    const now = Date.now();
+    s.restoreTries = s.restoreTries.filter(t => now - t < 60000);
+    if (s.restoreTries.length >= 5) { s.send({ t: 'err', msg: '试得太频繁了，一分钟后再来' }); return; }
+    s.restoreTries.push(now);
+    const did = didOfCode(msg.code);
+    if (!did) { s.send({ t: 'err', msg: '没有这个存档码，检查一下有没有输错' }); return; }
+    if (did === p.did) { s.send({ t: 'toast', msg: '这就是现在这份存档的码' }); return; }
+    s.send({ t: 'restored', did });
+    return;
+  }
 
   // 秘境中的消息直接交给模拟
   // 不捡哪几行：营地和秘境里都能改，立刻生效

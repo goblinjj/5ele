@@ -301,6 +301,8 @@ export const ENEMY_BOLT_SPEED = 520;
 /** 存档中给客户端看的部分 */
 export interface ProfileView {
   name: string;
+  /** 存档码：换设备时输入它接回这份存档。等同于密码，别给外人 */
+  code: string;
   path: Wuxing | null;
   /** 手里的兵器 */
   weapon: GearItem | null;
@@ -405,6 +407,8 @@ export interface SpawnInfo {
 
 export type C2S =
   | { t: 'hello'; did: string; name?: string }
+  /** 用存档码接回旧存档 */
+  | { t: 'restore'; code: string }
   | { t: 'name'; name: string }
   | { t: 'path'; path: Wuxing }
   /** 换上兵匣里的兵器 */
@@ -462,6 +466,8 @@ export type S2C =
   /** 妖异溃散；orbs = 落在地上的能量 [能量id, 五行下标, 分量]*，全队共用，谁离得近谁捡 */
   | { t: 'die'; id: number; by: number; orbs?: number[] }
   /** 补发地上的能量 [能量id, x, y, 五行下标, 分量, 妖异档次]* */
+  /** 存档码对上了：把本机的设备标识换成这个，重新连接 */
+  | { t: 'restored'; did: string }
   | { t: 'orbs'; list: number[] }
   /** 地上的能量没了：被谁捡走（by = 玩家下标），或是放太久散掉了（by = -1） */
   | { t: 'orbGone'; ids: number[]; by: number }
