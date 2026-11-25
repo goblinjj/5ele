@@ -328,6 +328,10 @@ export interface RoomPlayerView {
   path: Wuxing | null;
   power: number;
   host: boolean;
+  /** 外观与出手方式：营地的挂机演出里要把队友也画出来 */
+  weapon: GearItem | null;
+  cult: Energy;
+  loadout: SkillId[];
 }
 
 export interface RoomView {

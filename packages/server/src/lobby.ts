@@ -71,7 +71,7 @@ class Room {
       state: this.run ? 'run' : 'lobby',
       players: this.members.map(s => {
         const p = s.profile!;
-        return { id: p.did, name: p.name, path: p.path, power: powerOf(statsOf(p)), host: s === this.host };
+        return { id: p.did, name: p.name, path: p.path, power: powerOf(statsOf(p)), host: s === this.host, weapon: p.weapon, cult: p.cult, loadout: p.loadout };
       }),
     };
   }

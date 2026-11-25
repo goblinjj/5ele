@@ -149,6 +149,13 @@ export class CampScene extends Phaser.Scene {
     this.avatar.setVisible(!!p.path);
     this.idle.setActive(!!p.path);
     this.idle.setLoadout(formOf(p.weapon), p.loadout ?? []);
+    // 队友也在场上一起打
+    this.idle.setMates(p.path ? (net.room?.players ?? []).filter(q => q.id !== net.did && q.path && q.cult).map(q => ({
+      id: q.id, name: q.name,
+      look: { weapon: q.weapon, path: q.path, cult: q.cult },
+      form: formOf(q.weapon), skills: q.loadout ?? [],
+      sig: `${q.path}|${q.weapon ? `${q.weapon.id}${q.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => q.cult[wx]).join(',')}`,
+    })) : []);
     this.idleTime = this.idleAmt = this.idleBar = null;
     const sig = `${p.path}|${p.weapon ? `${p.weapon.id}${p.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => p.cult[wx]).join(',')}`;
     if (sig !== this.avatarSig) { this.avatarSig = sig; this.avatar.setLook({ weapon: p.weapon, path: p.path, cult: p.cult }); }
