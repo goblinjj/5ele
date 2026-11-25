@@ -15,6 +15,8 @@ export class Session {
   readonly ws: WebSocket;
   profile: Profile | null = null;
   room: Room | null = null;
+  /** 正在这一局秘境里（中途撤离的人留在队伍里，但不在局里） */
+  inRun = false;
   /** 同一设备重复连接时，旧连接作废 */
   closed = false;
 
@@ -82,6 +84,7 @@ class Room {
   remove(s: Session): void {
     this.members = this.members.filter(m => m !== s);
     this.run?.removeMember(s.id);
+    s.inRun = false;
     s.room = null;
     s.send({ t: 'room', room: null });
     if (this.members.length === 0) {
@@ -96,6 +99,14 @@ class Room {
     this.sync();
   }
 
+  /** 局里的人都走光了：这一局作废，队伍回到待命 */
+  endIfEmpty(): void {
+    if (!this.run || !this.run.ended) return;
+    this.run = null;
+    this.members.forEach(m => { m.inRun = false; });
+    this.sync();
+  }
+
   start(): void {
     if (this.run) return;
     const members = this.members.map(s => ({
@@ -104,8 +115,10 @@ class Room {
       stats: statsOf(s.profile!),
       send: (m: S2C) => s.send(m),
     }));
+    this.members.forEach(s => { s.inRun = true; });
     this.run = new Run(this.tier, members, () => {
       this.run = null;
+      this.members.forEach(m => { m.inRun = false; });
       this.members.forEach(m => m.sendProfile());
       this.sync();
     });
@@ -156,9 +169,28 @@ export function onMessage(s: Session, raw: string): void {
   if (!p) return;
 
   // 秘境中的消息直接交给模拟
-  if (s.room?.run) {
-    if (msg.t === 'leave' || msg.t === 'exit') { s.room.remove(s); s.sendProfile(); return; }
-    s.room.run.handle(s.id, msg);
+  // 不捡哪几行：营地和秘境里都能改，立刻生效
+  if (msg.t === 'skip') {
+    const all = Object.values(Wuxing) as string[];
+    p.skip = Array.isArray(msg.list) ? [...new Set(msg.list)].filter(wx => all.includes(wx)) : [];
+    markDirty(p);
+    s.sendProfile();
+    return;
+  }
+
+  if (s.room?.run && s.inRun) {
+    const room = s.room;
+    if (msg.t === 'leave') { room.remove(s); s.sendProfile(); room.endIfEmpty(); return; }
+    if (msg.t === 'exit') {
+      // 撤离这一局，但人还在队伍里，等同伴打完再一起开下一局
+      room.run!.removeMember(s.id);
+      s.inRun = false;
+      s.sendProfile();
+      room.endIfEmpty();
+      room.sync();
+      return;
+    }
+    room.run!.handle(s.id, msg);
     return;
   }
 

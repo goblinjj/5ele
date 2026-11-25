@@ -8,7 +8,7 @@ import {
   REVIVE_RADIUS, REVIVE_MS,
   RIFT_VIEW, PACING, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
+  skillBond, attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty } from './store.js';
@@ -129,7 +129,7 @@ export class Run {
   private burnTimer = 0;
   private dmgBatch: number[] = [];
   private schedule: Scheduled[] = [];
-  private ended = false;
+  ended = false;
   private allDownAt = 0;
   private timer: NodeJS.Timeout;
   private onEnd: () => void;
@@ -737,7 +737,8 @@ export class Run {
     this.practice(p, id);
 
     const radius = skillRadius(id, lv, p.stats);
-    const dm = skillDmgMult(lv);
+    // 技能威力：熟练度 × 同属修为的加成
+    const dm = skillDmgMult(lv) * skillBond(p.profile.cult, SKILLS[id].wuxing);
     // 以自身为圆心的技能：允许客户端位置略有出入
     const near = dist2(x, y, p.x, p.y) < 250 ** 2;
     const cx = near ? x : p.x, cy = near ? y : p.y;
@@ -872,7 +873,7 @@ export class Run {
   /** 吸纳一团能量：入账，并化作灵力 */
   private onOrb(p: RunPlayer, id: number): void {
     const o = p.orbs.get(id);
-    if (!o) return;
+    if (!o || p.profile.skip.includes(o.wx)) return;
     if (dist2(p.x, p.y, o.x, o.y) > 700 ** 2) return;
     p.orbs.delete(id);
     this.bank(p, o);
@@ -889,7 +890,8 @@ export class Run {
   }
 
   private collectAll(p: RunPlayer): void {
-    for (const o of p.orbs.values()) this.bank(p, o);
+    // 设了不捡的那几行留在地上
+    for (const o of p.orbs.values()) if (!p.profile.skip.includes(o.wx)) this.bank(p, o);
     p.orbs.clear();
   }
 

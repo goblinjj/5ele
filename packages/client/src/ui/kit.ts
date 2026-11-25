@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   GearItem, RARITY_NAMES, WUXING_NAMES, formOf, kindOf,
-  formatStat, resonanceOf, RESONANCE_LABEL, Wuxing,
+  formatStat, resonanceOf, weaponBond, Energy, RESONANCE_LABEL, Wuxing,
   itemColor, itemCss, displayName, gradeMult, StatLine,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
@@ -112,7 +112,7 @@ export function gearIcon(scene: Phaser.Scene, x: number, y: number, size: number
 }
 
 /** 兵器说明的多行文字 */
-export function itemLines(item: GearItem, path: Wuxing | null): { text: string; color: string; size: number }[] {
+export function itemLines(item: GearItem, path: Wuxing | null, cult?: Energy | null): { text: string; color: string; size: number }[] {
   const out: { text: string; color: string; size: number }[] = [];
   const form = formOf(item);
   out.push({ text: displayName(item), color: itemCss(item), size: 38 });
@@ -125,8 +125,13 @@ export function itemLines(item: GearItem, path: Wuxing | null): { text: string; 
   if (RESONANCE_LABEL[res]) {
     out.push({ text: `五行共鸣：${RESONANCE_LABEL[res]}`, color: res === 'clash' ? '#f85149' : '#4ade80', size: 24 });
   }
-  // 显示数值含淬炼加成
-  const g = gradeMult(item);
+  // 同属修为的加成
+  const bond = weaponBond(cult, item.wuxing);
+  out.push(bond > 1
+    ? { text: `修为共鸣：${WUXING_NAMES[item.wuxing]} ${cult![item.wuxing]} 重，属性 +${Math.round((bond - 1) * 100)}%`, color: '#4ade80', size: 24 }
+    : { text: `修炼${WUXING_NAMES[item.wuxing]}行可增强这件兵器（每重 +2.5%）`, color: '#6e7681', size: 22 });
+  // 显示数值含淬炼与修为加成
+  const g = gradeMult(item) * bond;
   const scaled = (l: StatLine): StatLine => ({ stat: l.stat, value: l.value * g });
   item.base.forEach(l => out.push({ text: formatStat(scaled(l)), color: '#f0e6d3', size: 30 }));
   item.affixes.forEach(l => out.push({ text: `◆ ${formatStat(scaled(l))}`, color: '#79c0ff', size: 28 }));

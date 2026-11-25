@@ -375,10 +375,24 @@ export function carryCap(cult: Energy): number {
 }
 
 /** 兵器词条 + 五行修为 → 属性 */
+/**
+ * 修为与兵器、技能的联动：修哪一行，同属的兵器和技能跟着变强。
+ *  - 兵器：属性（含词条）每重 +2.5%
+ *  - 技能：威力每重 +4%
+ */
+export const CULT_BOND = { weapon: 0.025, skill: 0.04 } as const;
+const cultLv = (cult: Energy | null | undefined, wx: Wuxing): number => Math.max(0, Math.min(MAX_CULT, cult?.[wx] ?? 0));
+export function weaponBond(cult: Energy | null | undefined, wx: Wuxing): number {
+  return 1 + CULT_BOND.weapon * cultLv(cult, wx);
+}
+export function skillBond(cult: Energy | null | undefined, wx: Wuxing): number {
+  return 1 + CULT_BOND.skill * cultLv(cult, wx);
+}
+
 export function computeStats(weapon: GearItem | null | undefined, path: Wuxing | null | undefined, cult: Energy): PlayerStats {
   const sum: Record<StatKey, number> = { atk: 0, atkPct: 0, aspd: 0, crit: 0, critDmg: 0, area: 0, burn: 0 };
   if (weapon) {
-    const m = RESONANCE_MULT[resonanceOf(path, weapon.wuxing)] * gradeMult(weapon);
+    const m = RESONANCE_MULT[resonanceOf(path, weapon.wuxing)] * gradeMult(weapon) * weaponBond(cult, weapon.wuxing);
     for (const l of [...weapon.base, ...weapon.affixes]) if (l.stat in sum) sum[l.stat] += l.value * m;
   }
   const c = (wx: Wuxing) => Math.max(0, Math.min(MAX_CULT, cult[wx] ?? 0));

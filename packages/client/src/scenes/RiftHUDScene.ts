@@ -88,7 +88,11 @@ export class RiftHUDScene extends Phaser.Scene {
     this.carryText = this.add.text(30, 246, '', { fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', color: '#c9d1d9', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.wxTexts = WX_ROW.map((wx, i) => this.add.text(30 + i * 92, 212, '', {
       fontFamily: SANS, fontSize: '21px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4,
-    }).setOrigin(0, 0.5));
+    }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true }).on('pointerup', () => {
+      // 点一下切换这一行捡不捡
+      const cur = net.profile?.skip ?? [];
+      net.send({ t: 'skip', list: cur.includes(wx) ? cur.filter(w => w !== wx) : [...cur, wx] });
+    }));
     this.critText = this.add.text(250, 246, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#9fd8ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.downText = this.add.text(W / 2, H * 0.36, '', {
       fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#f85149', stroke: '#000', strokeThickness: 6, align: 'center',
@@ -240,7 +244,8 @@ export class RiftHUDScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.55);
     for (const c of this.skillBtns.map(k => SKILLS[k.id].qi)) g.fillRect(30 + hpw * Math.min(1, c / r.stats.qiMax) - 1, 166, 2, 20);
     setTextIf(this.qiText, `灵力 ${Math.floor(r.qi)} / ${r.stats.qiMax}`);
-    WX_ROW.forEach((wx, i) => setTextIf(this.wxTexts[i], `${WUXING_NAMES[wx]} ${r.gained[wx]}`));
+    const skip = net.profile?.skip ?? [];
+    WX_ROW.forEach((wx, i) => setTextIf(this.wxTexts[i], skip.includes(wx) ? `${WUXING_NAMES[wx]} 不捡` : `${WUXING_NAMES[wx]} ${r.gained[wx]}`, skip.includes(wx) ? '#6e7681' : WX_CSS[wx]));
     const carried = energyTotal(r.gained);
     const full = carried >= r.stats.carry;
     setTextIf(this.carryText, full ? `带回 ${carried}/${r.stats.carry} 已满` : `带回 ${carried}/${r.stats.carry}`, full ? '#e3b23c' : '#c9d1d9');
@@ -334,9 +339,9 @@ export class RiftHUDScene extends Phaser.Scene {
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0, 0.7).setInteractive();
     c.add(shade);
     c.add(this.add.text(W / 2, H * 0.4, '撤离秘境？', { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量会自动收走（不超过带回上限）', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量会自动收走（不超过带回上限，设了不捡的除外）', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
     c.add(button(this, W / 2 - 150, H * 0.55, 240, 90, '继续', () => c.destroy(), { color: 0x8b949e }));
-    c.add(button(this, W / 2 + 150, H * 0.55, 240, 90, '撤离', () => { net.send({ t: 'leave' }); this.backToCamp(); }));
+    c.add(button(this, W / 2 + 150, H * 0.55, 240, 90, '撤离', () => { net.send({ t: (net.room?.players.length ?? 1) > 1 ? 'exit' : 'leave' }); this.backToCamp(); }));
   }
 
   showEnd(m: EndMsg): void {
@@ -374,7 +379,7 @@ export class RiftHUDScene extends Phaser.Scene {
   }
 
   private backToCamp(): void {
-    // 单人房间用完即散；组队则留在房间里，方便再来一局
+    // 单人的临时队伍用完即散；组了队的留在队伍里，回营地接着挂机、随时再开一局
     const room = net.room;
     if (room && room.players.length <= 1) net.send({ t: 'leave' });
     this.joystick?.destroy();

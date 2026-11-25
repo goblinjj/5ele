@@ -315,6 +315,8 @@ export interface ProfileView {
   skills: SkillBook;
   /** 带进秘境的技能（最多 LOADOUT_MAX 门） */
   loadout: SkillId[];
+  /** 不捡取的五行能量（带回上限有限，把位置留给想要的） */
+  skip: Wuxing[];
   /** 挂机收益从什么时候开始攒（服务器时间），以及发出这份存档时的服务器时间 */
   idleSince: number;
   now: number;
@@ -411,6 +413,8 @@ export type C2S =
   | { t: 'train'; skill: SkillId }
   /** 选择带进秘境的技能 */
   | { t: 'loadout'; skills: SkillId[] }
+  /** 设定不捡取哪几行的能量（营地和秘境里都能改） */
+  | { t: 'skip'; list: Wuxing[] }
   /** 领取挂机收益 */
   | { t: 'idle' }
   /** 精炼兵器：尝试升一阶（可能失败） */

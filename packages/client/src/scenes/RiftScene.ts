@@ -1205,13 +1205,16 @@ export class RiftScene extends Phaser.Scene {
     const now = this.time.now;
     const canPick = !this.down && !this.ended;
     const magnet2 = ORB_MAGNET ** 2;
+    const skip = net.profile?.skip ?? [];
     for (const o of this.orbs.values()) {
       o.age += dt;
+      // 设了不捡的：留在地上，压暗
+      const skipped = skip.includes(o.wx);
       if (o.age < 260) {
         const k = 1 - Math.exp(-dt / 70);
         o.x += (o.tx - o.x) * k;
         o.y += (o.ty - o.y) * k;
-      } else if (canPick) {
+      } else if (canPick && !skipped) {
         const dx = this.x - o.x, dy = this.y - 30 - o.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < ORB_PICK ** 2) { this.collectOrb(o); continue; }
@@ -1226,7 +1229,7 @@ export class RiftScene extends Phaser.Scene {
         }
       }
       const bob = o.speed > 0 ? 0 : Math.sin(now / 320 + o.phase) * 5;
-      o.glow.setPosition(o.x, o.y - 14 + bob).setAlpha(0.65 + 0.25 * Math.sin(now / 200 + o.phase));
+      o.glow.setPosition(o.x, o.y - 14 + bob).setAlpha(skipped ? 0.18 : 0.65 + 0.25 * Math.sin(now / 200 + o.phase));
       o.core.setPosition(o.x, o.y - 14 + bob);
     }
   }

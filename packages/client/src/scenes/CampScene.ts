@@ -6,7 +6,7 @@ import {
   refineCost, refineRate, GRADE_GROWTH, MAX_GRADE, displayName, formOf, UNARMED_FORM, WEAPON_FORMS,
   Energy, emptyEnergy, forgeBase, forgeRarity, forgeNeed, forgeOutcome,
   CULT, MAX_CULT, MAX_CULT_KINDS, CULT_REFUND, cultCost, cultSpent, cultKinds, cultBlock,
-  SKILLS, SKILL_ORDER, SKILL_RANKS, SKILL_MAX_LEVEL, LOADOUT_MAX, SkillId, skillLevel, skillNeed, skillDmgMult, skillCdMult, skillAreaMult, skillTrainCost,
+  SKILLS, SKILL_ORDER, SKILL_RANKS, SKILL_MAX_LEVEL, LOADOUT_MAX, SkillId, skillLevel, skillNeed, skillDmgMult, skillCdMult, skillAreaMult, skillTrainCost, skillBond,
   idleGain, idleRate, IDLE_CAP_MS,
   realmOf, realmIndex, REALM_COLORS, energyTotal,
 } from '@xiyou/shared';
@@ -36,7 +36,6 @@ const TIER_COLORS = [0, 0x9fd8ff, 0x6fb6ff, 0x4ade80, 0x9be36a, 0xffe066, 0xffa3
 /** 挂机战斗的舞台：残魂站的位置 */
 /** 挂机演出的活动范围：顶栏以下、收益栏以上的整块空间；组队面板出来时让出下半屏 */
 const STAGE = { left: 80, top: 250, right: W - 80, bottom: 990 };
-const STAGE_ROOM = { ...STAGE, bottom: 860 };
 const STAGE_X = 200;
 const STAGE_Y = 680;
 /** 挂机收益栏的上沿 */
@@ -149,7 +148,6 @@ export class CampScene extends Phaser.Scene {
     this.tier = Math.max(1, Math.min(p.maxTier, this.tier));
     this.avatar.setVisible(!!p.path);
     this.idle.setActive(!!p.path);
-    this.idle.setBounds(net.room ? STAGE_ROOM : STAGE);
     this.idle.setLoadout(formOf(p.weapon), p.loadout ?? []);
     this.idleTime = this.idleAmt = this.idleBar = null;
     const sig = `${p.path}|${p.weapon ? `${p.weapon.id}${p.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => p.cult[wx]).join(',')}`;
@@ -158,8 +156,7 @@ export class CampScene extends Phaser.Scene {
       this.drawPathSelect();
       return;
     }
-    this.drawHeader(p, !net.room);
-    if (net.room) { if (this.panel === 'rift') this.closePopup(); this.drawRoom(p, net.room); }
+    this.drawHeader(p);
     // 面板开着：按新存档重画
     if (this.popup && this.panel === 'cult') this.showCultPanel();
     else if (this.popup && this.panel === 'arms') this.showArms();
@@ -207,7 +204,7 @@ export class CampScene extends Phaser.Scene {
   }
 
   /** 主界面：名号、境界、战力、人物、五行能量，和三个入口 */
-  private drawHeader(p: ProfileView, full: boolean = true): void {
+  private drawHeader(p: ProfileView): void {
     const d = this.dyn;
     const stats = this.stats(p);
     const name = this.add.text(36, 34, `${p.name} ✎`, { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: '#f0e6d3' })
@@ -220,11 +217,21 @@ export class CampScene extends Phaser.Scene {
     d.add(this.add.text(36, 82, `${PATHS[p.path!].name} · ${realmOf(p.cult)}境`, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
     d.add(this.add.text(W - 36, 34, `战力 ${powerOf(stats)}`, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(1, 0));
 
+    // 队伍：一直挂在营地里，不用每局重组；点开是秘境面板
+    const room = net.room;
+    const party = room && room.players.length > 1
+      ? `队伍 ${room.code} · ${room.players.map(q => `${q.host ? '★' : ''}${q.name}`).join('  ')}${room.state === 'run' ? '（秘境中）' : ''}`
+      : room ? `队伍 ${room.code} · 等同伴加入` : '＋ 组队';
+    const chip = this.add.text(36, 126, party, {
+      fontFamily: SANS, fontSize: '22px', color: room ? '#79c0ff' : '#8b949e', backgroundColor: '#0d1117cc', padding: { x: 14, y: 8 },
+      wordWrap: { width: W - 100, useAdvancedWrap: true },
+    }).setInteractive({ useHandCursor: true });
+    chip.on('pointerup', () => { sfx.click(); this.showRift(); });
+    d.add(chip);
+
     // 手里的兵器：一行
     const it = p.weapon;
     const form = formOf(it);
-    // 组队房间占着下半屏时，只留顶栏和挂机演出
-    if (!full) return;
     d.add(this.add.text(W / 2, IDLE_Y - 46, `${it ? displayName(it) : '空手'} · ${form.melee ? '近战' : it ? '远程' : '中距离'}${form.move}`, {
       fontFamily: SERIF, fontSize: '24px', color: it ? RARITY_CSS[it.rarity] : '#8b949e',
     }).setOrigin(0.5, 0));
@@ -245,12 +252,19 @@ export class CampScene extends Phaser.Scene {
     d.add(button(this, bx + bw - 90, by + bh / 2, 150, 60, '领取', () => { sfx.shapeOk(p.path!); net.send({ t: 'idle' }); }, { fontSize: 28 }));
     this.updateIdle();
 
-    // 五行能量：一行五个数
+    // 五行能量：一行五个数；点一下切换这一行在秘境里捡不捡
+    const skip = p.skip ?? [];
     CULT_ORDER.forEach((wx, i) => {
       const x = W / 2 + (i - 2) * 132;
-      d.add(this.add.text(x - 6, IDLE_Y + 128, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5));
-      d.add(this.add.text(x + 2, IDLE_Y + 130, `${p.energy[wx]}`, { fontFamily: SANS, fontSize: '26px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0, 0.5));
+      const off = skip.includes(wx);
+      d.add(this.add.text(x - 6, IDLE_Y + 128, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5).setAlpha(off ? 0.4 : 1));
+      d.add(this.add.text(x + 2, IDLE_Y + 130, `${p.energy[wx]}`, { fontFamily: SANS, fontSize: '26px', fontStyle: 'bold', color: off ? '#6e7681' : '#f0e6d3' }).setOrigin(0, 0.5));
+      if (off) d.add(this.add.text(x + 6, IDLE_Y + 158, '不捡', { fontFamily: SANS, fontSize: '17px', color: '#f85149' }).setOrigin(0.5, 0));
+      const hit = this.add.rectangle(x + 6, IDLE_Y + 136, 124, 70, 0, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => { sfx.click(); net.send({ t: 'skip', list: off ? skip.filter(w => w !== wx) : [...skip, wx] }); });
+      d.add(hit);
     });
+    if (!skip.length) d.add(this.add.text(W / 2, IDLE_Y + 160, '点某一行，可设为秘境里不捡取', { fontFamily: SANS, fontSize: '16px', color: '#484f58' }).setOrigin(0.5, 0));
 
     // 三个入口：能做点什么的时候亮起来
     const kinds = cultKinds(p.cult);
@@ -326,8 +340,9 @@ export class CampScene extends Phaser.Scene {
       `暴击 ${Math.round(stats.crit)}%`, `暴伤 +${Math.round(stats.critDmg)}%`, `回血 ${stats.regen.toFixed(1)}/秒`,
       `冷却 -${Math.round(stats.cdr)}%`, `灵力 ${stats.qiMax}`, `移速 +${Math.round(stats.move)}%`,
     ];
+    c.add(this.add.text(W / 2, top + 114, '修哪一行，同属的兵器与技能跟着变强：兵器属性每重 +2.5%，技能威力每重 +4%', { fontFamily: SANS, fontSize: '17px', color: '#8b949e' }).setOrigin(0.5, 0));
     cells.forEach((t, i) => {
-      c.add(this.add.text(84 + (i % 3) * 200, top + 138 + Math.floor(i / 3) * 36, t, { fontFamily: SANS, fontSize: '22px', color: '#c9d1d9' }));
+      c.add(this.add.text(84 + (i % 3) * 200, top + 148 + Math.floor(i / 3) * 34, t, { fontFamily: SANS, fontSize: '22px', color: '#c9d1d9' }));
     });
     this.drawCult(p, c, top + 262);
   }
@@ -486,7 +501,7 @@ export class CampScene extends Phaser.Scene {
         g.fillRoundedRect(76, y0 + 126, bw, 10, 5);
         g.fillStyle(tint, 1);
         if (pct > 0.01) g.fillRoundedRect(76, y0 + 126, bw * pct, 10, 5);
-        c.add(this.add.text(76, y0 + 140, `范围 ${Math.round(skillAreaMult(lv) * 100)}% · 伤害 +${Math.round((skillDmgMult(lv) - 1) * 100)}% · 冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%${maxed ? '' : ` · 再用 ${hi - uses!} 次升级`}`, {
+        c.add(this.add.text(76, y0 + 140, `范围 ${Math.round(skillAreaMult(lv) * 100)}% · 伤害 +${Math.round((skillDmgMult(lv) * skillBond(p.cult, def.wuxing) - 1) * 100)}% · 冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%${maxed ? '' : ` · 再用 ${hi - uses!} 次升级`}`, {
           fontFamily: SANS, fontSize: '17px', color: '#8b949e',
         }));
       }
@@ -565,31 +580,61 @@ export class CampScene extends Phaser.Scene {
     this.dyn.add(g);
   }
 
-  /** 秘境面板：选哪一重天、独自进还是组队 */
+  /** 秘境面板：选哪一重天、独自进还是组队；有队伍时是队伍面板 */
   private showRift(): void {
     const p = net.profile;
     if (!p) return;
-    const { c: d, top } = this.openPopup(600);
+    const room = net.room;
+    const { c: d, top } = this.openPopup(room ? 760 : 600);
     this.panel = 'rift';
-    d.add(this.add.text(W / 2, top + 30, '秘 境', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
-    const setTier = (t: number) => {
-      this.tier = Math.max(1, Math.min(p.maxTier, t));
-      localStorage.setItem('5ele_tier', String(this.tier));
-      this.refresh();
-      this.showRift();
-    };
-    // 要去哪一重天：点开秘境图选
-    const best = p.best[this.tier];
-    this.tierCard(d, top + 180, this.tier, best ? `最快 ${fmtTime(best)}` : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
+    d.add(this.add.text(W / 2, top + 30, room ? `队伍 ${room.code}` : '秘 境', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: room ? '#79c0ff' : '#ffe9a8' }).setOrigin(0.5, 0));
+    if (!room) {
+      const setTier = (t: number) => {
+        this.tier = Math.max(1, Math.min(p.maxTier, t));
+        localStorage.setItem('5ele_tier', String(this.tier));
+        this.refresh();
+        this.showRift();
+      };
+      // 要去哪一重天：点开秘境图选
+      const best = p.best[this.tier];
+      this.tierCard(d, top + 180, this.tier, best ? `最快 ${fmtTime(best)}` : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
+      const by = top + 340;
+      d.add(button(this, W / 2, by, W - 120, 110, '独自进入', () => {
+        sfx.unlock();
+        net.send({ t: 'create', tier: this.tier });
+        net.send({ t: 'start' });
+      }, { fontSize: 36 }));
+      d.add(button(this, W / 2 - 160, by + 150, 280, 96, '组建队伍', () => { sfx.unlock(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
+      d.add(button(this, W / 2 + 160, by + 150, 280, 96, '加入队伍', () => { sfx.unlock(); this.showKeypad(); }, { fontSize: 30, color: 0x58a6ff }));
+      return;
+    }
 
-    const by = top + 340;
-    d.add(button(this, W / 2, by, W - 120, 110, '独自进入', () => {
-      sfx.unlock();
-      net.send({ t: 'create', tier: this.tier });
-      net.send({ t: 'start' });
-    }, { fontSize: 36 }));
-    d.add(button(this, W / 2 - 160, by + 150, 280, 96, '开房组队', () => { sfx.unlock(); this.closePopup(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
-    d.add(button(this, W / 2 + 160, by + 150, 280, 96, '加入房间', () => { sfx.unlock(); this.showKeypad(); }, { fontSize: 30, color: 0x58a6ff }));
+    // 队伍：组一次一直在，打完一局回营地接着挂机，队长随时再开
+    const isHost = room.players.find(q => q.host)?.id === net.did;
+    d.add(this.add.text(W / 2, top + 88, '把队伍码告诉同伴即可加入 · 队伍会一直保留', { fontFamily: SANS, fontSize: '21px', color: '#6e7681' }).setOrigin(0.5, 0));
+    if (isHost) {
+      this.tierCard(d, top + 210, room.tier, '点击打开秘境图', () => this.showMap(room.maxTier, room.tier, p.best, t => { net.send({ t: 'tier', tier: t }); this.showRift(); }));
+    } else {
+      d.add(this.add.text(W / 2, top + 196, TIER_NAMES[room.tier], { fontFamily: SERIF, fontSize: '48px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
+      d.add(this.add.text(W / 2, top + 244, '由队长选择去哪一重天', { fontFamily: SANS, fontSize: '21px', color: '#8b949e' }).setOrigin(0.5));
+    }
+    for (let i = 0; i < MAX_PARTY; i++) {
+      const q = room.players[i];
+      const x = i % 2 === 0 ? 76 : W / 2 + 16;
+      const y = top + 320 + Math.floor(i / 2) * 96;
+      const label = q ? `${q.host ? '★' : ''}${q.name}${q.id === net.did ? '（你）' : ''}` : '— 空位 —';
+      d.add(this.add.text(x, y, label, { fontFamily: SERIF, fontSize: '28px', color: q ? '#f0e6d3' : '#484f58' }));
+      if (q) d.add(this.add.text(x, y + 38, `${q.path ? WUXING_NAMES[q.path] : ''} · 战力 ${q.power}`, { fontFamily: SANS, fontSize: '22px', color: q.path ? WX_CSS[q.path] : '#8b949e' }));
+    }
+    const by = top + 760 - 86;
+    d.add(button(this, 190, by, 250, 88, '离队', () => { net.send({ t: 'leave' }); this.closePopup(); }, { color: 0x8b949e, fontSize: 30 }));
+    if (room.state === 'run') {
+      d.add(this.add.text(W - 210, by, '同伴还在秘境中…', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    } else if (isHost) {
+      d.add(button(this, W - 210, by, 300, 92, '进入秘境', () => { sfx.unlock(); net.send({ t: 'start' }); }, { fontSize: 34 }));
+    } else {
+      d.add(this.add.text(W - 210, by, '等待队长开始', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    }
   }
 
   /** 当前选中的那一重天：一张可点的牌子，点开是秘境图 */
@@ -675,43 +720,6 @@ export class CampScene extends Phaser.Scene {
     }
   }
 
-  private drawRoom(p: ProfileView, room: RoomView): void {
-    const d = this.dyn;
-    const top = 900;
-    this.drawPanelBg(top);
-    const host = room.players.find(q => q.host);
-    const isHost = host?.id === net.did;
-    d.add(this.add.text(W / 2, top + 22, `房间码 ${room.code}`, { fontFamily: SERIF, fontSize: '44px', fontStyle: 'bold', color: '#79c0ff' }).setOrigin(0.5, 0));
-    d.add(this.add.text(W / 2, top + 80, '把房间码告诉同伴，即可一起刷', { fontFamily: SANS, fontSize: '22px', color: '#6e7681' }).setOrigin(0.5, 0));
-
-    // 层数（房主可调）
-    const ty = top + 150;
-    if (isHost) {
-      this.tierCard(d, ty, room.tier, '点击打开秘境图', () => this.showMap(room.maxTier, room.tier, p.best, t => net.send({ t: 'tier', tier: t })), 0.8);
-    } else {
-      d.add(this.add.text(W / 2, ty, TIER_NAMES[room.tier], { fontFamily: SERIF, fontSize: '38px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    }
-
-    for (let i = 0; i < MAX_PARTY; i++) {
-      const q = room.players[i];
-      const x = i % 2 === 0 ? 60 : W / 2 + 10;
-      const y = top + 210 + Math.floor(i / 2) * 84;
-      const label = q ? `${q.host ? '★' : ''}${q.name}${q.id === net.did ? '（你）' : ''}` : '— 空位 —';
-      d.add(this.add.text(x, y, label, { fontFamily: SERIF, fontSize: '27px', color: q ? '#f0e6d3' : '#484f58' }));
-      if (q) d.add(this.add.text(x, y + 36, `${q.path ? WUXING_NAMES[q.path] : ''} · 战力 ${q.power}`, { fontFamily: SANS, fontSize: '22px', color: q.path ? WX_CSS[q.path] : '#8b949e' }));
-    }
-
-    const by = H - 92;
-    d.add(button(this, 170, by, 260, 84, '离开', () => net.send({ t: 'leave' }), { color: 0x8b949e, fontSize: 30 }));
-    if (room.state === 'run') {
-      d.add(this.add.text(W - 190, by, '秘境进行中…', { fontFamily: SERIF, fontSize: '28px', color: '#8b949e' }).setOrigin(0.5));
-    } else if (isHost) {
-      d.add(button(this, W - 190, by, 300, 88, '开始', () => net.send({ t: 'start' }), { fontSize: 34 }));
-    } else {
-      d.add(this.add.text(W - 190, by, '等待房主开始', { fontFamily: SERIF, fontSize: '28px', color: '#8b949e' }).setOrigin(0.5));
-    }
-  }
-
   // ───────────────────────── 弹窗 ─────────────────────────
 
   private closePopup(): void {
@@ -745,7 +753,7 @@ export class CampScene extends Phaser.Scene {
    */
   private showItem(item: GearItem, from: 'stash' | 'equip'): void {
     const p = net.profile!;
-    const lines = itemLines(item, p.path);
+    const lines = itemLines(item, p.path, p.cult);
     const texts: Phaser.GameObjects.Text[] = [];
     let y = 0;
     lines.forEach(l => {

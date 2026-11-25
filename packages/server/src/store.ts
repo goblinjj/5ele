@@ -29,6 +29,8 @@ export interface Profile {
   skills: SkillBook;
   /** 带进秘境的技能 */
   loadout: SkillId[];
+  /** 不捡取的五行能量 */
+  skip: Wuxing[];
   maxTier: number;
   best: Record<number, number>;
   /** 挂机收益从什么时候开始攒 */
@@ -100,6 +102,7 @@ function migrate(raw: any): void {
   raw.skills = skills;
   // 携带的技能：只留学会的；从没配过就默认带上最先学会的几门
   const known = SKILL_ORDER.filter(id => skills[id] !== undefined);
+  raw.skip = Array.isArray(raw.skip) ? [...new Set(raw.skip as Wuxing[])].filter(wx => (Object.values(Wuxing) as string[]).includes(wx)) : [];
   raw.loadout = Array.isArray(raw.loadout)
     ? [...new Set(raw.loadout as SkillId[])].filter(id => known.includes(id)).slice(0, LOADOUT_MAX)
     : known.slice(0, LOADOUT_MAX);
@@ -141,7 +144,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, weapon: null, stash: [],
-      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, loadout: [], maxTier: 1, best: {}, idleSince: Date.now(), created: Date.now(), seen: Date.now(),
+      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, loadout: [], skip: [], maxTier: 1, best: {}, idleSince: Date.now(), created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
@@ -167,7 +170,7 @@ export function markDirty(p: Profile): void {
 export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
-    energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, maxTier: p.maxTier, best: p.best,
+    energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, skip: p.skip, maxTier: p.maxTier, best: p.best,
     idleSince: p.idleSince, now: Date.now(),
   };
 }
