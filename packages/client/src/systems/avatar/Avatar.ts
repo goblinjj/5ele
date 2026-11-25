@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  Equipped, GearItem, Wuxing, kindOf, itemColor, SETS, setCounts, SetId,
+  GearItem, Wuxing, Energy, kindOf, itemColor, WX_ORDER, realmIndex, REALM_COLORS,
 } from '@xiyou/shared';
 import { WX_TINT } from '../../config/worldConfig.js';
 
@@ -8,8 +8,8 @@ import { WX_TINT } from '../../config/worldConfig.js';
  * 人形纸娃娃：部件分开绘制，由程序按姿势参数驱动
  *
  *  - 每一帧都是姿势插值，帧率多高就有多顺；状态切换时平滑过渡
- *  - 装备外显：武器器型（剑 刃 杖 枪 扇）、护甲款式（袍 衣 = 长袍，甲 铠 = 甲胄）与五行配色、
- *    法宝悬浮身后（印 铃 镜 葫芦 塔）、佩饰化作环绕腰间的灵珠、套装与传说带光环
+ *  - 外显：兵器器型（剑 刃 杖 枪 扇）；衣袍取所修之道的五行色，镶边取境界色；
+ *    修过的每一行化作一颗环绕腰间的灵珠；境界到了筑基脚下生出光环
  *  - 部件纹理按「款式 + 颜色」缓存在全局纹理管理器里，同样的装备只画一次
  *
  * 坐标：容器原点在双脚中间，面朝右；所有部件纹理按 2 倍绘制再缩小，放大镜头也清晰。
@@ -61,15 +61,17 @@ function makeTex(scene: Phaser.Scene, key: string, w: number, h: number, draw: (
   return key;
 }
 
-/** 护甲配色：主色取五行色（压暗），镶边取品质 / 套装色 */
-function armorColors(armor: GearItem | null): { main: number; trim: number; style: Style } {
-  if (!armor) return { main: 0xbfe0ff, trim: 0x9fd8ff, style: 'spirit' };
-  const k = kindOf(armor);
-  return {
-    main: WX_TINT[armor.wuxing],
-    trim: itemColor(armor),
-    style: k === '甲' || k === '铠' ? 'armor' : 'robe',
-  };
+/** 人物外观由什么决定 */
+export interface AvatarLook {
+  weapon: GearItem | null;
+  path: Wuxing | null;
+  cult: Energy | null;
+}
+
+/** 衣袍配色：主色取所修之道的五行色（压暗），镶边取境界色；未入道是一缕残魂 */
+function robeColors(look: AvatarLook | null): { main: number; trim: number; style: Style } {
+  if (!look?.path) return { main: 0xbfe0ff, trim: 0x9fd8ff, style: 'spirit' };
+  return { main: WX_TINT[look.path], trim: REALM_COLORS[look.cult ? realmIndex(look.cult) : 0], style: 'robe' };
 }
 
 // ───────────────────────── 部件纹理 ─────────────────────────
@@ -270,53 +272,9 @@ function weaponTex(scene: Phaser.Scene, kind: string, wx: Wuxing, trim: number):
   }
 }
 
-function relicTex(scene: Phaser.Scene, kind: string, wx: Wuxing, trim: number): string {
-  const key = `av_relic_${kind}_${wx}_${trim}`;
-  const c = hex(WX_TINT[wx]);
-  const tr = hex(trim);
-  return makeTex(scene, key, 34, 40, ctx => {
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = tr;
-    switch (kind) {
-      case '铃':
-        ctx.fillStyle = c;
-        ctx.beginPath(); ctx.moveTo(17, 6); ctx.quadraticCurveTo(5, 10, 6, 30); ctx.lineTo(28, 30); ctx.quadraticCurveTo(29, 10, 17, 6); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = tr; ctx.beginPath(); ctx.arc(17, 33, 3.5, 0, Math.PI * 2); ctx.fill();
-        break;
-      case '镜':
-        ctx.fillStyle = tr; ctx.beginPath(); ctx.arc(17, 18, 14, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(17, 18, 10, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(13, 14, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = tr; ctx.fillRect(15, 31, 4, 7);
-        break;
-      case '葫芦':
-        ctx.fillStyle = c;
-        ctx.beginPath(); ctx.arc(17, 12, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(17, 27, 11, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = tr; ctx.fillRect(13, 17, 8, 3); ctx.fillRect(15, 2, 4, 4);
-        break;
-      case '塔':
-        ctx.fillStyle = c;
-        for (let i = 0; i < 4; i++) {
-          const w = 26 - i * 5, y = 34 - i * 8;
-          ctx.fillRect(17 - w / 2, y - 6, w, 6);
-          ctx.strokeRect(17 - w / 2, y - 6, w, 6);
-        }
-        ctx.fillStyle = tr; ctx.beginPath(); ctx.moveTo(17, 0); ctx.lineTo(21, 6); ctx.lineTo(13, 6); ctx.fill();
-        break;
-      default: // 印
-        ctx.fillStyle = c; ctx.fillRect(5, 16, 24, 20); ctx.strokeRect(5, 16, 24, 20);
-        ctx.fillStyle = tr; ctx.fillRect(12, 6, 10, 10);
-        ctx.beginPath(); ctx.arc(17, 6, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.strokeRect(10, 21, 14, 10);
-        break;
-    }
-  });
-}
-
 // ───────────────────────── 纸娃娃 ─────────────────────────
 
-export type AvatarAction = 'none' | 'attack' | 'cast';
+export type AvatarAction = 'none' | 'attack' | 'slash' | 'cast';
 
 export class Avatar extends Phaser.GameObjects.Container {
   private baseScale: number;
@@ -335,8 +293,6 @@ export class Avatar extends Phaser.GameObjects.Container {
   private rig!: Phaser.GameObjects.Container;
   private shadow!: Phaser.GameObjects.Image;
   private aura!: Phaser.GameObjects.Image;
-  private relic?: Phaser.GameObjects.Image;
-  private relicGlow?: Phaser.GameObjects.Image;
   private ribbon!: Phaser.GameObjects.Image;
   private head!: Phaser.GameObjects.Image;
   private torso!: Phaser.GameObjects.Image;
@@ -349,48 +305,36 @@ export class Avatar extends Phaser.GameObjects.Container {
   private charms: Phaser.GameObjects.Image[] = [];
   private flashables: Phaser.GameObjects.Image[] = [];
 
-  constructor(scene: Phaser.Scene, x: number, y: number, equip: Equipped | null, scale: number = 1) {
+  constructor(scene: Phaser.Scene, x: number, y: number, look: AvatarLook | null, scale: number = 1) {
     super(scene, x, y);
     this.baseScale = scale;
     scene.add.existing(this);
-    this.build(equip);
+    this.build(look);
   }
 
   /** 换装：整体重建部件（纹理有缓存，开销很小） */
-  setEquip(equip: Equipped | null): void {
+  setLook(look: AvatarLook | null): void {
     this.removeAll(true);
     this.charms = [];
     this.flashables = [];
-    this.relic = undefined;
-    this.relicGlow = undefined;
     this.weapon = undefined;
     this.weaponGlow = undefined;
-    this.build(equip);
+    this.build(look);
   }
 
-  private build(equip: Equipped | null): void {
+  private build(look: AvatarLook | null): void {
     const s = this.scene;
-    const eq = equip ?? { weapon: null, armor: null, charm1: null, charm2: null, relic: null };
-    const { main, trim, style } = armorColors(eq.armor);
+    const wpn = look?.weapon ?? null;
+    const { main, trim, style } = robeColors(look);
 
-    // 套装五件 / 传说：脚下光环
-    let auraColor = 0;
-    const counts = setCounts(eq);
-    for (const id of Object.keys(counts) as SetId[]) if ((counts[id] ?? 0) >= 5) auraColor = SETS[id].color;
-    if (!auraColor && Object.values(eq).some(i => i?.legend)) auraColor = 0xffa31a;
+    // 筑基以上：脚下光环，取境界色
+    const realm = look?.cult ? realmIndex(look.cult) : 0;
+    const auraColor = realm >= 2 ? REALM_COLORS[realm] : 0;
 
     this.shadow = s.add.image(0, 0, 'fx_shadow').setScale(1.0, 0.9).setAlpha(0.9);
     this.aura = s.add.image(0, -6, 'fx_ring').setTint(auraColor || 0x9fd8ff).setScale(0.62, 0.24)
       .setAlpha(auraColor ? 0.9 : 0).setBlendMode(Phaser.BlendModes.ADD);
     this.add([this.shadow, this.aura]);
-
-    // 法宝：悬在身后
-    if (eq.relic) {
-      const k = relicTex(s, kindOf(eq.relic), eq.relic.wuxing, itemColor(eq.relic));
-      this.relicGlow = s.add.image(-34, -104, 'fx_glow').setTint(itemColor(eq.relic)).setScale(0.32).setAlpha(0.55).setBlendMode(Phaser.BlendModes.ADD);
-      this.relic = s.add.image(-34, -104, k).setScale(1 / S);
-      this.add([this.relicGlow, this.relic]);
-    }
 
     this.rig = s.add.container(0, 0);
     this.add(this.rig);
@@ -408,13 +352,13 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.armF = s.add.container(8, -74);
     const armFront = s.add.image(0, 0, armKey).setOrigin(0.5, 3 / 38).setScale(1 / S);
     this.armF.add(armFront);
-    if (eq.weapon) {
-      const w = weaponTex(s, kindOf(eq.weapon), eq.weapon.wuxing, itemColor(eq.weapon));
-      const kind = kindOf(eq.weapon);
+    if (wpn) {
+      const w = weaponTex(s, kindOf(wpn), wpn.wuxing, itemColor(wpn));
+      const kind = kindOf(wpn);
       const gripX = kind === '杖' || kind === '枪' ? 0.3 : 0.06;
       this.weapon = s.add.image(0, 15, w.key).setOrigin(gripX, 0.5).setScale(1 / S);
-      if (eq.weapon.rarity >= 3 || eq.weapon.set) {
-        this.weaponGlow = s.add.image(0, 15, 'fx_glow').setTint(itemColor(eq.weapon)).setBlendMode(Phaser.BlendModes.ADD)
+      if (wpn.rarity >= 3 || (wpn.grade ?? 0) >= 5) {
+        this.weaponGlow = s.add.image(0, 15, 'fx_glow').setTint(itemColor(wpn)).setBlendMode(Phaser.BlendModes.ADD)
           .setOrigin(0.5).setScale(w.len / 256 * 1.3, 0.22).setAlpha(0.5);
         this.armF.add(this.weaponGlow);
       }
@@ -424,10 +368,11 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.rig.add([this.legB, this.armB, this.legF, this.torso, this.ribbon, this.head, this.armF]);
     this.flashables = [this.legB, this.legF, this.armB, armFront, this.torso, this.head];
 
-    // 佩饰：环绕腰间的灵珠
-    for (const it of [eq.charm1, eq.charm2]) {
-      if (!it) continue;
-      const orb = s.add.image(0, -50, 'fx_glow').setTint(it.set ? itemColor(it) : WX_TINT[it.wuxing]).setScale(0.13).setBlendMode(Phaser.BlendModes.ADD);
+    // 五行灵珠：修过的每一行一颗，环绕腰间
+    for (const wx of WX_ORDER) {
+      const lv = look?.cult?.[wx] ?? 0;
+      if (lv <= 0) continue;
+      const orb = s.add.image(0, -50, 'fx_glow').setTint(WX_TINT[wx]).setScale(0.1 + Math.min(0.07, lv * 0.003)).setBlendMode(Phaser.BlendModes.ADD);
       this.charms.push(orb);
       this.add(orb);
     }
@@ -453,7 +398,7 @@ export class Avatar extends Phaser.GameObjects.Container {
   play(action: AvatarAction): void {
     this.action = action;
     this.actionT = 0;
-    this.actionDur = action === 'cast' ? 420 : 240;
+    this.actionDur = action === 'cast' ? 420 : action === 'slash' ? 280 : 240;
   }
 
   hurt(): void {
@@ -503,7 +448,15 @@ export class Avatar extends Phaser.GameObjects.Container {
     if (this.action !== 'none') {
       const k = this.actionT / this.actionDur;
       const out = k < 0.35 ? Phaser.Math.Easing.Back.Out(k / 0.35) : 1 - Phaser.Math.Easing.Quadratic.InOut((k - 0.35) / 0.65);
-      if (this.action === 'attack') {
+      if (this.action === 'slash') {
+        // 挥砍：从肩后抡到身前，再收回
+        const sw = Phaser.Math.Easing.Cubic.Out(Math.min(1, k / 0.55));
+        const back = k < 0.55 ? 0 : (k - 0.55) / 0.45;
+        p.armF = Phaser.Math.Linear(Phaser.Math.Linear(-2.7, -0.2, sw), p.armF, back);
+        p.wpn = Phaser.Math.Linear(Phaser.Math.Linear(-2.3, 0.75, sw), p.wpn, back);
+        p.lean = Phaser.Math.Linear(Phaser.Math.Linear(-0.1, 0.26, sw), p.lean, back);
+        p.armB = Phaser.Math.Linear(p.armB, 0.6, 1 - back);
+      } else if (this.action === 'attack') {
         p.armF = Phaser.Math.Linear(p.armF, -1.5, out);
         p.wpn = Phaser.Math.Linear(p.wpn, 0.05, out);
         p.lean = Phaser.Math.Linear(p.lean, 0.12, out);
@@ -551,14 +504,10 @@ export class Avatar extends Phaser.GameObjects.Container {
     // 发带随动作飘
     this.ribbon.setRotation(Math.sin(this.t * 3.1) * 0.18 + p.lean * 0.8 + this.moving * 0.35);
 
-    // 法宝上下浮动，佩饰环绕
-    if (this.relic) {
-      const y = -104 + Math.sin(this.t * 1.8) * 5;
-      this.relic.setY(y).setRotation(Math.sin(this.t * 1.1) * 0.12);
-      this.relicGlow?.setY(y).setAlpha(0.4 + Math.sin(this.t * 2.6) * 0.15);
-    }
+    // 灵珠环绕
+    const nOrb = Math.max(1, this.charms.length);
     this.charms.forEach((c, i) => {
-      const a = this.t * 2.2 + i * Math.PI;
+      const a = this.t * 2.2 + (i / nOrb) * Math.PI * 2;
       c.setPosition(Math.cos(a) * 30, -48 + Math.sin(a) * 9);
       // 转到身后时压暗
       c.setAlpha(Math.sin(a) > 0 ? 0.95 : 0.45);

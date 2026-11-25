@@ -1,5 +1,5 @@
 import { Wuxing, WUXING_CONQUERS, WUXING_GENERATES } from '../types/Wuxing.js';
-import { PlayerStats, LegendId } from './gear.js';
+import { PlayerStats, GearItem, Energy, WX_ORDER } from './gear.js';
 
 /**
  * 秘境（刷怪副本）的共用参数：前后端必须一致
@@ -28,7 +28,7 @@ export interface PathDef {
 }
 
 export const PATHS: Record<Wuxing, PathDef> = {
-  [Wuxing.FIRE]:  { wuxing: Wuxing.FIRE,  name: '离火之道', role: '清群', desc: '火球自动追敌，燎原焚尽周身，焚天陨火砸落敌阵。灼烧可以层层蔓延。', available: true },
+  [Wuxing.FIRE]:  { wuxing: Wuxing.FIRE,  name: '离火之道', role: '清群', desc: '兵器出手带火，燎原焚尽周身，焚天陨火砸落敌阵。技能要耗灵力，灵力靠吸纳妖异残留的能量。', available: true },
   [Wuxing.METAL]: { wuxing: Wuxing.METAL, name: '庚金之道', role: '点杀', desc: '锋锐穿透，暴击斩首。', available: false },
   [Wuxing.WATER]: { wuxing: Wuxing.WATER, name: '玄水之道', role: '控场', desc: '寒潮冻结，拉扯风筝。', available: false },
   [Wuxing.WOOD]:  { wuxing: Wuxing.WOOD,  name: '青木之道', role: '续航', desc: '生生不息，荆棘反噬。', available: false },
@@ -37,38 +37,54 @@ export const PATHS: Record<Wuxing, PathDef> = {
 
 /** 离火之道的技能参数 */
 export const FIRE = {
-  /** 火球：自动攻击 */
-  boltInterval: 640,
-  boltRange: 560,
-  boltSpeed: 1150,
-  boltMult: 1.0,
+  /** 兵器命中：引燃几率；杖的灵弹溅射 */
+  igniteChance: 0.25,
   splashRadius: 85,
   splashMult: 0.45,
-  igniteChance: 0.25,
-  /** 赤炎羽：迸裂流火 */
-  splitCount: 3,
-  splitMult: 0.45,
-  splitRange: 260,
   /** 燎原：以自身为圆心的火环 */
   ringCd: 7000,
+  ringCost: 30,
   ringRadius: 300,
   ringMult: 1.7,
   /** 焚天：陨火 */
   meteorCd: 11000,
+  meteorCost: 50,
   meteorDelay: 650,
   meteorRadius: 230,
   meteorMult: 3.4,
   meteorRange: 620,
-  sealMeteors: 3,
-  sealMult: 0.75,
-  sealCdr: 0.3,
   /** 灼烧：每秒造成攻击力的 35% */
   burnDps: 0.35,
   burnMs: 4000,
-  /** 燎原之心爆裂 */
-  heartRadius: 180,
-  heartMult: 0.9,
 } as const;
+
+// ───────────────────────── 能量与灵力 ─────────────────────────
+
+/**
+ * 妖异溃散后留下一团与它同属的五行能量：
+ *   - 收进存档，用于修炼与淬炼兵器（orbValue）
+ *   - 同时化作局内的「灵力」，技能要有足够灵力才放得出（qiGain）
+ */
+export const QI_START = 50;
+/** 一团能量的分量：层数越高越足；魁首 ×6，病变核心散成五行各一团 */
+export function orbValue(tier: number, mtier: MonsterTier): number {
+  const v = 1 + 0.6 * (tier - 1);
+  return Math.max(1, Math.round(v * (mtier === 2 ? 8 : mtier === 1 ? 6 : 1)));
+}
+/** 一团能量化成多少灵力：生我之气最补，克我之气难以炼化 */
+export function qiGain(path: Wuxing, wx: Wuxing, mtier: MonsterTier): number {
+  const base = mtier === 0 ? 6 : 20;
+  let m = 1;
+  if (WUXING_GENERATES[wx] === path) m = 1.5;
+  else if (wx === path) m = 1.2;
+  else if (WUXING_CONQUERS[wx] === path) m = 0.6;
+  return Math.round(base * m);
+}
+export const ORB_MAGNET = 230;
+export const ORB_PICK = 46;
+export function wxIndex(wx: Wuxing): number {
+  return WX_ORDER.indexOf(wx);
+}
 
 /** 遁 / 御 */
 export const DODGE = { speed: 1350, duration: 170, cooldown: 2600, invuln: 340 } as const;
@@ -88,14 +104,12 @@ export const REVIVE_MS = 2500;
 export function withCdr(ms: number, s: Pick<PlayerStats, 'cdr'>): number {
   return ms * (1 - s.cdr / 100);
 }
-export function boltInterval(s: Pick<PlayerStats, 'aspd'>): number {
-  return FIRE.boltInterval / (1 + s.aspd / 100);
+/** 兵器出手间隔 */
+export function attackInterval(form: { interval: number }, s: Pick<PlayerStats, 'aspd'>): number {
+  return form.interval / (1 + s.aspd / 100);
 }
-export function meteorCd(s: Pick<PlayerStats, 'cdr' | 'legends'>): number {
-  return withCdr(FIRE.meteorCd, s) * (s.legends.includes('fentian_seal') ? 1 - FIRE.sealCdr : 1);
-}
-export function hasLegend(s: { legends: LegendId[] }, id: LegendId): boolean {
-  return s.legends.includes(id);
+export function meteorCd(s: Pick<PlayerStats, 'cdr'>): number {
+  return withCdr(FIRE.meteorCd, s);
 }
 
 // ───────────────────────── 五行克制 ─────────────────────────
@@ -163,21 +177,20 @@ export const ENEMY_BOLT_SPEED = 520;
 export interface ProfileView {
   name: string;
   path: Wuxing | null;
-  stash: import('./gear.js').GearItem[];
+  /** 手里的兵器 */
+  weapon: GearItem | null;
+  /** 兵匣：备用兵器 */
+  stash: GearItem[];
   stashCap: number;
-  equip: import('./gear.js').Equipped;
-  mats: number;
-  /** 小于等于这个品质的装备拾取时自动分解；-1 = 不分解 */
+  /** 五行能量（可花费） */
+  energy: Energy;
+  /** 五行修为（每行的重数） */
+  cult: Energy;
+  /** 小于等于这个品质的兵器拾取时自动化去；-1 = 不化 */
   autoSalvage: number;
   maxTier: number;
   /** 各层最快通关（毫秒） */
   best: Record<number, number>;
-  /** 图鉴：已登记的部件键（永久） */
-  codex: string[];
-  /** 图鉴里收着的套装件（不占灵囊） */
-  vault: import('./gear.js').GearItem[];
-  /** 各层精魄 */
-  essence: Record<number, number>;
 }
 
 export interface RoomPlayerView {
@@ -202,8 +215,9 @@ export interface RunPlayerInfo {
   name: string;
   path: Wuxing;
   stats: PlayerStats;
-  /** 身上的装备（用于外显） */
-  equip: import('./gear.js').Equipped;
+  /** 兵器与修为（用于外显） */
+  weapon: GearItem | null;
+  cult: Energy;
 }
 
 /**
@@ -249,36 +263,39 @@ export interface SpawnInfo {
   max: number;
 }
 
-/** 玩家技能代号：b 火球 · s 流火 · A 燎原 · B 焚天 · H 燎原之心爆裂 · m 焚炎陨火 · L 惊雷 · F 坤元火域（后四种仅表现） */
-export type SkillCode = 'b' | 's' | 'A' | 'B' | 'H' | 'm' | 'L' | 'F';
+/** 玩家技能代号：b 兵器弹道 · A 燎原 · B 焚天 */
+export type SkillCode = 'b' | 'A' | 'B';
 
 export type C2S =
   | { t: 'hello'; did: string; name?: string }
   | { t: 'name'; name: string }
   | { t: 'path'; path: Wuxing }
-  | { t: 'equip'; id: string; slot?: string }
-  | { t: 'unequip'; slot: string }
+  /** 换上兵匣里的兵器 */
+  | { t: 'equip'; id: string }
+  /** 化去兵器，返还同属能量 */
   | { t: 'salvage'; ids: string[] }
   | { t: 'autoSalvage'; r: number }
-  /** 图鉴：登记（灵囊 → 图鉴）/ 取出穿戴 / 穿上整套 / 合成缺的部件 */
-  | { t: 'register'; id: string }
-  | { t: 'withdraw'; id: string }
-  | { t: 'wearSet'; set: string }
-  | { t: 'craft'; set: string; piece: number }
-  /** 炼器：升阶 */
+  /** 修炼：某一行升一重 */
+  | { t: 'cultivate'; wx: Wuxing }
+  /** 淬炼兵器：升一阶 */
   | { t: 'refine'; id: string }
   | { t: 'create'; tier: number }
   | { t: 'join'; code: string }
   | { t: 'leave' }
   | { t: 'tier'; tier: number }
   | { t: 'start' }
-  /** 位置：x, y, 朝向(±1), 动作(0 站 1 跑 2 遁 3 御), 生命 */
+  /** 位置：x, y, 朝向(±1), 动作(0 站 1 跑 2 遁 3 御) */
   | { t: 'mv'; x: number; y: number; f: number; a: number }
+  /** 远程兵器的一发弹道命中 */
   | { t: 'hit'; s: SkillCode; id: number; x: number; y: number }
+  /** 近战兵器的一次挥击，扫中的妖异 */
+  | { t: 'swing'; ids: number[] }
   | { t: 'cast'; s: SkillCode; x: number; y: number }
   | { t: 'hp'; hp: number }
   | { t: 'parry'; id: number }
   | { t: 'pdodge' }
+  /** 吸纳一团能量 / 拾取一件兵器 */
+  | { t: 'orb'; id: number }
   | { t: 'pick'; id: string }
   | { t: 'exit' }
   /** 秘境场景已就绪：服务器重发当前全部状态 */
@@ -294,17 +311,22 @@ export type S2C =
   /** 快照：e = [id,x,y,hp,flags]*，p = [idx,x,y,f,a,hp,max,down]* ；flags: 1 硬直 2 灼烧 */
   | { t: 'snap'; e: number[]; p: (number | string)[]; prog: number; ms: number }
   | { t: 'spawn'; list: SpawnInfo[] }
-  | { t: 'die'; id: number; by: number }
+  /** 妖异溃散；orbs = 留给你的能量 [能量id, 五行下标, 分量]* */
+  | { t: 'die'; id: number; by: number; orbs?: number[] }
+  /** 补发地上的能量 [能量id, x, y, 五行下标, 分量, 妖异档次]* */
+  | { t: 'orbs'; list: number[] }
+  /** 灵力校正（服务器拒绝了一次施放时） */
+  | { t: 'qi'; v: number }
   | { t: 'dmg'; d: number[] }
   | { t: 'atk'; a: EnemyAttack }
   | { t: 'bolts'; list: EnemyBoltSpawn[] }
   | { t: 'stag'; id: number; ms: number }
   | { t: 'cast'; p: number; s: SkillCode; x: number; y: number }
-  | { t: 'loot'; id: string; x: number; y: number; item: import('./gear.js').GearItem }
-  | { t: 'got'; id: string; item?: import('./gear.js').GearItem; mats?: number }
-  | { t: 'essence'; tier: number; n: number }
+  | { t: 'loot'; id: string; x: number; y: number; item: GearItem }
+  /** 兵器入匣；或被自动化去，返还 n 点 wx 能量 */
+  | { t: 'got'; id: string; item?: GearItem; wx?: Wuxing; n?: number }
   | { t: 'boss'; id: number }
   | { t: 'down'; p: number }
   | { t: 'up'; p: number }
-  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; essence: number; items: import('./gear.js').GearItem[] }
+  | { t: 'end'; ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy; items: GearItem[] }
   | { t: 'pong'; c: number };

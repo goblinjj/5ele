@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import {
-  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, RARITY_COLORS, RARITY_CSS, itemColor, itemCss,
-  withCdr, meteorCd,
+  TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD, itemColor, itemCss,
+  withCdr, meteorCd, WUXING_NAMES, Wuxing,
 } from '@xiyou/shared';
+import { WX_TINT } from '../config/worldConfig.js';
 import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/dims.js';
 import { VirtualJoystick } from '../systems/input/VirtualJoystick.js';
@@ -10,10 +11,13 @@ import { inputManager } from '../systems/input/InputManager.js';
 import { net } from '../systems/net/Net.js';
 import { sfx } from '../systems/audio/Sfx.js';
 import { RiftScene, EndMsg } from './RiftScene.js';
-import { button, fmtTime, SERIF, SANS, hex } from '../ui/kit.js';
+import { button, fmtTime, SERIF, SANS, hex, WX_CSS } from '../ui/kit.js';
 
 const W = GAME_WIDTH;
 const H = GAME_HEIGHT;
+/** 局内能量计数按相生顺序排 */
+const WX_ROW: Wuxing[] = [Wuxing.WOOD, Wuxing.FIRE, Wuxing.EARTH, Wuxing.METAL, Wuxing.WATER];
+const QI_COLOR = 0x6fd6ff;
 
 /** 只在内容或颜色真的变了时才改：Text 每次 setText / setColor 都会重新栅格化 */
 function setTextIf(t: Phaser.GameObjects.Text, text: string, color?: string): void {
@@ -28,6 +32,9 @@ interface RoundBtn {
   label: Phaser.GameObjects.Text;
   cd: Phaser.GameObjects.Graphics;
   cdText: Phaser.GameObjects.Text;
+  /** 灵力消耗（0 = 不耗灵力） */
+  cost: number;
+  costText?: Phaser.GameObjects.Text;
 }
 
 /**
@@ -45,6 +52,8 @@ export class RiftHUDScene extends Phaser.Scene {
   private topText!: Phaser.GameObjects.Text;
   private progText!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
+  private qiText!: Phaser.GameObjects.Text;
+  private wxTexts: Phaser.GameObjects.Text[] = [];
   private critText!: Phaser.GameObjects.Text;
   private downText!: Phaser.GameObjects.Text;
   private netText!: Phaser.GameObjects.Text;
@@ -73,12 +82,17 @@ export class RiftHUDScene extends Phaser.Scene {
     this.topText = this.add.text(30, 26, '', { fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: '#ffe9a8', stroke: '#000', strokeThickness: 5 });
     this.progText = this.add.text(W / 2, 96, '', { fontFamily: SERIF, fontSize: '24px', fontStyle: 'bold', color: '#f0e6d3', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5);
     this.hpText = this.add.text(30, 140, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
-    this.critText = this.add.text(30, 176, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#9fd8ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
+    this.qiText = this.add.text(30, 176, '', { fontFamily: SANS, fontSize: '20px', fontStyle: 'bold', color: '#dff6ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
+    // 本局吸纳的五行能量
+    this.wxTexts = WX_ROW.map((wx, i) => this.add.text(30 + i * 92, 212, '', {
+      fontFamily: SANS, fontSize: '21px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0, 0.5));
+    this.critText = this.add.text(30, 246, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#9fd8ff', stroke: '#000', strokeThickness: 4 }).setOrigin(0, 0.5);
     this.downText = this.add.text(W / 2, H * 0.36, '', {
       fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#f85149', stroke: '#000', strokeThickness: 6, align: 'center',
     }).setOrigin(0.5);
     for (let i = 0; i < 3; i++) {
-      this.mateTexts.push(this.add.text(30, 220 + i * 52, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#79c0ff', stroke: '#000', strokeThickness: 4 }));
+      this.mateTexts.push(this.add.text(30, 276 + i * 52, '', { fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#79c0ff', stroke: '#000', strokeThickness: 4 }));
     }
 
     // 撤离
@@ -98,11 +112,11 @@ export class RiftHUDScene extends Phaser.Scene {
     this.joystick = new VirtualJoystick(this, 176, H - 250, 92, H * 0.40);
     this.btnDodge = this.roundButton(W - 128, H - 200, 74, '遁', 0x9fd8ff, 46, () => inputManager.pressDash());
     this.btnGuard = this.roundButton(W - 300, H - 140, 60, '御', 0xffe9a8, 40, () => inputManager.pressGuard());
-    this.btnRing = this.roundButton(W - 300, H - 320, 60, '燎原', 0xff6a3c, 30, () => inputManager.pressSkill(0));
-    this.btnMeteor = this.roundButton(W - 150, H - 400, 60, '焚天', 0xffb36b, 30, () => inputManager.pressSkill(1));
+    this.btnRing = this.roundButton(W - 300, H - 320, 60, '燎原', 0xff6a3c, 30, () => inputManager.pressSkill(0), FIRE.ringCost);
+    this.btnMeteor = this.roundButton(W - 150, H - 400, 60, '焚天', 0xffb36b, 30, () => inputManager.pressSkill(1), FIRE.meteorCost);
   }
 
-  private roundButton(x: number, y: number, r: number, text: string, color: number, size: number, onPress: () => void): RoundBtn {
+  private roundButton(x: number, y: number, r: number, text: string, color: number, size: number, onPress: () => void, cost: number = 0): RoundBtn {
     const bg = this.add.graphics();
     bg.fillStyle(0x0b1016, 0.72);
     bg.fillCircle(x, y, r);
@@ -113,6 +127,10 @@ export class RiftHUDScene extends Phaser.Scene {
     bg.lineStyle(1.5, color, 0.35);
     bg.strokeCircle(x, y, r - 8);
     const glow = this.add.image(x, y, 'fx_glow').setTint(color).setBlendMode(Phaser.BlendModes.ADD).setScale((r * 2.6) / 256).setAlpha(0);
+    const costText = cost > 0
+      ? this.add.text(x, y + r + 16, `灵力 ${cost}`, { fontFamily: SANS, fontSize: '19px', fontStyle: 'bold', color: hex(QI_COLOR), stroke: '#000', strokeThickness: 4 }).setOrigin(0.5)
+      : undefined;
+    if (costText) this.controls.push(costText);
     const label = this.add.text(x, y, text, { fontFamily: SERIF, fontSize: `${size}px`, fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
     const cd = this.add.graphics();
     const cdText = this.add.text(x, y, '', { fontFamily: SERIF, fontSize: `${Math.round(size * 0.85)}px`, fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setVisible(false);
@@ -124,13 +142,23 @@ export class RiftHUDScene extends Phaser.Scene {
       this.tweens.add({ targets: glow, alpha: 0, duration: 260 });
     });
     this.controls.push(bg, glow, label, cd, cdText, hit);
-    return { x, y, r, label, cd, cdText };
+    return { x, y, r, label, cd, cdText, cost, costText };
   }
 
   private setCd(b: RoundBtn, remain: number, total: number): void {
     const pct = total > 0 ? remain / total : 0;
     b.cd.clear();
-    b.label.setAlpha(pct > 0.001 ? 0.2 : 1);
+    // 灵力不够：整个按钮压暗，消耗标红
+    const lack = b.cost > 0 && this.rift.qi < b.cost;
+    b.label.setAlpha(pct > 0.001 ? 0.2 : lack ? 0.35 : 1);
+    if (b.costText) {
+      const col = lack ? '#f85149' : hex(QI_COLOR);
+      if (b.costText.style.color !== col) b.costText.setColor(col);
+    }
+    if (lack && pct <= 0.001) {
+      b.cd.fillStyle(0x000000, 0.5);
+      b.cd.fillCircle(b.x, b.y, b.r);
+    }
     if (pct > 0.001) {
       b.cd.fillStyle(0x000000, 0.66);
       b.cd.slice(b.x, b.y, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct, false);
@@ -191,7 +219,18 @@ export class RiftHUDScene extends Phaser.Scene {
     g.fillStyle(hpP > 0.35 ? 0x3fb950 : 0xf85149, 1);
     g.fillRoundedRect(30, 130, Math.max(1, hpw * hpP), 22, 8);
     setTextIf(this.hpText, `${Math.ceil(r.hp)} / ${r.stats.maxHp}`);
-    setTextIf(this.critText, r.critCharges > 0 ? `必暴火球 ×${r.critCharges}` : '');
+    // 灵力：吸纳能量获得，放技能消耗
+    const qiP = Phaser.Math.Clamp(r.qi / r.stats.qiMax, 0, 1);
+    g.fillStyle(0x000000, 0.6);
+    g.fillRoundedRect(26, 164, hpw + 8, 24, 8);
+    g.fillStyle(QI_COLOR, 1);
+    if (qiP > 0.01) g.fillRoundedRect(30, 168, hpw * qiP, 16, 6);
+    // 两个技能的门槛刻度
+    g.fillStyle(0x000000, 0.55);
+    for (const c of [FIRE.ringCost, FIRE.meteorCost]) g.fillRect(30 + hpw * Math.min(1, c / r.stats.qiMax) - 1, 166, 2, 20);
+    setTextIf(this.qiText, `灵力 ${Math.floor(r.qi)} / ${r.stats.qiMax}`);
+    WX_ROW.forEach((wx, i) => setTextIf(this.wxTexts[i], `${WUXING_NAMES[wx]} ${r.gained[wx]}`));
+    setTextIf(this.critText, r.critCharges > 0 ? `必暴 ×${r.critCharges}` : '');
 
     // 同伴
     const mates = r.mateList;
@@ -199,7 +238,7 @@ export class RiftHUDScene extends Phaser.Scene {
       const m = mates[i];
       if (!m) { setTextIf(t, ''); return; }
       setTextIf(t, m.down ? `${m.info.name} · 倒地` : m.info.name, m.down ? '#f85149' : '#79c0ff');
-      const y = 220 + i * 52 + 30;
+      const y = 276 + i * 52 + 30;
       g.fillStyle(0x000000, 0.6);
       g.fillRect(30, y, 180, 10);
       g.fillStyle(0x58a6ff, 1);
@@ -248,6 +287,12 @@ export class RiftHUDScene extends Phaser.Scene {
       m.fillStyle(e.tier === 2 ? 0xc9a0ff : 0xf85149, 1);
       m.fillCircle(p[0], p[1], e.tier === 2 ? 6 : e.tier === 1 ? 4 : 2.2);
     }
+    for (const o of r.orbDots) {
+      const p = toMap(o.x, o.y);
+      if (!p) continue;
+      m.fillStyle(WX_TINT[o.wx], 0.9);
+      m.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
+    }
     for (const l of r.lootDots) {
       const p = toMap(l.x, l.y);
       if (!p) continue;
@@ -282,7 +327,7 @@ export class RiftHUDScene extends Phaser.Scene {
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0, 0.7).setInteractive();
     c.add(shade);
     c.add(this.add.text(W / 2, H * 0.4, '撤离秘境？', { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    c.add(this.add.text(W / 2, H * 0.4 + 70, '已掉落的装备会自动收入灵囊', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量与兵器会自动收走', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
     c.add(button(this, W / 2 - 150, H * 0.55, 240, 90, '继续', () => c.destroy(), { color: 0x8b949e }));
     c.add(button(this, W / 2 + 150, H * 0.55, 240, 90, '撤离', () => { net.send({ t: 'leave' }); this.backToCamp(); }));
   }
@@ -302,18 +347,27 @@ export class RiftHUDScene extends Phaser.Scene {
     const lines = [
       `${TIER_NAMES[m.tier]} · 用时 ${fmtTime(m.ms)}${m.best ? '  新纪录！' : ''}`,
       `击杀 ${r.kills}　每分钟 ${m.ms > 0 ? Math.round((r.kills / m.ms) * 60000) : 0}`,
-      `收获装备 ${m.collected} 件　玄晶 +${m.mats}`,
-      ...((m.essence ?? r.gotEss) > 0 ? [`${TIER_NAMES[m.tier]}精魄 +${m.essence ?? r.gotEss}`] : []),
     ];
     if (m.ok && m.tier < 9) lines.push(`已解锁 ${TIER_NAMES[m.tier + 1]}`);
-    c.add(this.add.text(W / 2, 360, lines.join('\n'), {
+    c.add(this.add.text(W / 2, 350, lines.join('\n'), {
       fontFamily: SERIF, fontSize: '30px', color: '#f0e6d3', align: 'center', lineSpacing: 14,
     }).setOrigin(0.5, 0));
 
-    // 本局收获（含结算时自动收起的掉落）
+    // 本局吸纳的五行能量（含结算时自动收走的）
+    const energy = m.energy ?? r.gained;
+    c.add(this.add.text(W / 2, 520, '吸纳能量', { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5));
+    WX_ROW.forEach((wx, i) => {
+      const x = W / 2 + (i - 2) * 128;
+      c.add(this.add.image(x, 600, 'fx_glow').setTint(WX_TINT[wx]).setBlendMode(Phaser.BlendModes.ADD).setScale(0.42).setAlpha(0.5));
+      c.add(this.add.text(x, 588, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '44px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(0.5));
+      c.add(this.add.text(x, 642, `+${energy[wx] ?? 0}`, { fontFamily: SANS, fontSize: '28px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0.5));
+    });
+
+    // 本局所得兵器
     const best = (m.items ?? [...r.gotItems]).slice().sort((a, b) => b.rarity - a.rarity).slice(0, 8);
+    if (best.length) c.add(this.add.text(W / 2, 730, `所得兵器 ${best.length} 件`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5));
     best.forEach((it, i) => {
-      c.add(this.add.text(W / 2, 640 + i * 46, it.name, {
+      c.add(this.add.text(W / 2, 770 + i * 46, it.name, {
         fontFamily: SERIF, fontSize: '28px', fontStyle: it.rarity >= 3 ? 'bold' : 'normal', color: itemCss(it),
       }).setOrigin(0.5, 0));
     });

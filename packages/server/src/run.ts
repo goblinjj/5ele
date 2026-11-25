@@ -1,13 +1,14 @@
 import {
-  Wuxing, PlayerStats, GearItem, GearRarity, Equipped, generateSetPiece, setsForTier, SetFx,
+  Wuxing, PlayerStats, GearItem, GearRarity, WeaponForm, formOf, Energy, emptyEnergy, WX_ORDER,
   generateItem, rollRarity, salvageValue, MAX_TIER,
+  QI_START, orbValue, qiGain, wxIndex,
   RIFT_SIZE, RIFT_CENTER, SERVER_TICK_MS, SNAPSHOT_EVERY,
   PROGRESS_GOAL, PROGRESS_NORMAL, PROGRESS_ELITE,
   FIRE, GUARD, DODGE, PARRY_MULT, STAGGER_MS, STAGGER_BONUS, PERFECT_DODGE_CRITS,
   REVIVE_RADIUS, REVIVE_MS,
   MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  withCdr, boltInterval, meteorCd, hasLegend,
+  withCdr, attackInterval, meteorCd,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty, STASH_CAP } from './store.js';
@@ -15,7 +16,7 @@ import { Profile, markDirty, STASH_CAP } from './store.js';
 /**
  * 秘境模拟（服务器权威）
  *
- * 服务器负责：妖异的生成 / 移动 / 出招、玩家技能的伤害结算、掉落与拾取、进度与结算。
+ * 服务器负责：妖异的生成 / 移动 / 出招、玩家出手的伤害结算、能量与兵器的掉落拾取、灵力、进度与结算。
  * 客户端负责：自己角色的移动、遁与御的判定、被击中的判定（预警结束时自己在不在范围内）。
  * 这样手机网络有延迟时，防反和闪避仍然手感准确；而伤害数值和掉落都由服务器给出。
  */
@@ -24,7 +25,6 @@ export interface RunMember {
   id: string;
   profile: Profile;
   stats: PlayerStats;
-  equip: Equipped;
   send(msg: S2C): void;
 }
 
@@ -40,20 +40,32 @@ interface RunPlayer extends RunMember {
   revive: number;
   left: boolean;
   kills: number;
-  boltTokens: number;
-  splitTokens: number;
+  /** 兵器的出手方式（开局时定下，局内不换） */
+  form: WeaponForm;
+  /** 出手令牌：校验出手频率，允许少量网络抖动 */
+  atkTokens: number;
+  /** 局内灵力：吸纳能量获得，放技能消耗 */
+  qi: number;
+  /** 地上留给这名玩家的能量 */
+  orbs: Map<number, Orb>;
+  /** 本局吸纳的五行能量 */
+  gained: Energy;
   lastRing: number;
   lastMeteor: number;
   lastParry: number;
   lastPDodge: number;
   crits: number;
   loot: Map<string, { item: GearItem; x: number; y: number }>;
-  collected: number;
-  mats: number;
   got: GearItem[];
-  /** 本局命中的火球数（焚炎五件） */
-  boltHits: number;
-  ess: number;
+}
+
+interface Orb {
+  x: number;
+  y: number;
+  wx: Wuxing;
+  n: number;
+  /** 来自哪一档妖异（决定化成多少灵力） */
+  mt: MonsterTier;
 }
 
 type EnemyState = 'chase' | 'windup' | 'lunge' | 'recover';
@@ -92,7 +104,6 @@ interface Scheduled {
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
-const hasFx = (p: { stats: PlayerStats }, fx: SetFx) => p.stats.setFx.includes(fx);
 const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
 const clampW = (v: number) => Math.max(90, Math.min(RIFT_SIZE - 90, v));
 
@@ -101,6 +112,7 @@ export class Run {
   private players: RunPlayer[];
   private enemies = new Map<number, Enemy>();
   private seq = 0;
+  private orbSeq = 0;
   private now = 0;
   private tickN = 0;
   private progress = 0;
@@ -129,15 +141,19 @@ export class Run {
         hp: m.stats.maxHp,
         down: false, revive: 0, left: false,
         kills: 0,
-        boltTokens: 3, splitTokens: 0,
+        form: formOf(m.profile.weapon),
+        atkTokens: 3,
+        qi: Math.min(m.stats.qiMax, QI_START),
+        orbs: new Map(),
+        gained: emptyEnergy(),
         lastRing: -1e9, lastMeteor: -1e9, lastParry: -1e9, lastPDodge: -1e9,
         crits: 0,
         loot: new Map(),
-        collected: 0, mats: 0, got: [], boltHits: 0, ess: 0,
+        got: [],
       };
     });
 
-    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, equip: p.equip }));
+    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, weapon: p.profile.weapon, cult: p.profile.cult }));
     this.players.forEach(p => p.send({ t: 'runStart', tier, you: p.id, players: info }));
     // 开局给几群妖异，不用干等
     for (let i = 0; i < 3; i++) this.spawnPack(i === 0 ? 820 : 1000);
@@ -154,7 +170,7 @@ export class Run {
   removeMember(id: string): void {
     const p = this.players.find(q => q.id === id);
     if (!p || p.left) return;
-    // 中途离开：已经掉在地上的装备照样收进灵囊
+    // 中途离开：地上的能量与兵器照样收走
     this.collectAll(p);
     p.left = true;
     p.down = true;
@@ -185,6 +201,8 @@ export class Run {
         break;
       }
       case 'hit': this.onHit(p, msg.s, msg.id); break;
+      case 'swing': this.onSwing(p, msg.ids); break;
+      case 'orb': this.onOrb(p, msg.id); break;
       case 'cast': this.onCast(p, msg.s, msg.x, msg.y); break;
       case 'parry': this.onParry(p, msg.id); break;
       case 'pdodge': {
@@ -205,6 +223,12 @@ export class Run {
     if (list.length) p.send({ t: 'spawn', list });
     if (this.boss && !this.boss.dead) p.send({ t: 'boss', id: this.boss.id });
     for (const [id, l] of p.loot) p.send({ t: 'loot', id, x: l.x, y: l.y, item: l.item });
+    if (p.orbs.size) {
+      const orbs: number[] = [];
+      for (const [id, o] of p.orbs) orbs.push(id, o.x, o.y, wxIndex(o.wx), o.n, o.mt);
+      p.send({ t: 'orbs', list: orbs });
+    }
+    p.send({ t: 'qi', v: p.qi });
     for (const q of this.players) if (q.down && !q.left) p.send({ t: 'down', p: q.idx });
   }
 
@@ -225,10 +249,10 @@ export class Run {
       }
     }
 
-    // 技能令牌回复（火球速率校验，允许少量网络抖动）
+    // 出手令牌回复（出手频率校验，允许少量网络抖动）
     for (const p of this.players) {
-      const rate = dt / boltInterval(p.stats);
-      p.boltTokens = Math.min(3, p.boltTokens + rate * 1.25);
+      const rate = dt / attackInterval(p.form, p.stats);
+      p.atkTokens = Math.min(3, p.atkTokens + rate * 1.25);
     }
 
     this.updateRevive(dt);
@@ -544,8 +568,8 @@ export class Run {
 
   // ───────────────────────── 玩家出手 ─────────────────────────
 
-  private roll(p: RunPlayer, e: Enemy, mult: number, useCrit: boolean): { amt: number; crit: boolean } {
-    let crit = Math.random() < p.stats.crit / 100;
+  private roll(p: RunPlayer, e: Enemy, mult: number, useCrit: boolean, forceCrit: boolean = false): { amt: number; crit: boolean } {
+    let crit = forceCrit || Math.random() < p.stats.crit / 100;
     if (useCrit && p.crits > 0) { p.crits--; crit = true; }
     let amt = p.stats.attack * mult * wxMult(p.path, e.def.wuxing);
     if (e.stagger > 0) amt *= STAGGER_BONUS;
@@ -589,43 +613,52 @@ export class Run {
     return out;
   }
 
+  /** 远程兵器：客户端报告一发弹道命中 */
   private onHit(p: RunPlayer, s: string, id: number): void {
-    if (p.down) return;
+    if (p.down || s !== 'b' || p.form.melee) return;
     const e = this.enemies.get(id);
     if (!e || e.dead) return;
-    if (dist2(p.x, p.y, e.x, e.y) > (FIRE.boltRange + 380) ** 2) return;
+    if (dist2(p.x, p.y, e.x, e.y) > (p.form.range + 380) ** 2) return;
+    // 一次出手 bolts 发弹道，每发占 1/bolts 个令牌
+    const cost = 1 / p.form.bolts;
+    if (p.atkTokens < cost) return;
+    p.atkTokens -= cost;
+    const { amt, crit } = this.roll(p, e, p.form.mult, true);
+    const ignite = Math.random() < FIRE.igniteChance / p.form.bolts;
+    const splash = p.form.splash ? this.enemiesNear(e.x, e.y, FIRE.splashRadius).filter(o => o !== e) : [];
+    this.damage(p, e, amt, crit);
+    if (ignite) this.ignite(p, e);
+    splash.forEach(o => {
+      const r = this.roll(p, o, FIRE.splashMult, false);
+      this.damage(p, o, r.amt, r.crit);
+    });
+  }
 
-    if (s === 'b') {
-      if (p.boltTokens < 1) return;
-      p.boltTokens -= 1;
-      if (hasLegend(p.stats, 'chiyan_feather')) p.splitTokens = Math.min(9, p.splitTokens + FIRE.splitCount);
-      const { amt, crit } = this.roll(p, e, FIRE.boltMult, true);
-      const ignite = Math.random() < FIRE.igniteChance;
-      const splash = this.enemiesNear(e.x, e.y, FIRE.splashRadius).filter(o => o !== e);
-      const ex = e.x, ey = e.y;
-      this.damage(p, e, amt, crit);
-      // 焚炎五件：每第 8 枚火球引落小陨火
-      p.boltHits++;
-      if (hasFx(p, 'fenyan5') && p.boltHits % 8 === 0) {
-        this.broadcast({ t: 'cast', p: p.idx, s: 'm', x: Math.round(ex), y: Math.round(ey) });
-        this.later(260, () => this.ring(p, ex, ey, 150, 1.2));
-      }
-      // 惊雷五件：暴击落雷
-      if (crit && hasFx(p, 'jinglei5')) {
-        this.broadcast({ t: 'cast', p: p.idx, s: 'L', x: Math.round(ex), y: Math.round(ey) });
-        this.ring(p, ex, ey, 130, 0.7, false);
-      }
-      if (ignite) this.ignite(p, e);
-      splash.forEach(o => {
-        const r = this.roll(p, o, FIRE.splashMult, false);
-        this.damage(p, o, r.amt, r.crit);
-      });
-    } else if (s === 's') {
-      if (p.splitTokens < 1) return;
-      p.splitTokens -= 1;
-      const r = this.roll(p, e, FIRE.splitMult, false);
+  /** 近战兵器：客户端报告一次挥击扫中的妖异 */
+  private onSwing(p: RunPlayer, ids: unknown): void {
+    if (p.down || !p.form.melee || !Array.isArray(ids)) return;
+    if (p.atkTokens < 1) return;
+    p.atkTokens -= 1;
+    // 完美闪避的必暴：一次挥击算一次，扫中的全部暴击
+    const forced = p.crits > 0;
+    if (forced) p.crits--;
+    const seen = new Set<number>();
+    for (const raw of ids.slice(0, 12)) {
+      const e = this.enemies.get(Number(raw));
+      if (!e || e.dead || seen.has(e.id)) continue;
+      seen.add(e.id);
+      if (dist2(p.x, p.y, e.x, e.y) > (p.form.range + 380) ** 2) continue;
+      const r = this.roll(p, e, p.form.mult, false, forced);
       this.damage(p, e, r.amt, r.crit);
+      if (Math.random() < FIRE.igniteChance) this.ignite(p, e);
     }
+  }
+
+  /** 灵力不够就放不出；被拒时把服务器的灵力发回去校正 */
+  private spendQi(p: RunPlayer, cost: number): boolean {
+    if (p.qi < cost) { p.send({ t: 'qi', v: p.qi }); return false; }
+    p.qi -= cost;
+    return true;
   }
 
   private onCast(p: RunPlayer, s: string, x: number, y: number): void {
@@ -634,31 +667,19 @@ export class Run {
     if (s === 'A') {
       // 客户端冷却到点就会放，服务器这边留 15% 容差
       if (this.now - p.lastRing < withCdr(FIRE.ringCd, p.stats) * 0.85) return;
+      if (!this.spendQi(p, FIRE.ringCost)) return;
       p.lastRing = this.now;
       const cx = dist2(x, y, p.x, p.y) < 250 ** 2 ? x : p.x;
       const cy = dist2(x, y, p.x, p.y) < 250 ** 2 ? y : p.y;
       this.broadcast({ t: 'cast', p: p.idx, s: 'A', x: Math.round(cx), y: Math.round(cy) });
       this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult);
-      if (hasFx(p, 'kunyuan5')) {
-        this.broadcast({ t: 'cast', p: p.idx, s: 'F', x: Math.round(cx), y: Math.round(cy) });
-        for (let i = 1; i <= 3; i++) this.later(i * 1000, () => this.ring(p, cx, cy, FIRE.ringRadius * area, 0.5, false));
-      }
     } else if (s === 'B') {
       if (this.now - p.lastMeteor < meteorCd(p.stats) * 0.85) return;
       if (dist2(x, y, p.x, p.y) > (FIRE.meteorRange + 300) ** 2) return;
+      if (!this.spendQi(p, FIRE.meteorCost)) return;
       p.lastMeteor = this.now;
-      if (hasFx(p, 'tiangang5')) p.crits = Math.max(p.crits, 5);
       this.broadcast({ t: 'cast', p: p.idx, s: 'B', x: Math.round(x), y: Math.round(y) });
-      const r = FIRE.meteorRadius * area;
-      if (hasLegend(p.stats, 'fentian_seal')) {
-        for (let i = 0; i < FIRE.sealMeteors; i++) {
-          const ox = i === 0 ? 0 : Math.cos(i * 2.4) * r * 0.9;
-          const oy = i === 0 ? 0 : Math.sin(i * 2.4) * r * 0.9;
-          this.later(FIRE.meteorDelay + i * 240, () => this.ring(p, x + ox, y + oy, r, FIRE.meteorMult * FIRE.sealMult));
-        }
-      } else {
-        this.later(FIRE.meteorDelay, () => this.ring(p, x, y, r, FIRE.meteorMult));
-      }
+      this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult));
     }
   }
 
@@ -682,10 +703,8 @@ export class Run {
     e.attack = null;
     if (e.state === 'windup' || e.state === 'lunge') { e.state = 'recover'; e.timer = 200; }
     this.broadcast({ t: 'stag', id: e.id, ms: e.stagger });
-    const { amt, crit } = this.roll(p, e, PARRY_MULT * (hasFx(p, 'xuanming5') ? 2 : 1), false);
+    const { amt, crit } = this.roll(p, e, PARRY_MULT, false);
     this.damage(p, e, amt, crit);
-    // 金乌羽衣：防反后立刻能再放燎原（客户端随后会发 cast A）
-    if (hasLegend(p.stats, 'jinwu_armor')) p.lastRing = -1e9;
   }
 
   private later(ms: number, fn: () => void): void {
@@ -699,27 +718,24 @@ export class Run {
     e.dead = true;
     this.enemies.delete(e.id);
     by.kills++;
-    this.broadcast({ t: 'die', id: e.id, by: by.idx });
 
-    // 燎原之心：灼烧中的妖异死亡时爆裂（链式引燃在下一个 tick 结算，避免递归过深）
-    const owner = e.burnOwner;
-    if (e.burnMs > 0 && owner && !owner.left && hasLegend(owner.stats, 'liaoyuan_heart')) {
-      const x = e.x, y = e.y;
-      this.later(80, () => {
-        this.broadcast({ t: 'cast', p: owner.idx, s: 'H', x: Math.round(x), y: Math.round(y) });
-        for (const o of this.enemiesNear(x, y, FIRE.heartRadius)) {
-          const { amt, crit } = this.roll(owner, o, FIRE.heartMult, false);
-          this.damage(owner, o, amt, crit);
-          this.ignite(owner, o);
-        }
-      });
+    // 残留的能量：每名玩家各得一份，自己去吸纳。病变核心散成五行各一团
+    const n = orbValue(this.tier, e.tier);
+    for (const p of this.players) {
+      if (p.left) { continue; }
+      const orbs: number[] = [];
+      const kinds = e.tier === 2 ? WX_ORDER : [e.def.wuxing];
+      for (const wx of kinds) {
+        const id = ++this.orbSeq;
+        p.orbs.set(id, { x: Math.round(e.x), y: Math.round(e.y), wx, n, mt: e.tier });
+        orbs.push(id, wxIndex(wx), n);
+      }
+      p.send({ t: 'die', id: e.id, by: by.idx, orbs });
     }
-
-    for (const p of this.alivePlayers) this.dropSpecial(p, e);
 
     if (e.tier === 2) {
       this.boss = null;
-      for (const p of this.alivePlayers) this.dropFor(p, e, 4, 2, true);
+      for (const p of this.alivePlayers) this.dropFor(p, e, 2, 2, true);
       this.later(1800, () => this.finish(true));
       return;
     }
@@ -733,45 +749,22 @@ export class Run {
       }
     }
 
+    // 兵器：魁首常掉，寻常妖异偶尔掉；组队时掉率略高
     for (const p of this.alivePlayers) {
+      const party = 1 + 0.15 * (this.alivePlayers.length - 1);
       if (e.tier === 1) {
-        this.dropFor(p, e, Math.random() < 0.5 ? 2 : 1, 1, false);
-      } else {
-        // 组队时掉率略高，鼓励一起刷
-        const chance = 0.055 * (1 + p.stats.find / 200) * (1 + 0.15 * (this.alivePlayers.length - 1));
-        if (Math.random() < chance) this.dropFor(p, e, 1, 0, false);
+        if (Math.random() < 0.4 * party) this.dropFor(p, e, 1, 1, false);
+      } else if (Math.random() < 0.012 * party) {
+        this.dropFor(p, e, 1, 0, false);
       }
     }
   }
 
   private bossDue = false;
 
-  /** 套装件（只在对应层数掉）与精魄（病变核心必掉，魁首偶尔掉） */
-  private dropSpecial(p: RunPlayer, e: Enemy): void {
-    const sets = setsForTier(this.tier);
-    const setChance = e.tier === 2 ? 0.45 : e.tier === 1 ? 0.06 : 0.0035 * (1 + p.stats.find / 200);
-    if (sets.length && Math.random() < setChance) {
-      const set = sets[Math.floor(Math.random() * sets.length)];
-      const item = generateSetPiece(set.id, Math.floor(Math.random() * set.pieces.length), this.tier);
-      const ang = Math.random() * Math.PI * 2;
-      const x = Math.round(clampW(e.x + Math.cos(ang) * 60));
-      const y = Math.round(clampW(e.y + Math.sin(ang) * 60));
-      p.loot.set(item.id, { item, x, y });
-      p.send({ t: 'loot', id: item.id, x, y, item });
-    }
-    const n = e.tier === 2 ? 2 + Math.floor(this.tier / 3) + (this.alivePlayers.length > 1 ? 1 : 0)
-      : e.tier === 1 && Math.random() < 0.12 ? 1 : 0;
-    if (n > 0) {
-      p.profile.essence[this.tier] = (p.profile.essence[this.tier] ?? 0) + n;
-      p.ess += n;
-      markDirty(p.profile);
-      p.send({ t: 'essence', tier: this.tier, n });
-    }
-  }
-
   private dropFor(p: RunPlayer, e: Enemy, count: number, minRarity: GearRarity, boss: boolean): void {
     for (let i = 0; i < count; i++) {
-      let rarity = rollRarity(this.tier, p.stats.find, minRarity);
+      let rarity = rollRarity(this.tier, minRarity);
       // 病变核心：保底一件极品，层数越高越容易出传说
       if (boss && i === 0) rarity = Math.random() < 0.12 + this.tier * 0.03 ? 4 : Math.max(3, rarity) as GearRarity;
       const item = generateItem(this.tier, rarity);
@@ -784,6 +777,22 @@ export class Run {
     }
   }
 
+  /** 吸纳一团能量：入账，并化作灵力 */
+  private onOrb(p: RunPlayer, id: number): void {
+    const o = p.orbs.get(id);
+    if (!o) return;
+    if (dist2(p.x, p.y, o.x, o.y) > 700 ** 2) return;
+    p.orbs.delete(id);
+    this.bank(p, o);
+    p.qi = Math.min(p.stats.qiMax, p.qi + qiGain(p.path, o.wx, o.mt));
+  }
+
+  private bank(p: RunPlayer, o: Orb): void {
+    p.profile.energy[o.wx] += o.n;
+    p.gained[o.wx] += o.n;
+    markDirty(p.profile);
+  }
+
   private onPick(p: RunPlayer, id: string): void {
     const l = p.loot.get(id);
     if (!l) return;
@@ -792,17 +801,16 @@ export class Run {
     this.give(p, l.item, true);
   }
 
-  /** 收进灵囊；低品质或灵囊满了就分解成玄晶 */
+  /** 收进兵匣；低品质或兵匣满了就化成同属能量 */
   private give(p: RunPlayer, item: GearItem, notify: boolean): void {
     const prof = p.profile;
-    if ((!item.set && item.rarity <= prof.autoSalvage) || prof.stash.length >= STASH_CAP) {
-      const mats = salvageValue(item);
-      prof.mats += mats;
-      p.mats += mats;
-      if (notify) p.send({ t: 'got', id: item.id, mats });
+    if (item.rarity <= prof.autoSalvage || prof.stash.length >= STASH_CAP) {
+      const n = salvageValue(item);
+      prof.energy[item.wuxing] += n;
+      p.gained[item.wuxing] += n;
+      if (notify) p.send({ t: 'got', id: item.id, wx: item.wuxing, n });
     } else {
       prof.stash.push(item);
-      p.collected++;
       p.got.push(item);
       if (notify) p.send({ t: 'got', id: item.id, item });
     }
@@ -812,6 +820,8 @@ export class Run {
   private collectAll(p: RunPlayer): void {
     for (const l of p.loot.values()) this.give(p, l.item, false);
     p.loot.clear();
+    for (const o of p.orbs.values()) this.bank(p, o);
+    p.orbs.clear();
   }
 
   private finish(ok: boolean): void {
@@ -829,7 +839,7 @@ export class Run {
       markDirty(prof);
       p.send({
         t: 'end', ok, ms: this.now, tier: this.tier,
-        kills: this.players.map(q => q.kills), best, collected: p.collected, mats: p.mats, essence: p.ess,
+        kills: this.players.map(q => q.kills), best, energy: p.gained,
         items: [...p.got].sort((a, b) => b.rarity - a.rarity).slice(0, 8),
       });
     }

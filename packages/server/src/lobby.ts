@@ -1,10 +1,10 @@
 import { WebSocket } from 'ws';
 import {
-  C2S, S2C, RoomView, Wuxing, PATHS, EQUIP_SLOTS, EquipSlotKey, slotTypeOf,
-  computeStats, powerOf, bestSlotFor, salvageValue, starterWeapon, MAX_PARTY, MAX_TIER,
+  C2S, S2C, RoomView, Wuxing, PATHS, WUXING_NAMES,
+  powerOf, salvageValue, starterWeapon, MAX_PARTY, MAX_TIER,
 } from '@xiyou/shared';
-import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, STASH_CAP, statsOf } from './store.js';
-import { putBack, register, withdraw, wearSet, craft, refine } from './forge.js';
+import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf } from './store.js';
+import { cultivate, refine } from './forge.js';
 import { Run } from './run.js';
 
 /**
@@ -102,7 +102,6 @@ class Room {
       id: s.id,
       profile: s.profile!,
       stats: statsOf(s.profile!),
-      equip: s.profile!.equip,
       send: (m: S2C) => s.send(m),
     }));
     this.run = new Run(this.tier, members, () => {
@@ -176,8 +175,11 @@ export function onMessage(s: Session, raw: string): void {
       if (!def?.available) { s.send({ t: 'err', msg: '此道尚未开放' }); return; }
       if (p.path) { s.send({ t: 'err', msg: '已入道，不可更改' }); return; }
       p.path = def.wuxing;
-      // 入道赠一把本道凡兵
-      if (!p.equip.weapon) p.equip.weapon = starterWeapon(def.wuxing);
+      // 入道赠两件本道凡兵：一远一近，体会器型的不同
+      if (!p.weapon) {
+        p.weapon = starterWeapon(def.wuxing, '杖');
+        if (!p.stash.length) p.stash.push(starterWeapon(def.wuxing, '剑'));
+      }
       markDirty(p);
       s.sendProfile();
       break;
@@ -187,24 +189,9 @@ export function onMessage(s: Session, raw: string): void {
       const idx = p.stash.findIndex(it => it.id === msg.id);
       if (idx < 0) return;
       const item = p.stash[idx];
-      let slot = msg.slot as EquipSlotKey | undefined;
-      if (!slot || !EQUIP_SLOTS.includes(slot) || slotTypeOf(slot) !== item.slot) slot = bestSlotFor(p.equip, p.path, item);
-      const old = p.equip[slot];
-      p.stash.splice(idx, 1);
-      p.equip[slot] = item;
-      // 换下来的：登记过的套装件回图鉴，否则回灵囊原位置附近
-      if (old && !putBack(p, old)) p.stash.splice(idx, 0, old);
-      markDirty(p);
-      s.sendProfile();
-      s.room?.sync();
-      break;
-    }
-
-    case 'unequip': {
-      const slot = msg.slot as EquipSlotKey;
-      if (!EQUIP_SLOTS.includes(slot) || !p.equip[slot]) return;
-      if (!putBack(p, p.equip[slot]!)) { s.send({ t: 'err', msg: '灵囊已满' }); return; }
-      p.equip[slot] = null;
+      // 换下来的放回兵匣原位
+      if (p.weapon) p.stash.splice(idx, 1, p.weapon); else p.stash.splice(idx, 1);
+      p.weapon = item;
       markDirty(p);
       s.sendProfile();
       s.room?.sync();
@@ -214,29 +201,24 @@ export function onMessage(s: Session, raw: string): void {
     case 'salvage': {
       if (!Array.isArray(msg.ids)) return;
       const ids = new Set(msg.ids);
-      let gain = 0;
+      const gain: Partial<Record<Wuxing, number>> = {};
       p.stash = p.stash.filter(it => {
         if (!ids.has(it.id)) return true;
-        gain += salvageValue(it);
+        const n = salvageValue(it);
+        p.energy[it.wuxing] += n;
+        gain[it.wuxing] = (gain[it.wuxing] ?? 0) + n;
         return false;
       });
-      p.mats += gain;
       markDirty(p);
       s.sendProfile();
-      if (gain) s.send({ t: 'toast', msg: `分解获得 ${gain} 玄晶` });
+      const text = (Object.keys(gain) as Wuxing[]).map(wx => `${WUXING_NAMES[wx]} +${gain[wx]}`).join('　');
+      if (text) s.send({ t: 'toast', msg: `化去兵器，能量归元：${text}` });
       break;
     }
 
-    case 'register':
-    case 'withdraw':
-    case 'wearSet':
-    case 'craft':
+    case 'cultivate':
     case 'refine': {
-      const r = msg.t === 'register' ? register(p, msg.id)
-        : msg.t === 'withdraw' ? withdraw(p, msg.id)
-        : msg.t === 'wearSet' ? wearSet(p, msg.set)
-        : msg.t === 'craft' ? craft(p, msg.set, msg.piece | 0)
-        : refine(p, msg.id);
+      const r = msg.t === 'cultivate' ? cultivate(p, msg.wx) : refine(p, msg.id);
       if (!r.ok) { s.send({ t: 'err', msg: r.msg }); return; }
       markDirty(p);
       s.sendProfile();

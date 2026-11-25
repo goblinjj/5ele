@@ -1,7 +1,8 @@
 import { promises as fs, existsSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import {
-  GearItem, Equipped, emptyEquipped, ProfileView, Wuxing, computeStats,
+  GearItem, ProfileView, Wuxing, computeStats, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
+  kindOf, salvageValue, MAX_CULT,
 } from '@xiyou/shared';
 
 /**
@@ -9,7 +10,7 @@ import {
  * 写入先落临时文件再改名，进程中途被杀也不会写坏存档。
  */
 
-export const STASH_CAP = 60;
+export const STASH_CAP = 24;
 const DATA_DIR = process.env.DATA_DIR || path.resolve('data');
 const PLAYER_DIR = path.join(DATA_DIR, 'players');
 
@@ -17,17 +18,68 @@ export interface Profile {
   did: string;
   name: string;
   path: Wuxing | null;
+  /** 手里的兵器 */
+  weapon: GearItem | null;
+  /** 兵匣 */
   stash: GearItem[];
-  equip: Equipped;
-  mats: number;
+  /** 五行能量与五行修为 */
+  energy: Energy;
+  cult: Energy;
   autoSalvage: number;
   maxTier: number;
   best: Record<number, number>;
-  codex: string[];
-  vault: GearItem[];
-  essence: Record<number, number>;
   created: number;
   seen: number;
+}
+
+/**
+ * 旧存档（五个装备栏 + 套装图鉴 + 玄晶 / 精魄）迁移到「只有兵器 + 五行能量」：
+ *   - 兵器保留（身上的、灵囊里的、图鉴里的）
+ *   - 其余装备按品质化成与它同属的能量；玄晶、精魄折成五行能量平分
+ */
+function migrate(raw: any): void {
+  const energy: Energy = { ...emptyEnergy(), ...(raw.energy ?? {}) };
+  const isWeapon = (it: any) => it && (it.slot === undefined || it.slot === 'weapon');
+  const clean = (it: any): GearItem => ({
+    id: it.id, name: it.name, rarity: it.rarity, tier: it.tier, wuxing: it.wuxing,
+    base: (it.base ?? []).filter((l: any) => l.stat === 'atk'),
+    affixes: (it.affixes ?? []).filter((l: any) => ['atk', 'atkPct', 'aspd', 'crit', 'critDmg', 'area', 'burn'].includes(l.stat)),
+    kind: kindOf(it), ...(it.grade ? { grade: it.grade } : {}),
+  });
+  const melt = (it: any) => {
+    if (!it || !WX_ORDER.includes(it.wuxing)) return;
+    energy[it.wuxing as Wuxing] += salvageValue({ rarity: it.rarity ?? 0, tier: it.tier ?? 1, grade: it.grade }) * (it.set ? 2 : 1);
+  };
+
+  if (raw.equip) {
+    const eq = raw.equip;
+    const weapons: GearItem[] = [];
+    for (const it of [...(raw.stash ?? []), ...(raw.vault ?? [])]) {
+      if (isWeapon(it)) weapons.push(clean(it)); else melt(it);
+    }
+    for (const key of ['armor', 'charm1', 'charm2', 'relic']) melt(eq[key]);
+    raw.weapon = eq.weapon ? clean(eq.weapon) : null;
+    raw.stash = weapons;
+    const mats = Number(raw.mats) || 0;
+    let ess = 0;
+    for (const [tier, n] of Object.entries(raw.essence ?? {})) ess += (Number(n) || 0) * 10 * (Number(tier) || 1);
+    const share = Math.round((mats + ess) / 5);
+    WX_ORDER.forEach(wx => { energy[wx] += share; });
+    delete raw.equip; delete raw.vault; delete raw.codex; delete raw.mats; delete raw.essence;
+  }
+  raw.weapon ??= null;
+  raw.stash = (raw.stash ?? []).filter((it: any) => it && WEAPON_KINDS.includes(it.kind));
+  // 兵匣放不下的化成能量
+  if (raw.stash.length > STASH_CAP) {
+    raw.stash.sort((a: GearItem, b: GearItem) => b.rarity - a.rarity || b.tier - a.tier);
+    while (raw.stash.length > STASH_CAP) melt(raw.stash.pop());
+  }
+  raw.energy = energy;
+  raw.cult = { ...emptyEnergy(), ...(raw.cult ?? {}) };
+  WX_ORDER.forEach(wx => {
+    raw.energy[wx] = Math.max(0, Math.round(Number(raw.energy[wx]) || 0));
+    raw.cult[wx] = Math.max(0, Math.min(MAX_CULT, Math.round(Number(raw.cult[wx]) || 0)));
+  });
 }
 
 if (!existsSync(PLAYER_DIR)) mkdirSync(PLAYER_DIR, { recursive: true });
@@ -65,25 +117,23 @@ export function loadProfile(did: string, name?: string): Profile {
   }
   if (!p) {
     p = {
-      did, name: cleanName(name), path: null, stash: [], equip: emptyEquipped(),
-      mats: 0, autoSalvage: -1, maxTier: 1, best: {}, codex: [], vault: [], essence: {}, created: Date.now(), seen: Date.now(),
+      did, name: cleanName(name), path: null, weapon: null, stash: [],
+      energy: emptyEnergy(), cult: emptyEnergy(), autoSalvage: -1, maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
   // 兼容旧存档字段
-  p.equip = { ...emptyEquipped(), ...p.equip };
+  if ((p as any).equip) dirty.add(did);
+  migrate(p);
   p.best ??= {};
-  p.codex ??= [];
-  p.vault ??= [];
-  p.essence ??= {};
   p.seen = Date.now();
   cache.set(did, p);
   return p;
 }
 
-/** 按存档算属性（含图鉴加成） */
+/** 按存档算属性（兵器 + 五行修为） */
 export function statsOf(p: Profile) {
-  return computeStats(p.equip, p.path, p.codex.length);
+  return computeStats(p.weapon, p.path, p.cult);
 }
 
 export function markDirty(p: Profile): void {
@@ -92,9 +142,8 @@ export function markDirty(p: Profile): void {
 
 export function viewOf(p: Profile): ProfileView {
   return {
-    name: p.name, path: p.path, stash: p.stash, stashCap: STASH_CAP, equip: p.equip,
-    mats: p.mats, autoSalvage: p.autoSalvage, maxTier: p.maxTier, best: p.best,
-    codex: p.codex, vault: p.vault, essence: p.essence,
+    name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
+    energy: p.energy, cult: p.cult, autoSalvage: p.autoSalvage, maxTier: p.maxTier, best: p.best,
   };
 }
 

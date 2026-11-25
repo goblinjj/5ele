@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import {
-  Wuxing, GearItem, RARITY_COLORS, RARITY_CSS, itemColor, itemCss, displayName, PlayerStats, RunPlayerInfo,
+  Wuxing, WUXING_NAMES, GearItem, itemColor, itemCss, PlayerStats, RunPlayerInfo,
   RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn, SkillCode,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
-  wxMult, withCdr, boltInterval, meteorCd, hasLegend, salvageValue,
-  computeStats, powerOf, statsWith, bestSlotFor,
+  wxMult, withCdr, attackInterval, meteorCd,
+  computeStats, powerOf, WeaponForm, formOf, WEAPON_FORMS, Energy, emptyEnergy, WX_ORDER,
+  QI_START, qiGain, ORB_MAGNET, ORB_PICK,
 } from '@xiyou/shared';
 import { GAME_HEIGHT, applyRenderScale } from '../config/gameConfig.js';
 import { WX_TINT, PLAYER_SCALE, ENEMY_SCALE, ELITE_SCALE, BOSS_SCALE } from '../config/worldConfig.js';
@@ -14,7 +15,7 @@ import { MONSTER_ATLAS_MAP } from '../systems/world/SpawnSystem.js';
 import { inputManager } from '../systems/input/InputManager.js';
 import { net } from '../systems/net/Net.js';
 import { sfx } from '../systems/audio/Sfx.js';
-import { SANS } from '../ui/kit.js';
+import { SANS, WX_CSS } from '../ui/kit.js';
 import { DamageText } from '../systems/fx/DamageText.js';
 import { Avatar } from '../systems/avatar/Avatar.js';
 
@@ -25,9 +26,8 @@ const TELE_EDGE = 0xffd0c0;
 const TELE_DEPTH = -8;
 /** 玩家身体判定半径 */
 const BODY_R = 34;
-/** 火球：飞得快、转向有上限，弹道接近直线才不飘 */
+/** 弹道：飞得快、转向有上限，接近直线才不飘 */
 const BOLT_SPEED = 1850;
-const SPLIT_SPEED = 1500;
 const BOLT_TURN = 9;
 const BOLT_HIT_R = 48;
 /** 远端实体按服务器时间回放，比最新快照晚这么多毫秒，用来吸收网络抖动 */
@@ -115,7 +115,7 @@ interface EBolt {
 }
 
 interface MyBolt {
-  s: SkillCode;
+  /** 追踪的妖异；-1 = 直线飞 */
   target: number;
   x: number;
   y: number;
@@ -136,6 +136,24 @@ interface Loot {
   glow: Phaser.GameObjects.Image;
   label?: Phaser.GameObjects.Text;
   picking: boolean;
+}
+
+/** 妖异残留的一团五行能量 */
+interface Orb {
+  id: number;
+  wx: Wuxing;
+  n: number;
+  mt: MonsterTier;
+  x: number;
+  y: number;
+  /** 落点（刚溃散时从妖异身上弹开） */
+  tx: number;
+  ty: number;
+  age: number;
+  speed: number;
+  phase: number;
+  glow: Phaser.GameObjects.Image;
+  core: Phaser.GameObjects.Image;
 }
 
 interface Mate {
@@ -165,7 +183,7 @@ export interface RunStartMsg {
 }
 
 export interface EndMsg {
-  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; collected: number; mats: number; essence?: number; items?: GearItem[];
+  ok: boolean; ms: number; tier: number; kills: number[]; best: boolean; energy: Energy; items?: GearItem[];
 }
 
 /**
@@ -190,10 +208,14 @@ export class RiftScene extends Phaser.Scene {
   ended: EndMsg | null = null;
   kills = 0;
   gotItems: GearItem[] = [];
-  gotMats = 0;
-  gotEss = 0;
+  /** 本局吸纳的五行能量 */
+  gained: Energy = emptyEnergy();
+  /** 局内灵力：吸纳能量获得，放技能消耗 */
+  qi = 0;
+  /** 兵器的出手方式 */
+  form: WeaponForm = WEAPON_FORMS['杖'];
   down = false;
-  /** 完美闪避赐予的必暴火球 */
+  /** 完美闪避赐予的必暴出手 */
   critCharges = 0;
 
   // 冷却（毫秒，剩余）
@@ -236,6 +258,8 @@ export class RiftScene extends Phaser.Scene {
   private clockOffset = NaN;
   private lastServerMs = 0;
   private hitSfxT = 0;
+  private orbSfxT = 0;
+  private lackT = 0;
 
   // 世界对象
   private enemies = new Map<number, CEnemy>();
@@ -243,6 +267,7 @@ export class RiftScene extends Phaser.Scene {
   private ebolts: EBolt[] = [];
   private mybolts: MyBolt[] = [];
   private loot = new Map<string, Loot>();
+  private orbs = new Map<number, Orb>();
   private mates = new Map<number, Mate>();
 
   constructor() {
@@ -264,8 +289,9 @@ export class RiftScene extends Phaser.Scene {
     this.ended = null;
     this.kills = 0;
     this.gotItems = [];
-    this.gotMats = 0;
-    this.gotEss = 0;
+    this.gained = emptyEnergy();
+    this.qi = Math.min(this.stats.qiMax, QI_START);
+    this.form = formOf(mine.weapon);
     this.down = false;
     this.critCharges = 0;
     this.cdBolt = 400; this.cdRing = 0; this.cdMeteor = 0; this.cdDodge = 0; this.cdGuard = 0;
@@ -279,6 +305,7 @@ export class RiftScene extends Phaser.Scene {
     this.ebolts = [];
     this.mybolts = [];
     this.loot = new Map();
+    this.orbs = new Map();
     this.mates = new Map();
     this.animState = '';
     this.clockOffset = NaN;
@@ -314,24 +341,25 @@ export class RiftScene extends Phaser.Scene {
     this.offs = [
       net.on('snap', (m: any) => this.onSnap(m)),
       net.on('spawn', (m: { list: SpawnInfo[] }) => m.list.forEach(s => this.spawnEnemy(s))),
-      net.on('die', (m: { id: number; by: number }) => this.onDie(m.id, m.by)),
+      net.on('die', (m: { id: number; by: number; orbs?: number[] }) => this.onDie(m.id, m.by, m.orbs)),
+      net.on('orbs', (m: { list: number[] }) => {
+        for (let i = 0; i < m.list.length; i += 6) {
+          this.addOrb(m.list[i], WX_ORDER[m.list[i + 3]], m.list[i + 4], m.list[i + 5] as MonsterTier, m.list[i + 1], m.list[i + 2], false);
+        }
+      }),
+      net.on('qi', (m: { v: number }) => { this.qi = m.v; }),
       net.on('dmg', (m: { d: number[] }) => this.onDmg(m.d)),
       net.on('atk', (m: { a: EnemyAttack }) => this.onAttack(m.a)),
       net.on('bolts', (m: { list: EnemyBoltSpawn[] }) => m.list.forEach(b => this.spawnEBolt(b))),
       net.on('stag', (m: { id: number; ms: number }) => this.onStagger(m.id)),
       net.on('cast', (m: { p: number; s: SkillCode; x: number; y: number }) => this.onRemoteCast(m.p, m.s, m.x, m.y)),
       net.on('loot', (m: { id: string; x: number; y: number; item: GearItem }) => this.addLoot(m.id, m.x, m.y, m.item)),
-      net.on('got', (m: { id: string; item?: GearItem; mats?: number }) => this.onGot(m.id, m.item, m.mats)),
+      net.on('got', (m: { id: string; item?: GearItem; wx?: Wuxing; n?: number }) => this.onGot(m.id, m.item, m.wx, m.n)),
       net.on('boss', (m: { id: number }) => this.onBoss(m.id)),
-      net.on('essence', (m: { tier: number; n: number }) => {
-        this.gotEss += m.n;
-        this.fx.floatText(this.x, this.y - 190, `${m.tier}重天精魄 +${m.n}`, '#e0b0ff', 30, 90, 1400);
-        sfx.shapeOk(Wuxing.FIRE);
-      }),
       net.on('down', (m: { p: number }) => this.onDown(m.p)),
       net.on('up', (m: { p: number }) => this.onUp(m.p)),
       net.on('end', (m: EndMsg) => this.onEnd(m)),
-      net.on('status', (st: string) => { if (st === 'offline' && !this.ended) this.onEnd({ ok: false, ms: this.elapsed, tier: this.tier, kills: [], best: false, collected: this.gotItems.length, mats: this.gotMats }); }),
+      net.on('status', (st: string) => { if (st === 'offline' && !this.ended) this.onEnd({ ok: false, ms: this.elapsed, tier: this.tier, kills: [], best: false, energy: this.gained, items: this.gotItems }); }),
     ];
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.offs.forEach(f => f());
@@ -375,7 +403,8 @@ export class RiftScene extends Phaser.Scene {
     this.tweens.add({ targets: this.meAura, alpha: 0.16, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.meShadow = this.add.image(this.x, this.y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11);
     this.guardRing = this.add.image(this.x, this.y, 'fx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffe9a8).setVisible(false).setDepth(FX_DEPTH - 4);
-    this.me = new Avatar(this, this.x, this.y + RiftScene.FOOT, this.players[this.myIdx].equip, 1.15);
+    const mine = this.players[this.myIdx];
+    this.me = new Avatar(this, this.x, this.y + RiftScene.FOOT, { weapon: mine.weapon, path: mine.path, cult: mine.cult }, 1.15);
   }
 
   private createMate(info: RunPlayerInfo, idx: number): void {
@@ -385,7 +414,7 @@ export class RiftScene extends Phaser.Scene {
     const tint = WX_TINT[info.path];
     const shadow = this.add.image(x, y, 'fx_shadow').setScale(PLAYER_SCALE * 3).setDepth(-11).setVisible(false);
     void tint;
-    const spr = new Avatar(this, x, y + RiftScene.FOOT, info.equip, 1.15);
+    const spr = new Avatar(this, x, y + RiftScene.FOOT, { weapon: info.weapon, path: info.path, cult: info.cult }, 1.15);
     const name = this.add.text(x, y, info.name, {
       fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: '#79c0ff', stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5, 1).setDepth(FX_DEPTH - 2);
@@ -484,9 +513,18 @@ export class RiftScene extends Phaser.Scene {
     this.tweens.add({ targets: [en.spr, en.shadow, en.ring], alpha: 0, duration: 380, delay: 200, onComplete: destroy });
   }
 
-  private onDie(id: number, by: number): void {
+  private onDie(id: number, by: number, orbs?: number[]): void {
     const en = this.enemies.get(id);
     if (!en) return;
+    // 残留的能量从溃散处迸出
+    if (orbs) {
+      const count = orbs.length / 3;
+      for (let i = 0; i < orbs.length; i += 3) {
+        const ang = Math.random() * Math.PI * 2;
+        const d = count > 1 ? 90 + Math.random() * 70 : 20 + Math.random() * 45;
+        this.addOrb(orbs[i], WX_ORDER[orbs[i + 1]], orbs[i + 2], en.tier, en.x, en.y, true, en.x + Math.cos(ang) * d, en.y + Math.sin(ang) * d);
+      }
+    }
     const tint = WX_TINT[en.def.wuxing];
     this.fx.burst(en.x, en.y - 20, tint, en.tier ? 26 : 12);
     this.fx.ember(en.x, en.y, tint, en.tier ? 18 : 6, 40);
@@ -499,13 +537,7 @@ export class RiftScene extends Phaser.Scene {
       this.fx.shake(0.006, 160);
     }
     sfx.enemyDie(en.def.wuxing, en.tier > 0);
-    if (by === this.myIdx) {
-      this.kills++;
-      if (this.stats.setFx.includes('changsheng5') && !this.down) {
-        this.hp = Math.min(this.stats.maxHp, this.hp + Math.ceil(this.stats.maxHp * 0.02));
-        this.hpDirty = true;
-      }
-    }
+    if (by === this.myIdx) this.kills++;
     this.removeEnemy(en, true);
   }
 
@@ -723,8 +755,6 @@ export class RiftScene extends Phaser.Scene {
         this.fx.floatText(this.x, this.y - 150, '防反！', '#ffe9a8', 40, 90, 900);
         this.fx.shake(0.006, 140);
         this.cdGuard = 0;
-        if (this.stats.setFx.includes('xuanming5')) { this.invuln = 3000; this.fx.ring(this.x, this.y, 140, 0x6fb6ff, 600); }
-        if (hasLegend(this.stats, 'jinwu_armor')) { this.cdRing = 0; this.castRing(); }
         return;
       }
       sfx.block();
@@ -758,31 +788,105 @@ export class RiftScene extends Phaser.Scene {
     return best;
   }
 
+  /** 妖异的身体半径（近战判定用） */
+  private bodyR(en: CEnemy): number {
+    return en.tier === 2 ? 110 : en.tier === 1 ? 50 : 30;
+  }
+
+  /** 兵器自动出手：器型决定是近战挥击还是远程弹道 */
   private updateAutoAttack(): void {
     if (this.cdBolt > 0 || this.down) return;
-    const target = this.nearestEnemy(this.x, this.y, FIRE.boltRange);
+    const form = this.form;
+    // 近战要算上妖异的身体，否则贴着核心也够不着
+    let target: CEnemy | null = null;
+    let bd = Infinity;
+    for (const en of this.enemies.values()) {
+      if (en.hp <= 0) continue;
+      const d = Math.hypot(en.x - this.x, en.y - this.y) - (form.melee ? this.bodyR(en) : 0);
+      if (d <= form.range && d < bd) { bd = d; target = en; }
+    }
     if (!target) return;
-    this.cdBolt = boltInterval(this.stats);
+    this.cdBolt = attackInterval(form, this.stats);
     if (this.critCharges > 0) this.critCharges--;
-    this.fireBolt('b', this.x + this.facing * 20, this.y - 60, target, 1);
     this.facing = target.x < this.x ? -1 : 1;
+    this.me.setFacing(this.facing);
+    if (form.melee) {
+      this.swing(form, target);
+      return;
+    }
+    const ox = this.x + this.facing * 20, oy = this.y - 60;
+    const base = Math.atan2(target.y - 40 - oy, target.x - ox);
+    for (let i = 0; i < form.bolts; i++) {
+      const off = (i - (form.bolts - 1) / 2) * form.spread;
+      // 正中那发追踪目标，两侧的直线飞
+      this.fireBolt(ox, oy, base + off, off === 0 ? target.id : -1, form.bolts > 1 ? 0.75 : 1, (form.range + 160) / BOLT_SPEED * 1000);
+    }
+    this.fx.flashGlow(ox + Math.cos(base) * 30, oy + Math.sin(base) * 30, 70, 0xffd27a, 120, 0.9);
     this.castAnim = 260;
     this.me.play('attack');
     sfx.shoot();
   }
 
-  private fireBolt(s: SkillCode, x: number, y: number, target: CEnemy, scale: number): void {
-    const ang = Math.atan2(target.y - 40 - y, target.x - x);
-    const speed = s === 'b' ? BOLT_SPEED : SPLIT_SPEED;
+  /** 近战挥击：扇面（剑 / 刃）或直线突刺（枪），扫中的一起结算 */
+  private swing(form: WeaponForm, target: CEnemy): void {
+    const ang = Math.atan2(target.y - this.y, target.x - this.x);
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const hits: CEnemy[] = [];
+    for (const en of this.enemies.values()) {
+      if (en.hp <= 0) continue;
+      const rx = en.x - this.x, ry = en.y - this.y;
+      const r = this.bodyR(en);
+      const d = Math.hypot(rx, ry);
+      if (d - r > form.range) continue;
+      let inside: boolean;
+      if (form.arc > 0) {
+        // 贴身的不看角度，免得绕到背后就砍不着
+        inside = d < r + 50 || Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(ry, rx) - ang)) <= form.arc / 2;
+      } else {
+        const along = rx * dx + ry * dy;
+        inside = along > -r && Math.abs(-rx * dy + ry * dx) <= form.width / 2 + r;
+      }
+      if (inside) hits.push(en);
+    }
+    if (!hits.includes(target)) hits.push(target);
+    hits.sort((a, b) => (a.x - this.x) ** 2 + (a.y - this.y) ** 2 - (b.x - this.x) ** 2 - (b.y - this.y) ** 2);
+    net.send({ t: 'swing', ids: hits.slice(0, 12).map(e => e.id) });
+
+    const cx = this.x, cy = this.y - 40;
+    if (form.arc > 0) {
+      // 刀光：沿扇面排几道斩痕
+      const n = form.kind === '剑' ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = ang + (i - (n - 1) / 2) * (form.arc / (n + 0.5));
+        this.fx.slash(cx + Math.cos(a) * form.range * 0.55, cy + Math.sin(a) * form.range * 0.55, a + Math.PI / 2, form.range * 1.15, 0xffe2a0);
+      }
+      this.fx.flashGlow(cx + dx * form.range * 0.5, cy + dy * form.range * 0.5, form.range * 0.8, FIRE_TINT, 150, 0.4);
+      this.me.play('slash');
+    } else {
+      // 枪芒：一道贯穿的直线
+      const beam = this.add.image(cx, cy, 'fx_bolt').setTint(0xffe2a0).setBlendMode(Phaser.BlendModes.ADD)
+        .setOrigin(0, 0.5).setRotation(ang).setScale(0.2, 1.3).setDepth(FX_DEPTH - 5);
+      this.tweens.add({ targets: beam, scaleX: (form.range + 40) / beam.width, duration: 80, ease: 'Quad.easeOut' });
+      this.tweens.add({ targets: beam, alpha: 0, scaleY: 0.3, delay: 80, duration: 160, onComplete: () => beam.destroy() });
+      this.fx.flashGlow(cx + dx * form.range, cy + dy * form.range, 90, 0xffd27a, 160, 0.8);
+      this.me.play('attack');
+    }
+    for (const en of hits) {
+      const l = Math.hypot(en.x - this.x, en.y - this.y) || 1;
+      this.hitFeedback(en, form.arc > 0 ? (en.x - this.x) / l : dx, form.arc > 0 ? (en.y - this.y) / l : dy, form.kind === '刃' ? 0.7 : 1.3);
+      this.fx.burst(en.x, en.y - 30, FIRE_TINT, 5);
+    }
+    this.castAnim = 240;
+    sfx.shoot();
+    if (hits.length >= 3) this.fx.shake(0.003, 70);
+  }
+
+  private fireBolt(x: number, y: number, ang: number, target: number, scale: number, life: number): void {
     const core = this.add.image(x, y, 'fx_bolt').setTint(0xffe2a0).setBlendMode(Phaser.BlendModes.ADD)
       .setOrigin(0.85, 0.5).setScale(1.15 * scale, 0.9 * scale).setRotation(ang).setDepth(FX_DEPTH - 6);
     const glow = this.add.image(x, y, 'fx_glow').setTint(FIRE_TINT).setBlendMode(Phaser.BlendModes.ADD)
       .setScale(0.42 * scale).setDepth(FX_DEPTH - 6);
-    this.mybolts.push({ s, target: target.id, x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 650, core, glow, scale });
-    if (s === 'b') {
-      // 出手：掌心一闪 + 身体后坐
-      this.fx.flashGlow(x + Math.cos(ang) * 30, y + Math.sin(ang) * 30, 70, 0xffd27a, 120, 0.9);
-    }
+    this.mybolts.push({ target, x, y, vx: Math.cos(ang) * BOLT_SPEED, vy: Math.sin(ang) * BOLT_SPEED, life, core, glow, scale });
   }
 
   private destroyBolt(b: MyBolt): void {
@@ -793,7 +897,7 @@ export class RiftScene extends Phaser.Scene {
   private updateMyBolts(dt: number): void {
     const sec = dt / 1000;
     this.mybolts = this.mybolts.filter(b => {
-      const t = this.enemies.get(b.target);
+      const t = b.target >= 0 ? this.enemies.get(b.target) : undefined;
       const speed = Math.hypot(b.vx, b.vy);
       if (t) {
         // 有限转向：大体直线飞，只修正一点点
@@ -822,15 +926,12 @@ export class RiftScene extends Phaser.Scene {
         }
       }
       if (hit) {
-        net.send({ t: 'hit', s: b.s, id: hit.id, x: Math.round(hit.x), y: Math.round(hit.y) });
+        net.send({ t: 'hit', s: 'b', id: hit.id, x: Math.round(hit.x), y: Math.round(hit.y) });
         const ang = Math.atan2(b.vy, b.vx);
-        this.fx.burst(b.x, b.y, FIRE_TINT, b.s === 'b' ? 10 : 5);
-        this.fx.slash(b.x, b.y, ang + (Math.random() - 0.5) * 0.8, b.s === 'b' ? 150 : 90, 0xffc06a);
-        this.hitFeedback(hit, Math.cos(ang), Math.sin(ang), b.s === 'b' ? 1 : 0.5);
-        if (b.s === 'b') {
-          this.fx.flashGlow(b.x, b.y, FIRE.splashRadius, FIRE_TINT, 180, 0.55);
-          if (hasLegend(this.stats, 'chiyan_feather')) this.splitFrom(hit);
-        }
+        this.fx.burst(b.x, b.y, FIRE_TINT, b.scale >= 1 ? 10 : 6);
+        this.fx.slash(b.x, b.y, ang + (Math.random() - 0.5) * 0.8, b.scale >= 1 ? 150 : 100, 0xffc06a);
+        this.hitFeedback(hit, Math.cos(ang), Math.sin(ang), b.scale >= 1 ? 1 : 0.6);
+        if (this.form.splash) this.fx.flashGlow(b.x, b.y, FIRE.splashRadius, FIRE_TINT, 180, 0.55);
         this.destroyBolt(b);
         return false;
       }
@@ -862,25 +963,20 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  /** 赤炎羽：命中后迸出流火，飞向附近其他妖异 */
-  private splitFrom(src: CEnemy): void {
-    const picked = new Set<number>([src.id]);
-    for (let i = 0; i < FIRE.splitCount; i++) {
-      let best: CEnemy | null = null;
-      let bd = FIRE.splitRange ** 2;
-      for (const en of this.enemies.values()) {
-        if (picked.has(en.id)) continue;
-        const d = (en.x - src.x) ** 2 + (en.y - src.y) ** 2;
-        if (d < bd) { bd = d; best = en; }
-      }
-      if (!best) break;
-      picked.add(best.id);
-      this.fireBolt('s', src.x, src.y - 40, best, 0.55);
+  /** 灵力够不够放；不够就提示一声（别刷屏） */
+  private spendQi(cost: number): boolean {
+    if (this.qi >= cost) { this.qi -= cost; return true; }
+    const now = this.time.now;
+    if (now - this.lackT > 900) {
+      this.lackT = now;
+      this.fx.floatText(this.x, this.y - 150, '灵力不足 · 去吸纳妖异残留的能量', '#9fd8ff', 26, 60, 1000);
+      sfx.shapeFail();
     }
+    return false;
   }
 
   private castRing(): void {
-    if (this.cdRing > 0 || this.down) return;
+    if (this.cdRing > 0 || this.down || !this.spendQi(FIRE.ringCost)) return;
     this.cdRing = withCdr(FIRE.ringCd, this.stats);
     net.send({ t: 'cast', s: 'A', x: Math.round(this.x), y: Math.round(this.y) });
     this.drawRing(this.x, this.y, FIRE.ringRadius * (1 + this.stats.area / 100), true);
@@ -898,7 +994,7 @@ export class RiftScene extends Phaser.Scene {
 
   /** 焚天：落向妖异最密集处 */
   private castMeteor(): void {
-    if (this.cdMeteor > 0 || this.down) return;
+    if (this.cdMeteor > 0 || this.down || !this.spendQi(FIRE.meteorCost)) return;
     let best: CEnemy | null = null;
     let bestN = -1;
     const R2 = FIRE.meteorRange ** 2;
@@ -911,7 +1007,6 @@ export class RiftScene extends Phaser.Scene {
     const tx = best ? best.x : this.x + this.facing * 300;
     const ty = best ? best.y : this.y;
     this.cdMeteor = meteorCd(this.stats);
-    if (this.stats.setFx.includes('tiangang5')) this.critCharges = 5;
     net.send({ t: 'cast', s: 'B', x: Math.round(tx), y: Math.round(ty) });
     this.drawMeteor(tx, ty, true);
     this.castAnim = 420;
@@ -920,89 +1015,94 @@ export class RiftScene extends Phaser.Scene {
 
   private drawMeteor(x: number, y: number, mine: boolean): void {
     const r = FIRE.meteorRadius * (1 + (mine ? this.stats.area : 0) / 100);
-    const count = mine && hasLegend(this.stats, 'fentian_seal') ? FIRE.sealMeteors : 1;
-    for (let i = 0; i < count; i++) {
-      const ox = i === 0 ? 0 : Math.cos(i * 2.4) * r * 0.9;
-      const oy = i === 0 ? 0 : Math.sin(i * 2.4) * r * 0.9;
-      const delay = i * 240;
-      const mark = this.add.image(x + ox, y + oy, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
-      this.tweens.add({ targets: mark, alpha: 0.7, duration: 200, delay });
-      const rock = this.add.image(x + ox - 220, y + oy - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
-      this.tweens.add({
-        targets: rock, x: x + ox, y: y + oy, duration: FIRE.meteorDelay, delay, ease: 'Quad.easeIn',
-        onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 2),
-        onComplete: () => {
-          rock.destroy();
-          mark.destroy();
-          this.fx.flashGlow(x + ox, y + oy, r * 1.2, 0xffd27a, 420, 0.9);
-          this.fx.ring(x + ox, y + oy, r, FIRE_TINT, 420, 0.2);
-          this.fx.radial(x + ox, y + oy, r, FIRE_TINT, mine ? 34 : 14);
-          if (mine) { sfx.slam(); this.fx.shake(0.008, 180); }
-        },
-      });
-    }
+    const mark = this.add.image(x, y, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
+    this.tweens.add({ targets: mark, alpha: 0.7, duration: 200 });
+    const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
+    this.tweens.add({
+      targets: rock, x, y, duration: FIRE.meteorDelay, ease: 'Quad.easeIn',
+      onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 2),
+      onComplete: () => {
+        rock.destroy();
+        mark.destroy();
+        this.fx.flashGlow(x, y, r * 1.2, 0xffd27a, 420, 0.9);
+        this.fx.ring(x, y, r, FIRE_TINT, 420, 0.2);
+        this.fx.radial(x, y, r, FIRE_TINT, mine ? 34 : 14);
+        if (mine) { sfx.slam(); this.fx.shake(0.008, 180); }
+      },
+    });
     if (mine) sfx.skill(Wuxing.FIRE);
   }
 
   private onRemoteCast(p: number, s: SkillCode, x: number, y: number): void {
-    if (s === 'm') { this.miniMeteor(x, y); return; }
-    if (s === 'L') { this.thunder(x, y); return; }
-    if (s === 'F') { this.fireField(x, y, p === this.myIdx ? FIRE.ringRadius * (1 + this.stats.area / 100) : FIRE.ringRadius); return; }
-    if (s === 'H') {
-      this.fx.flashGlow(x, y, FIRE.heartRadius, 0xff8a3c, 300, 0.8);
-      this.fx.ring(x, y, FIRE.heartRadius, FIRE_TINT, 320, 0.2);
-      this.fx.burst(x, y, FIRE_TINT, 14);
-      return;
-    }
     if (p === this.myIdx) return;
     this.mates.get(p)?.spr.play('cast');
     if (s === 'A') this.drawRing(x, y, FIRE.ringRadius, false);
     else if (s === 'B') this.drawMeteor(x, y, false);
   }
 
-  // ───────────────────────── 套装效果表现 ─────────────────────────
+  // ───────────────────────── 五行能量 ─────────────────────────
 
-  /** 焚炎五件：小陨火 */
-  private miniMeteor(x: number, y: number): void {
-    const rock = this.add.image(x - 120, y - 420, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55).setDepth(FX_DEPTH);
-    this.tweens.add({
-      targets: rock, x, y, duration: 260, ease: 'Quad.easeIn',
-      onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 1),
-      onComplete: () => {
-        rock.destroy();
-        this.fx.flashGlow(x, y, 170, 0xffd27a, 300, 0.8);
-        this.fx.ring(x, y, 150, FIRE_TINT, 320, 0.2);
-        this.fx.burst(x, y, FIRE_TINT, 10);
-      },
+  private addOrb(id: number, wx: Wuxing, n: number, mt: MonsterTier, x: number, y: number, pop: boolean, tx: number = x, ty: number = y): void {
+    if (this.orbs.has(id) || !wx) return;
+    const tint = WX_TINT[wx];
+    const big = mt > 0;
+    const glow = this.add.image(x, y, 'fx_glow').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(big ? 0.34 : 0.2).setAlpha(0.85).setDepth(FX_DEPTH - 8);
+    const core = this.add.image(x, y, 'fx_dot').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setScale(big ? 2.6 : 1.6).setDepth(FX_DEPTH - 8);
+    this.orbs.set(id, {
+      id, wx, n, mt, x, y,
+      tx: Phaser.Math.Clamp(tx, 90, RIFT_SIZE - 90), ty: Phaser.Math.Clamp(ty, 90, RIFT_SIZE - 90),
+      age: pop ? 0 : 1000, speed: 0, phase: Math.random() * 6.28, glow, core,
     });
   }
 
-  /** 惊雷五件：落雷 */
-  private thunder(x: number, y: number): void {
-    const bolt = this.add.image(x, y - 40, 'fx_bolt').setTint(0xfff3a0).setBlendMode(Phaser.BlendModes.ADD)
-      .setOrigin(1, 0.5).setRotation(Math.PI / 2).setScale(7, 1.4).setDepth(FX_DEPTH + 1);
-    this.tweens.add({ targets: bolt, alpha: 0, scaleY: 0.3, duration: 220, onComplete: () => bolt.destroy() });
-    this.fx.flashGlow(x, y - 20, 140, 0xfff3a0, 220, 0.9);
-    this.fx.ring(x, y, 130, 0xfff3a0, 260, 0.2);
-    sfx.skill(Wuxing.METAL);
+  /** 能量先从溃散处弹开落定，靠近了被吸向自己，贴身即吸纳 */
+  private updateOrbs(dt: number): void {
+    const sec = dt / 1000;
+    const now = this.time.now;
+    const canPick = !this.down && !this.ended;
+    const magnet2 = ORB_MAGNET ** 2;
+    for (const o of this.orbs.values()) {
+      o.age += dt;
+      if (o.age < 260) {
+        const k = 1 - Math.exp(-dt / 70);
+        o.x += (o.tx - o.x) * k;
+        o.y += (o.ty - o.y) * k;
+      } else if (canPick) {
+        const dx = this.x - o.x, dy = this.y - 30 - o.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < ORB_PICK ** 2) { this.collectOrb(o); continue; }
+        if (d2 < magnet2 || o.speed > 0) {
+          // 一旦被吸住就越飞越快，不会半路掉下
+          o.speed = Math.min(1900, Math.max(520, o.speed) + 3200 * sec);
+          const d = Math.sqrt(d2) || 1;
+          const step = Math.min(d, o.speed * sec);
+          o.x += (dx / d) * step;
+          o.y += (dy / d) * step;
+          if (Math.random() < 0.3) this.fx.trail(o.x, o.y, WX_TINT[o.wx], 1);
+        }
+      }
+      const bob = o.speed > 0 ? 0 : Math.sin(now / 320 + o.phase) * 5;
+      o.glow.setPosition(o.x, o.y - 14 + bob).setAlpha(0.65 + 0.25 * Math.sin(now / 200 + o.phase));
+      o.core.setPosition(o.x, o.y - 14 + bob);
+    }
   }
 
-  /** 坤元五件：火域，持续 3 秒 */
-  private fireField(x: number, y: number, r: number): void {
-    const disc = this.add.image(x, y, 'fx_disc').setTint(0xff7a3c).setBlendMode(Phaser.BlendModes.ADD)
-      .setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH - 1);
-    this.tweens.add({ targets: disc, alpha: 0.32, duration: 250 });
-    const ember = this.time.addEvent({
-      delay: 90, repeat: 32,
-      callback: () => {
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
-        this.fx.ember(x + Math.cos(a) * d, y + Math.sin(a) * d, FIRE_TINT, 1, 10);
-      },
-    });
-    this.time.delayedCall(3000, () => {
-      ember.remove();
-      this.tweens.add({ targets: disc, alpha: 0, duration: 300, onComplete: () => disc.destroy() });
-    });
+  private collectOrb(o: Orb): void {
+    this.orbs.delete(o.id);
+    o.glow.destroy();
+    o.core.destroy();
+    net.send({ t: 'orb', id: o.id });
+    this.gained[o.wx] += o.n;
+    const qi = qiGain(this.path, o.wx, o.mt);
+    this.qi = Math.min(this.stats.qiMax, this.qi + qi);
+    const tint = WX_TINT[o.wx];
+    this.fx.flashGlow(this.x, this.y - 30, o.mt ? 110 : 60, tint, 200, 0.6);
+    if (o.mt) {
+      this.fx.ring(this.x, this.y, 110, tint, 320);
+      this.fx.floatText(this.x, this.y - 150, `${WUXING_NAMES[o.wx]} +${o.n}`, WX_CSS[o.wx], 28, 70, 900);
+    }
+    const now = this.time.now;
+    if (now - this.orbSfxT > 90) { this.orbSfxT = now; sfx.pickup(o.wx); }
   }
 
   // ───────────────────────── 掉落 ─────────────────────────
@@ -1014,8 +1114,8 @@ export class RiftScene extends Phaser.Scene {
     const glow = this.add.image(x, y, 'fx_glow').setTint(c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.6).setDepth(-15);
     this.tweens.add({ targets: [beam, glow], alpha: { from: beam.alpha, to: beam.alpha * 0.55 }, duration: 700, yoyo: true, repeat: -1 });
     let label: Phaser.GameObjects.Text | undefined;
-    if (item.rarity >= 2 || item.set) {
-      label = this.add.text(x, y - 40, item.set ? `【套】${item.name}` : item.name, {
+    if (item.rarity >= 2) {
+      label = this.add.text(x, y - 40, item.name, {
         fontFamily: SANS, fontSize: '22px', fontStyle: 'bold', color: itemCss(item), stroke: '#000', strokeThickness: 4,
       }).setOrigin(0.5).setDepth(FX_DEPTH - 3);
     }
@@ -1035,7 +1135,7 @@ export class RiftScene extends Phaser.Scene {
 
   private updateLoot(): void {
     if (this.down) return;
-    const r = PICKUP_RADIUS * (1 + this.stats.pickup / 100);
+    const r = PICKUP_RADIUS;
     for (const l of this.loot.values()) {
       if (l.picking) continue;
       if ((l.x - this.x) ** 2 + (l.y - this.y) ** 2 < r * r) {
@@ -1045,7 +1145,7 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private onGot(id: string, item?: GearItem, mats?: number): void {
+  private onGot(id: string, item?: GearItem, wx?: Wuxing, n?: number): void {
     const l = this.loot.get(id);
     if (l) {
       this.loot.delete(id);
@@ -1056,17 +1156,13 @@ export class RiftScene extends Phaser.Scene {
     if (item) {
       this.gotItems.push(item);
       sfx.pickup(item.wuxing);
-      // 与当前装备对比（局内装备不变，所以用开局属性做基准）
+      // 与手里的兵器对比（局内不换兵器，所以用存档里的做基准）
       const prof = net.profile;
-      let better = false;
-      if (prof) {
-        const key = bestSlotFor(prof.equip, prof.path, item);
-        better = powerOf(statsWith(prof.equip, prof.path, key, item)) > powerOf(computeStats(prof.equip, prof.path));
-      }
+      const better = !!prof && powerOf(computeStats(item, prof.path, prof.cult)) > powerOf(computeStats(prof.weapon, prof.path, prof.cult));
       this.fx.floatText(this.x, this.y - 170, `${better ? '▲ ' : ''}${item.name}`, itemCss(item), item.rarity >= 3 ? 32 : 26, 80, 1300);
-    } else if (mats) {
-      this.gotMats += mats;
-      this.fx.floatText(this.x, this.y - 150, `分解 +${mats} 玄晶`, '#c084fc', 22, 60, 900);
+    } else if (wx && n) {
+      this.gained[wx] += n;
+      this.fx.floatText(this.x, this.y - 150, `化去兵器 · ${WUXING_NAMES[wx]} +${n}`, WX_CSS[wx], 22, 60, 900);
     }
   }
 
@@ -1102,6 +1198,7 @@ export class RiftScene extends Phaser.Scene {
     this.updateTeles();
     this.updateEBolts(dt);
     this.updateMyBolts(dt);
+    this.updateOrbs(dt);
     this.backdrop.update(dt);
   }
 
@@ -1339,7 +1436,7 @@ export class RiftScene extends Phaser.Scene {
     return this.loot.values();
   }
 
-  salvageOf(item: GearItem): number {
-    return salvageValue(item);
+  get orbDots(): IterableIterator<Orb> {
+    return this.orbs.values();
   }
 }
