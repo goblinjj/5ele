@@ -54,18 +54,23 @@ interface Mob {
   dead: boolean;
 }
 
-const SCALE = ENEMY_SCALE * 1.45;
+const SCALE = ENEMY_SCALE;
 /** 贴图中心到脚底的距离 */
 const FOOT = 307 * SCALE * 0.36;
+/** 残魂走路的速度（像素/秒） */
+const WALK = 170;
+
+export interface IdleBounds { left: number; top: number; right: number; bottom: number }
 
 export class IdleBattle {
   private scene: Phaser.Scene;
   private avatar: Avatar;
   private fx: Fx;
   private shader: SkillShader;
+  /** 残魂脚下的位置 */
   private x: number;
   private y: number;
-  private right: number;
+  private bounds: IdleBounds;
   private onDrop: (wx: Wuxing, x: number, y: number) => void;
 
   private form: WeaponForm = UNARMED_FORM;
@@ -76,22 +81,35 @@ export class IdleBattle {
   private skillT = 5000;
   private skillIdx = 0;
   private active = false;
+  /** 场上没有妖异时闲逛去的地方 */
+  private roam: { x: number; y: number } | null = null;
+  private roamT = 0;
 
-  constructor(scene: Phaser.Scene, avatar: Avatar, fx: Fx, shader: SkillShader, x: number, y: number, right: number, onDrop: (wx: Wuxing, x: number, y: number) => void) {
+  constructor(scene: Phaser.Scene, avatar: Avatar, fx: Fx, shader: SkillShader, bounds: IdleBounds, onDrop: (wx: Wuxing, x: number, y: number) => void) {
     this.scene = scene;
     this.avatar = avatar;
     this.fx = fx;
     this.shader = shader;
-    this.x = x;
-    this.y = y;
-    this.right = right;
+    this.bounds = bounds;
+    this.x = (bounds.left + bounds.right) / 2;
+    this.y = (bounds.top + bounds.bottom) / 2;
     this.onDrop = onDrop;
     ensureCharAnims(scene, Object.values(MONSTER_ATLAS_MAP));
+    this.place();
   }
 
   setLoadout(form: WeaponForm, skills: SkillId[]): void {
     this.form = form;
     this.skills = skills;
+  }
+
+  /** 可活动的范围变了（比如下半屏被组队面板占了） */
+  setBounds(b: IdleBounds): void {
+    this.bounds = b;
+    this.x = Phaser.Math.Clamp(this.x, b.left, b.right);
+    this.y = Phaser.Math.Clamp(this.y, b.top, b.bottom);
+    this.roam = null;
+    this.place();
   }
 
   /** 关掉时把场上的妖异清走 */
@@ -104,24 +122,34 @@ export class IdleBattle {
     }
   }
 
-  private get reach(): number {
-    return this.form.melee ? this.form.range + 20 : Math.min(this.form.range, this.right - this.x - 40);
+  private place(): void {
+    this.avatar.setPosition(this.x, this.y).setDepth(this.y);
   }
 
+  /** 够得着的距离：近战贴身，远程隔着半个场子就开打 */
+  private get reach(): number {
+    return this.form.melee ? this.form.range * 0.75 + 20 : Math.min(this.form.range * 0.6, 300);
+  }
+
+  /** 妖异从场地四周冒出来 */
   private spawn(): void {
     const def = MONSTERS[Math.floor(Math.random() * MONSTERS.length)];
     const atlas = MONSTER_ATLAS_MAP[def.atlas];
     if (!atlas || !this.scene.textures.exists(atlas)) return;
-    const y = this.y + Phaser.Math.Between(-150, 120);
-    const x = this.right + 90;
-    const spr = this.scene.add.sprite(x, y - FOOT, atlas, 'character_idle_0').setScale(SCALE).setFlipX(true).setDepth(y);
+    const b = this.bounds;
+    const side = Math.random();
+    let x: number, y: number;
+    if (side < 0.4) { x = b.left - 130; y = Phaser.Math.Between(b.top, b.bottom); }
+    else if (side < 0.8) { x = b.right + 130; y = Phaser.Math.Between(b.top, b.bottom); }
+    else { x = Phaser.Math.Between(b.left, b.right); y = b.top - 150; }
+    const spr = this.scene.add.sprite(x, y - FOOT, atlas, 'character_idle_0').setScale(SCALE).setDepth(y);
     if (this.scene.anims.exists(`${atlas}_run`)) spr.play(`${atlas}_run`);
     const shadow = this.scene.add.image(x, y, 'fx_shadow').setScale(SCALE * 3).setDepth(y - 1);
     this.mobs.push({
       def, spr, shadow, x, y,
       hp: this.form.melee && this.form.kind !== '刃' ? 2 : 3,
-      stop: (this.form.melee ? 110 : 150) + Math.random() * 60,
-      speed: def.speed * 0.75,
+      stop: 46 + Math.random() * 30,
+      speed: def.speed * 0.5,
       dead: false,
     });
   }
@@ -129,98 +157,138 @@ export class IdleBattle {
   private hit(m: Mob, power: number = 1): void {
     if (m.dead) return;
     m.hp -= power;
-    m.x += 12;
+    const d = Math.hypot(m.x - this.x, m.y - this.y) || 1;
+    m.x += (m.x - this.x) / d * 10;
+    m.y += (m.y - this.y) / d * 10;
     m.spr.setTintFill(0xffffff);
     this.scene.time.delayedCall(60, () => { if (m.spr.active) m.spr.clearTint(); });
-    this.fx.burst(m.x, m.y - FOOT, 0xffc06a, 5);
+    this.fx.burst(m.x, m.y - FOOT, 0xffc06a, 3);
     if (m.hp > 0) return;
     m.dead = true;
     const atlas = MONSTER_ATLAS_MAP[m.def.atlas];
     if (atlas && this.scene.anims.exists(`${atlas}_die`)) m.spr.play(`${atlas}_die`, true);
-    this.fx.burst(m.x, m.y - FOOT, WX_TINT[m.def.wuxing], 10);
-    this.scene.tweens.add({ targets: [m.spr, m.shadow], alpha: 0, duration: 320, delay: 120, onComplete: () => { m.spr.destroy(); m.shadow.destroy(); } });
+    this.fx.burst(m.x, m.y - FOOT, WX_TINT[m.def.wuxing], 6);
+    this.scene.tweens.add({ targets: [m.spr, m.shadow], alpha: 0, duration: 320, delay: 420, onComplete: () => { m.spr.destroy(); m.shadow.destroy(); } });
     this.onDrop(m.def.wuxing, m.x, m.y - FOOT);
   }
 
+  private dist(m: Mob): number {
+    return Math.hypot(m.x - this.x, m.y - this.y);
+  }
+
   private attack(): boolean {
-    const live = this.mobs.filter(m => !m.dead && m.x - this.x <= this.reach && m.x < this.right - 10).sort((a, b) => a.x - b.x);
+    const live = this.mobs.filter(m => !m.dead && this.dist(m) <= this.reach + 10).sort((a, b) => this.dist(a) - this.dist(b));
     if (!live.length) return false;
     const form = this.form;
-    const sx = this.x + 30, sy = this.y - 110;
+    const t = live[0];
+    const dir = t.x >= this.x ? 1 : -1;
+    this.avatar.setFacing(dir);
+    const ang = Math.atan2(t.y - this.y, t.x - this.x);
+    const sx = this.x + dir * 18, sy = this.y - 62;
     if (form.melee) {
       this.avatar.play(form.arc > 0 ? 'slash' : 'attack');
-      const t = live[0];
-      const mx = this.x + form.range * 0.6, my = this.y - 70;
-      if (form.arc > 0) {
-        this.fx.slash(mx, my, 1.2, form.range * 1.5, 0xffe2a0);
-        if (form.kind === '剑') this.fx.slash(mx + 10, my + 10, 1.9, form.range * 1.3, 0xffe2a0);
-      } else {
-        this.fx.slash(this.x + form.range * 0.55, my, 0, form.range * 1.9, 0xffe2a0);
-      }
+      const r = form.range * 0.45;
+      const mx = this.x + Math.cos(ang) * r, my = this.y - 40 + Math.sin(ang) * r;
+      if (form.arc > 0) this.fx.slash(mx, my, ang + 0.9, form.range * 0.9, 0xffe2a0);
+      else this.fx.slash(mx, my, ang, form.range * 1.1, 0xffe2a0);
       // 剑和枪一下扫中一片，刃只砍最近的
       (form.kind === '刃' ? [t] : live).forEach(m => this.hit(m));
       return true;
     }
     this.avatar.play('attack');
-    this.fx.flashGlow(sx + 20, sy, 60, 0xffd27a, 120, 0.8);
     const targets = live.slice(0, Math.max(1, form.bolts));
     for (let i = 0; i < Math.max(1, form.bolts); i++) {
       const m = targets[i % targets.length];
-      const ty = m.y - FOOT + (form.bolts > 1 ? (i - 1) * 26 : 0);
+      const ty = m.y - FOOT + (form.bolts > 1 ? (i - 1) * 16 : 0);
       const bolt = this.scene.add.image(sx, sy, 'fx_bolt').setTint(0xffe2a0).setBlendMode(Phaser.BlendModes.ADD)
-        .setOrigin(0.85, 0.5).setScale(form.bolts > 1 || form.kind === '空手' ? 0.8 : 1.1).setRotation(Math.atan2(ty - sy, m.x - sx)).setDepth(FX_DEPTH - 6);
+        .setOrigin(0.85, 0.5).setScale(form.bolts > 1 || form.kind === '空手' ? 0.5 : 0.7).setRotation(Math.atan2(ty - sy, m.x - sx)).setDepth(FX_DEPTH - 6);
       this.scene.tweens.add({ targets: bolt, x: m.x, y: ty, duration: 150, onComplete: () => { bolt.destroy(); this.hit(m, i < targets.length ? 1 : 0.5); } });
     }
     return true;
   }
 
-  /** 每隔一阵放一门带着的技能，把场上的妖异一扫而空 */
+  /** 每隔一阵放一门带着的技能，把身边的妖异一扫而空 */
   private castSkill(): boolean {
-    const live = this.mobs.filter(m => !m.dead && m.x < this.right);
-    if (!this.skills.length || live.length < 2) return false;
+    const near = this.mobs.filter(m => !m.dead && this.dist(m) < 230);
+    if (!this.skills.length || near.length < 2) return false;
     const id = this.skills[this.skillIdx++ % this.skills.length];
     const kind = SHADER_OF[id];
     const tint = WX_TINT[SKILLS[id].wuxing];
     this.avatar.play('cast');
-    const cx = this.x + 150, cy = this.y - 50;
+    const cx = this.x, cy = this.y - 30;
     if (id === 'blades') {
-      live.forEach((m, i) => this.scene.time.delayedCall(i * 70, () => {
-        const ang = Math.atan2(m.y - FOOT - (this.y - 120), m.x - this.x);
-        const len = Math.hypot(m.x - this.x, m.y - FOOT - (this.y - 120)) + 120;
-        this.shader.play('blade', (this.x + m.x) / 2, (this.y - 120 + m.y - FOOT) / 2, len, 300, FX_DEPTH - 5, ang);
-        if (!this.shader.enabled) this.fx.slash((this.x + m.x) / 2, (this.y - 120 + m.y - FOOT) / 2, ang, len, 0xfff3c0);
+      near.forEach((m, i) => this.scene.time.delayedCall(i * 70, () => {
+        const ang = Math.atan2(m.y - FOOT - (this.y - 70), m.x - this.x);
+        const len = Math.hypot(m.x - this.x, m.y - FOOT - (this.y - 70)) + 60;
+        this.shader.play('blade', (this.x + m.x) / 2, (this.y - 70 + m.y - FOOT) / 2, len, 300, FX_DEPTH - 5, ang);
+        if (!this.shader.enabled) this.fx.slash((this.x + m.x) / 2, (this.y - 70 + m.y - FOOT) / 2, ang, len, 0xfff3c0);
       }));
-    } else if (id === 'bastion' || id === 'bloom') {
-      this.shader.play(kind, this.x, this.y - 70, id === 'bastion' ? 220 : 320, id === 'bastion' ? 1200 : 900, FX_DEPTH - 6);
+    } else if (id === 'bastion') {
+      this.shader.play(kind, cx, cy, 150, 1200, FX_DEPTH - 6, 0, () => ({ x: this.x, y: this.y - 30 }));
     } else {
-      this.shader.play(kind, cx, cy, 400, id === 'frost' ? 900 : 600, FX_DEPTH - 6);
+      this.shader.play(kind, cx, cy, 440, id === 'frost' ? 900 : 600, FX_DEPTH - 6);
     }
-    if (!this.shader.enabled) this.fx.ring(cx, cy, 240, tint, 460, 0.1);
-    this.fx.flashGlow(cx, cy, 120, tint, 260, 0.12);
-    this.scene.time.delayedCall(220, () => live.forEach(m => this.hit(m, 9)));
+    if (!this.shader.enabled) this.fx.ring(cx, cy, 200, tint, 460, 0.1);
+    this.fx.flashGlow(cx, cy, 100, tint, 260, 0.12);
+    this.scene.time.delayedCall(220, () => near.forEach(m => this.hit(m, 9)));
     return true;
+  }
+
+  /** 残魂自己找事做：追最近的妖异，够得着就停下来打；没妖异就四处走走 */
+  private moveHero(sec: number): void {
+    const live = this.mobs.filter(m => !m.dead);
+    let tx = this.x, ty = this.y, stopAt = 6;
+    if (live.length) {
+      const t = live.reduce((a, b) => (this.dist(a) < this.dist(b) ? a : b));
+      // 目标还在场外：迎上去，但不走出场地
+      tx = t.x; ty = t.y; stopAt = this.reach * 0.8;
+      this.roam = null;
+    } else {
+      this.roamT -= sec * 1000;
+      if (!this.roam || this.roamT <= 0) {
+        const b = this.bounds;
+        this.roam = { x: Phaser.Math.Between(b.left, b.right), y: Phaser.Math.Between(b.top, b.bottom) };
+        this.roamT = 2600 + Math.random() * 2000;
+      }
+      tx = this.roam.x; ty = this.roam.y;
+    }
+    const dx = tx - this.x, dy = ty - this.y, d = Math.hypot(dx, dy);
+    if (d <= stopAt) { this.avatar.setMoving(0); return; }
+    const step = Math.min(d - stopAt, WALK * sec);
+    const b = this.bounds;
+    const nx = Phaser.Math.Clamp(this.x + dx / d * step, b.left, b.right);
+    const ny = Phaser.Math.Clamp(this.y + dy / d * step, b.top, b.bottom);
+    const moved = Math.hypot(nx - this.x, ny - this.y) > 0.2;
+    this.x = nx; this.y = ny;
+    this.avatar.setMoving(moved ? 0.85 : 0);
+    if (moved && Math.abs(dx) > 4) this.avatar.setFacing(dx);
+    this.place();
   }
 
   update(dt: number): void {
     if (!this.active) return;
     const sec = dt / 1000;
     this.mobs = this.mobs.filter(m => m.spr.active);
+    this.moveHero(sec);
     for (const m of this.mobs) {
       if (m.dead) continue;
-      const target = this.x + m.stop;
-      if (m.x > target) m.x = Math.max(target, m.x - m.speed * sec);
-      m.spr.setPosition(m.x, m.y - FOOT);
-      m.shadow.setPosition(m.x, m.y);
+      const dx = this.x - m.x, dy = this.y - m.y, d = Math.hypot(dx, dy) || 1;
+      if (d > m.stop) {
+        const step = Math.min(d - m.stop, m.speed * sec);
+        m.x += dx / d * step; m.y += dy / d * step;
+      }
+      m.spr.setPosition(m.x, m.y - FOOT).setFlipX(dx < 0).setDepth(m.y);
+      m.shadow.setPosition(m.x, m.y).setDepth(m.y - 1);
     }
 
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
-      this.spawnT = 900 + Math.random() * 900;
-      if (this.mobs.filter(m => !m.dead).length < 4) this.spawn();
+      this.spawnT = 700 + Math.random() * 800;
+      if (this.mobs.filter(m => !m.dead).length < 7) this.spawn();
     }
     this.skillT -= dt;
     if (this.skillT <= 0) this.skillT = this.castSkill() ? 6500 : 700;
     this.atkT -= dt;
-    if (this.atkT <= 0) this.atkT = this.attack() ? Math.max(380, this.form.interval * 1.15) : 150;
+    if (this.atkT <= 0) this.atkT = this.attack() ? Math.max(420, this.form.interval * 1.15) : 150;
   }
 }

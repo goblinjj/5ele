@@ -22,6 +22,8 @@ import { SkillShader, Live } from '../systems/fx/SkillShader.js';
 import { ensureCharAnims } from '../systems/idle/IdleBattle.js';
 
 const PLAYER_ATLAS = 'player_spirit';
+/** 秘境镜头相对界面的缩放 */
+const RIFT_ZOOM = 0.74;
 const FIRE_TINT = 0xff6a3c;
 const TELE_COLOR = 0xff2a1a;
 const TELE_EDGE = 0xffd0c0;
@@ -318,6 +320,8 @@ export class RiftScene extends Phaser.Scene {
     inputManager.reset();
     const cam = this.cameras.main;
     applyRenderScale(this, true);
+    // 镜头拉远：人和妖异都小一些，一屏能看到更大一片战场
+    cam.setZoom(cam.zoom * RIFT_ZOOM);
     cam.setBounds(-260, -260, RIFT_SIZE + 520, RIFT_SIZE + 520);
     cam.setBackgroundColor('#020406');
 

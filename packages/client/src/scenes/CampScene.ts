@@ -34,6 +34,9 @@ const PAGE = COLS * ROWS;
 const TIER_COLORS = [0, 0x9fd8ff, 0x6fb6ff, 0x4ade80, 0x9be36a, 0xffe066, 0xffa31a, 0xff6a4c, 0xff4fd8, 0xc084fc];
 
 /** 挂机战斗的舞台：残魂站的位置 */
+/** 挂机演出的活动范围：顶栏以下、收益栏以上的整块空间；组队面板出来时让出下半屏 */
+const STAGE = { left: 80, top: 250, right: W - 80, bottom: 990 };
+const STAGE_ROOM = { ...STAGE, bottom: 860 };
 const STAGE_X = 200;
 const STAGE_Y = 680;
 /** 挂机收益栏的上沿 */
@@ -80,12 +83,11 @@ export class CampScene extends Phaser.Scene {
     this.add.image(W / 2, H / 2, 'fx_vignette').setDisplaySize(W * 1.3, H * 1.2).setAlpha(0.8);
 
     // 人形预览：穿什么显示什么
-    this.add.image(STAGE_X, STAGE_Y, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.5, 0.5).setAlpha(0.22);
-    this.avatar = new Avatar(this, STAGE_X, STAGE_Y, null, 2).setDepth(STAGE_Y).setVisible(false);
+    this.avatar = new Avatar(this, STAGE_X, STAGE_Y, null, 1.1).setDepth(STAGE_Y).setVisible(false);
     // 挂机战斗：妖异从右边走来，被自动打散，能量飞进收益栏
     this.fx = new Fx(this);
     this.shaderFx = new SkillShader(this);
-    this.idle = new IdleBattle(this, this.avatar, this.fx, this.shaderFx, STAGE_X, STAGE_Y, W, (wx, x, y) => this.flyOrb(wx, x, y));
+    this.idle = new IdleBattle(this, this.avatar, this.fx, this.shaderFx, STAGE, (wx, x, y) => this.flyOrb(wx, x, y));
     this.idleTime = this.idleAmt = this.idleBar = null;
     this.avatarSig = '';
     this.dyn = this.add.container(0, 0);
@@ -147,6 +149,7 @@ export class CampScene extends Phaser.Scene {
     this.tier = Math.max(1, Math.min(p.maxTier, this.tier));
     this.avatar.setVisible(!!p.path);
     this.idle.setActive(!!p.path);
+    this.idle.setBounds(net.room ? STAGE_ROOM : STAGE);
     this.idle.setLoadout(formOf(p.weapon), p.loadout ?? []);
     this.idleTime = this.idleAmt = this.idleBar = null;
     const sig = `${p.path}|${p.weapon ? `${p.weapon.id}${p.weapon.grade ?? 0}` : '-'}|${CULT_ORDER.map(wx => p.cult[wx]).join(',')}`;
