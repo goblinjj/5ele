@@ -1,6 +1,6 @@
 import {
   Wuxing, WX_ORDER, WUXING_NAMES, CULT, cultCost, cultBlock, cultSpent, cultKinds, CULT_REFUND, MAX_CULT_KINDS,
-  SKILLS, SkillId, LOADOUT_MAX,
+  SKILLS, SkillId, LOADOUT_MAX, SKILL_MAX_LEVEL, SKILL_RANKS, skillLevel, skillNeed, skillTrainCost,
   refineCost, refineRate, MAX_GRADE, GearItem, Energy, MAX_TIER,
   forgeBase, forgeRarity, forgeOutcome, generateItem, RARITY_NAMES,
 } from '@xiyou/shared';
@@ -97,4 +97,18 @@ export function setLoadout(p: Profile, raw: unknown): Result {
   if (out.length > LOADOUT_MAX) return { ok: false, msg: `最多携带 ${LOADOUT_MAX} 门技能，先卸下一门` };
   p.loadout = out;
   return { ok: true };
+}
+
+/** 参悟：花技能所属那一行的能量，把熟练度直接补满到下一级 */
+export function train(p: Profile, id: SkillId): Result {
+  const def = SKILLS[id];
+  const uses = def ? p.skills[id] : undefined;
+  if (!def || uses === undefined) return { ok: false, msg: '还没学会这门技能' };
+  const lv = skillLevel(uses);
+  if (lv >= SKILL_MAX_LEVEL) return { ok: false, msg: `${def.name}已臻化境` };
+  const cost = skillTrainCost(uses);
+  if (p.energy[def.wuxing] < cost) return { ok: false, msg: `${WUXING_NAMES[def.wuxing]}行能量不足（${p.energy[def.wuxing]}/${cost}）` };
+  p.energy[def.wuxing] -= cost;
+  p.skills[id] = skillNeed(lv + 1);
+  return { ok: true, msg: `${def.name} 参悟至 ${lv + 1} 级 · ${SKILL_RANKS[lv + 1]}` };
 }

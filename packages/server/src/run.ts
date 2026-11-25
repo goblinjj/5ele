@@ -8,7 +8,7 @@ import {
   REVIVE_RADIUS, REVIVE_MS,
   MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK,
+  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty } from './store.js';
@@ -674,7 +674,7 @@ export class Run {
     p.lastCast[id] = this.now;
     this.practice(p, id);
 
-    const area = 1 + p.stats.area / 100;
+    const radius = skillRadius(id, lv, p.stats);
     const dm = skillDmgMult(lv);
     // 以自身为圆心的技能：允许客户端位置略有出入
     const near = dist2(x, y, p.x, p.y) < 250 ** 2;
@@ -684,19 +684,20 @@ export class Run {
     switch (id) {
       case 'ring':
         tell(cx, cy);
-        this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult * dm);
+        this.ring(p, cx, cy, radius, FIRE.ringMult * dm);
         break;
       case 'meteor':
         tell(x, y);
-        this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult * dm));
+        this.later(FIRE.meteorDelay, () => this.ring(p, x, y, radius, FIRE.meteorMult * dm));
         break;
       case 'blades': {
         // 剑气分袭最近的几只，必定暴击；妖异不够就集中补刀
         tell(cx, cy);
-        const targets = this.enemiesNear(cx, cy, SK.blades.range)
-          .sort((a, b) => dist2(cx, cy, a.x, a.y) - dist2(cx, cy, b.x, b.y)).slice(0, SK.blades.count);
+        const count = bladeCount(lv);
+        const targets = this.enemiesNear(cx, cy, radius)
+          .sort((a, b) => dist2(cx, cy, a.x, a.y) - dist2(cx, cy, b.x, b.y)).slice(0, count);
         if (!targets.length) break;
-        for (let i = 0; i < SK.blades.count; i++) {
+        for (let i = 0; i < count; i++) {
           const e = targets[i % targets.length];
           this.later(120 + i * 70, () => {
             if (e.dead) return;
@@ -708,7 +709,7 @@ export class Run {
       }
       case 'frost':
         tell(cx, cy);
-        for (const e of this.enemiesNear(cx, cy, SK.frost.radius * area)) {
+        for (const e of this.enemiesNear(cx, cy, radius)) {
           const r = this.roll(p, e, SK.frost.mult * dm, false);
           this.damage(p, e, r.amt, r.crit);
           if (e.dead) continue;
@@ -722,12 +723,12 @@ export class Run {
       case 'bloom':
         // 回血由各客户端自己结算（生命是客户端权威），这里只管荆棘
         tell(cx, cy);
-        this.ring(p, cx, cy, SK.bloom.radius * area, SK.bloom.mult * dm, false);
+        this.ring(p, cx, cy, radius, SK.bloom.mult * dm, false);
         break;
       case 'bastion':
         // 减伤同样在客户端结算
         tell(cx, cy);
-        this.ring(p, cx, cy, SK.bastion.radius * area, SK.bastion.mult * dm, false);
+        this.ring(p, cx, cy, radius, SK.bastion.mult * dm, false);
         break;
     }
   }

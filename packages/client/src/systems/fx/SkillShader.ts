@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { isLowQuality } from '../../config/gameConfig.js';
 
 /**
- * 技能特效：片元着色器
+ * 技能与妖异攻击的特效：片元着色器
  *
  * 每种特效是一段 GLSL，画在一块正方形上，由 progress（0→1）驱动整段演出。
  * 噪声火舌、冰晶、藤蔓这类「会流动」的图案用贴图序列帧做不出来，用着色器逐像素算。
@@ -12,12 +12,15 @@ import { isLowQuality } from '../../config/gameConfig.js';
  *  - 只在 WebGL 且画质为「高清」时启用；否则 play 什么也不做，场景里原有的贴图特效照常
  */
 
-export type ShaderKind = 'fire' | 'blast' | 'frost' | 'bloom' | 'bastion' | 'blade';
+export type ShaderKind = 'fire' | 'blast' | 'frost' | 'bloom' | 'bastion' | 'blade'
+  | 'warnCircle' | 'warnLane' | 'impact' | 'claw' | 'wisp';
 
 const HEAD = `
 precision mediump float;
 uniform float progress;
 uniform float seed;
+// 染色（妖异攻击按五行 / 危险色染；技能特效自带配色，不用它）
+uniform vec3 color;
 // 这段特效已经播了多少秒（不用全局时间：数值大了手机上精度不够，噪声会抖）
 uniform float life;
 #define T (progress * life)
@@ -165,14 +168,105 @@ void main() {
   vec3 col = mix(vec3(1.0, 0.75, 0.3), vec3(1.0), smoothstep(0.5, 1.6, I));
   gl_FragColor = vec4(col * I, I * 0.2);
 }`,
+
+  // ── 妖异的攻击：小而精，不抢技能的戏 ──
+
+  // 圆形预警：细环 + 一圈缓缓转动的刻度，内里一层薄雾随蓄力铺满，出手前一闪
+  warnCircle: HEAD + `
+void main() {
+  vec2 p = (outTexCoord - 0.5) * 2.0;
+  float r = length(p);
+  float a = atan(p.y, p.x);
+  float flash = smoothstep(0.86, 1.0, progress);
+  float rim = smoothstep(0.022, 0.0, abs(r - 0.9));
+  float ticks = step(0.55, fract(a / 6.2832 * 24.0 + T * 0.25)) * smoothstep(0.03, 0.0, abs(r - 0.82)) * 0.7;
+  float fillR = 0.88 * progress;
+  float edge = smoothstep(0.03, 0.0, abs(r - fillR)) * 0.9;
+  float haze = smoothstep(fillR, fillR - 0.25, r) * (0.10 + 0.10 * noise(p * 5.0 + T * 0.8 + seed));
+  float appear = smoothstep(0.0, 0.08, progress);
+  float I = (rim * 0.9 + ticks + edge + haze) * appear + flash * smoothstep(0.92, 0.6, r) * 0.9;
+  vec3 col = mix(color, vec3(1.0, 0.95, 0.9), flash * 0.8 + rim * 0.25);
+  gl_FragColor = vec4(col * I, I * 0.25);
+}`,
+
+  // 冲锋预警：两条细边线，箭纹顺着冲锋方向流动，随蓄力从起点铺到终点
+  warnLane: HEAD + `
+void main() {
+  vec2 uv = outTexCoord;
+  float y = abs(uv.y - 0.5) * 2.0;
+  float flash = smoothstep(0.86, 1.0, progress);
+  float border = smoothstep(0.08, 0.0, abs(y - 0.92)) * 0.9;
+  float ends = smoothstep(0.012, 0.0, abs(uv.x - 0.994)) * step(y, 0.92) * 0.7;
+  float chev = step(0.62, fract(uv.x * 7.0 - y * 0.8 - T * 2.2));
+  float reach = smoothstep(progress + 0.02, progress - 0.05, uv.x);
+  float lane = step(y, 0.9) * (chev * 0.42 + 0.08) * reach;
+  float tip = smoothstep(0.03, 0.0, abs(uv.x - progress)) * step(y, 0.9) * 0.8;
+  float appear = smoothstep(0.0, 0.08, progress);
+  float I = (border + ends + lane + tip) * appear + flash * step(y, 0.92) * 0.8;
+  vec3 col = mix(color, vec3(1.0, 0.95, 0.9), flash * 0.8 + border * 0.2);
+  gl_FragColor = vec4(col * I, I * 0.25);
+}`,
+
+  // 落地：一圈极细的震波，几道裂纹一闪即逝
+  impact: HEAD + `
+void main() {
+  vec2 p = (outTexCoord - 0.5) * 2.0;
+  float r = length(p);
+  float a = atan(p.y, p.x);
+  float R = mix(0.25, 0.92, easeOut(progress));
+  float fade = 1.0 - progress;
+  float ring = smoothstep(0.035, 0.0, abs(r - R)) * 1.4;
+  float cracks = pow(abs(cos(a * 3.5 + seed)), 70.0) * smoothstep(R, R * 0.2, r) * smoothstep(0.05, 0.2, r);
+  float dust = noise(p * 6.0 + seed) * smoothstep(R, R - 0.3, r) * 0.25;
+  float I = (ring + cracks * 1.1 + dust) * fade * fade;
+  vec3 col = mix(color, vec3(1.0), smoothstep(0.7, 1.6, I));
+  gl_FragColor = vec4(col * I, I * 0.2);
+}`,
+
+  // 爪痕：三道微弯的细痕，自上而下划过
+  claw: HEAD + `
+void main() {
+  vec2 p = (outTexCoord - 0.5) * 2.0;
+  float sweep = mix(-1.2, 1.3, easeOut(min(1.0, progress * 1.8)));
+  float fade = 1.0 - smoothstep(0.45, 1.0, progress);
+  float I = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    float fi = float(i);
+    float cy = fi * 0.34 + 0.22 * p.x * p.x - 0.08;
+    float len = 0.85 - abs(fi) * 0.18;
+    float w = 0.035 * smoothstep(len, 0.0, abs(p.x)) + 0.004;
+    float line = exp(-pow((p.y - cy) / w, 2.0)) * smoothstep(len, len - 0.3, abs(p.x));
+    I += line * smoothstep(sweep + 0.02, sweep - 0.5, p.x);
+  }
+  I *= fade;
+  vec3 col = mix(color, vec3(1.0), smoothstep(0.5, 1.2, I));
+  gl_FragColor = vec4(col * I * 1.6, I * 0.3);
+}`,
+
+  // 妖异的弹道：一点亮芯，拖一缕会抖的尾焰；朝 +x 飞
+  wisp: HEAD + `
+void main() {
+  vec2 p = (outTexCoord - 0.5) * 2.0;
+  vec2 h = p - vec2(0.55, 0.0);
+  float head = exp(-dot(h, h) * 38.0) * 1.8;
+  float halo = exp(-dot(h, h) * 7.0) * 0.5;
+  float back = clamp((0.55 - p.x) / 1.5, 0.0, 1.0);
+  float wob = (noise(vec2(p.x * 5.0 + T * 9.0, seed)) - 0.5) * 0.22 * back;
+  float w = mix(0.16, 0.02, back);
+  float tail = exp(-pow((p.y - wob) / w, 2.0)) * (1.0 - back) * step(p.x, 0.55) * (0.6 + 0.4 * noise(vec2(p.x * 9.0 - T * 14.0, seed + 3.0)));
+  float I = (head + halo + tail * 0.9) * smoothstep(0.0, 0.05, progress);
+  vec3 col = mix(color, vec3(1.0, 0.98, 0.9), smoothstep(0.7, 1.6, I));
+  gl_FragColor = vec4(col * I, I * 0.25);
+}`,
 };
 
-interface Live {
+export interface Live {
   obj: Phaser.GameObjects.Shader;
   kind: ShaderKind;
   t: number;
   dur: number;
   follow?: () => { x: number; y: number };
+  done?: boolean;
 }
 
 /** 着色器对象画在这么大的方块上，用缩放适配实际尺寸 */
@@ -197,6 +291,7 @@ export class SkillShader {
       progress: { type: '1f', value: 0 },
       seed: { type: '1f', value: 0 },
       life: { type: '1f', value: 1 },
+      color: { type: '3f', value: { x: 1, y: 1, z: 1 } },
     });
     return this.scene.add.shader(base, 0, 0, BASE, BASE).setVisible(false).setActive(false);
   }
@@ -212,22 +307,38 @@ export class SkillShader {
    * 播放一段特效
    * @param size 方块边长（世界坐标）；圆形特效的直径约为它的 0.9
    * @param follow 每帧取位置（护罩跟着人走）
+   * @param opts sizeY：非正方形时的另一边；color：染色
+   * @returns 句柄，可交给 stop 提前收掉；着色器不可用时返回 null
    */
-  play(kind: ShaderKind, x: number, y: number, size: number, dur: number, depth: number, rotation: number = 0, follow?: () => { x: number; y: number }): void {
-    if (!this.enabled) return;
+  play(
+    kind: ShaderKind, x: number, y: number, size: number, dur: number, depth: number, rotation: number = 0,
+    follow?: () => { x: number; y: number }, opts?: { sizeY?: number; color?: number },
+  ): Live | null {
+    if (!this.enabled) return null;
     const obj = this.pool.get(kind)?.pop() ?? this.make(kind);
-    obj.setPosition(x, y).setScale(size / BASE).setRotation(rotation).setDepth(depth).setVisible(true).setActive(true);
+    obj.setPosition(x, y).setScale(size / BASE, (opts?.sizeY ?? size) / BASE).setRotation(rotation).setDepth(depth).setVisible(true).setActive(true);
     obj.setUniform('progress.value', 0);
     obj.setUniform('seed.value', Math.random() * 40);
     obj.setUniform('life.value', dur / 1000);
-    this.live.push({ obj, kind, t: 0, dur, follow });
+    const c = opts?.color ?? 0xffffff;
+    obj.setUniform('color.value.x', ((c >> 16) & 255) / 255);
+    obj.setUniform('color.value.y', ((c >> 8) & 255) / 255);
+    obj.setUniform('color.value.z', (c & 255) / 255);
+    const live: Live = { obj, kind, t: 0, dur, follow };
+    this.live.push(live);
+    return live;
+  }
+
+  /** 提前收掉一段特效（预警被打断、弹道命中） */
+  stop(live: Live | null | undefined): void {
+    if (live) live.done = true;
   }
 
   update(dt: number): void {
     if (!this.live.length) return;
     this.live = this.live.filter(l => {
       l.t += dt;
-      if (l.t >= l.dur) { this.release(l.kind, l.obj); return false; }
+      if (l.done || l.t >= l.dur) { this.release(l.kind, l.obj); return false; }
       l.obj.setUniform('progress.value', l.t / l.dur);
       if (l.follow) { const p = l.follow(); l.obj.setPosition(p.x, p.y); }
       return true;

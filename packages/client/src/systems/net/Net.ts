@@ -37,6 +37,8 @@ class NetClient {
   profile: ProfileView | null = null;
   room: RoomView | null = null;
   status: 'idle' | 'connecting' | 'online' | 'offline' = 'idle';
+  /** 服务器时间 - 本机时间（算挂机收益用） */
+  skew = 0;
   /** 往返延迟（毫秒） */
   rtt = 0;
 
@@ -57,7 +59,7 @@ class NetClient {
     ws.onmessage = ev => {
       let msg: S2C;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.t === 'profile') this.profile = msg.p;
+      if (msg.t === 'profile') { this.profile = msg.p; if (msg.p.now) this.skew = msg.p.now - Date.now(); }
       else if (msg.t === 'room') this.room = msg.room;
       else if (msg.t === 'pong') this.rtt = Math.round(performance.now() - msg.c);
       this.emit(msg.t, msg);

@@ -75,7 +75,7 @@ export interface SkillDef {
 export const SKILLS: Record<SkillId, SkillDef> = {
   ring:    { id: 'ring',    name: '燎原', wuxing: Wuxing.FIRE,  learn: 40,  qi: 30, cd: 7000,  desc: '以自身为圆心放出火环，灼烧周围的妖异' },
   meteor:  { id: 'meteor',  name: '焚天', wuxing: Wuxing.FIRE,  learn: 120, qi: 50, cd: 11000, desc: '召一颗陨火砸向妖异最密集处' },
-  blades:  { id: 'blades',  name: '万剑', wuxing: Wuxing.METAL, learn: 80,  qi: 40, cd: 8000,  desc: '剑气分袭最近的 6 只妖异，必定暴击' },
+  blades:  { id: 'blades',  name: '万剑', wuxing: Wuxing.METAL, learn: 80,  qi: 40, cd: 8000,  desc: '剑气分袭最近的几只妖异（越熟练越多），必定暴击' },
   frost:   { id: 'frost',   name: '寒潮', wuxing: Wuxing.WATER, learn: 80,  qi: 35, cd: 10000, desc: '寒气席卷四周，冻结妖异 2.2 秒' },
   bloom:   { id: 'bloom',   name: '回春', wuxing: Wuxing.WOOD,  learn: 80,  qi: 40, cd: 14000, desc: '回复自身 30% 生命，荆棘刺伤四周；附近同伴回复 20%' },
   bastion: { id: 'bastion', name: '磐石', wuxing: Wuxing.EARTH, learn: 80,  qi: 40, cd: 14000, desc: '震地伤敌，并得磐石护体 4 秒，所受伤害减少 70%' },
@@ -103,6 +103,34 @@ export function skillLevel(uses: number | undefined): number {
   if (uses === undefined) return -1;
   return Math.min(SKILL_MAX_LEVEL, Math.floor(Math.sqrt(Math.max(0, uses) / 8)));
 }
+/**
+ * 技能范围随熟练度成长：刚学会只有四成半，每级 +5.5%，10 级才是完整范围。
+ * 万剑则是剑气的数量随熟练度增加（3 → 6 道）。
+ */
+export function skillAreaMult(level: number): number {
+  return 0.45 + 0.055 * Math.max(0, Math.min(SKILL_MAX_LEVEL, level));
+}
+/** 技能的作用半径：基础半径 × 熟练度 × 属性里的技能范围 */
+export function skillRadius(id: SkillId, level: number, s: Pick<PlayerStats, 'area'>): number {
+  const base = id === 'ring' ? FIRE.ringRadius : id === 'meteor' ? FIRE.meteorRadius
+    : id === 'frost' ? SK.frost.radius : id === 'bloom' ? SK.bloom.radius : id === 'bastion' ? SK.bastion.radius : SK.blades.range;
+  return base * skillAreaMult(level) * (id === 'blades' ? 1 : 1 + s.area / 100);
+}
+export function bladeCount(level: number): number {
+  return Math.min(SK.blades.count, 3 + Math.floor(Math.max(0, level) * 0.3));
+}
+
+/**
+ * 参悟：不靠实战，直接花技能所属那一行的能量补满到下一级——离下一级还差几次，就按每次 3 点能量算。
+ * 实战用得多的技能参悟就便宜，多余的能量也有了去处。
+ */
+export const SKILL_TRAIN_PER_USE = 3;
+export function skillTrainCost(uses: number): number {
+  const lv = skillLevel(uses);
+  if (lv < 0 || lv >= SKILL_MAX_LEVEL) return 0;
+  return Math.max(1, skillNeed(lv + 1) - uses) * SKILL_TRAIN_PER_USE;
+}
+
 /** 每级熟练度：伤害 +12%，冷却 -3% */
 export function skillDmgMult(level: number): number {
   return 1 + 0.12 * Math.max(0, level);
@@ -133,6 +161,27 @@ export function qiGain(path: Wuxing, wx: Wuxing, mtier: MonsterTier): number {
   else if (WUXING_CONQUERS[wx] === path) m = 0.6;
   return Math.round(base * m);
 }
+// ───────────────────────── 挂机收益 ─────────────────────────
+
+/**
+ * 营地里残魂会自己清剿游荡的妖异：不在秘境里的时间也在慢慢攒五行能量。
+ * 按时间累计，最多攒 IDLE_CAP_MS，要回营地手动领取；解锁的层数越高攒得越快。
+ * 比亲自下秘境慢得多（一重天每小时约 90 点，下一趟秘境几分钟就有 150）。
+ */
+export const IDLE_CAP_MS = 8 * 3600 * 1000;
+/** 每分钟攒下的能量（五行合计） */
+export function idleRate(maxTier: number): number {
+  return 1.5 * (1 + 0.6 * (Math.max(1, maxTier) - 1));
+}
+/** 挂了 ms 毫秒能领多少：五行平分 */
+export function idleGain(maxTier: number, ms: number): Energy {
+  const minutes = Math.max(0, Math.min(IDLE_CAP_MS, ms)) / 60000;
+  const each = Math.floor((idleRate(maxTier) * minutes) / 5);
+  const out = {} as Energy;
+  for (const wx of WX_ORDER) out[wx] = each;
+  return out;
+}
+
 export const ORB_MAGNET = 230;
 export const ORB_PICK = 46;
 export function wxIndex(wx: Wuxing): number {
@@ -247,6 +296,9 @@ export interface ProfileView {
   skills: SkillBook;
   /** 带进秘境的技能（最多 LOADOUT_MAX 门） */
   loadout: SkillId[];
+  /** 挂机收益从什么时候开始攒（服务器时间），以及发出这份存档时的服务器时间 */
+  idleSince: number;
+  now: number;
 }
 
 export interface RoomPlayerView {
@@ -336,8 +388,12 @@ export type C2S =
   | { t: 'uncultivate'; wx: Wuxing }
   /** 修习一门技能 */
   | { t: 'learn'; skill: SkillId }
+  /** 参悟：花能量把一门技能直接提到下一级 */
+  | { t: 'train'; skill: SkillId }
   /** 选择带进秘境的技能 */
   | { t: 'loadout'; skills: SkillId[] }
+  /** 领取挂机收益 */
+  | { t: 'idle' }
   /** 精炼兵器：尝试升一阶（可能失败） */
   | { t: 'refine'; id: string }
   /** 凝练兵器：投入的五行能量 */

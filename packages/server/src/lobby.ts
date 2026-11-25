@@ -1,10 +1,10 @@
 import { WebSocket } from 'ws';
 import {
   C2S, S2C, RoomView, Wuxing, PATHS, WUXING_NAMES,
-  powerOf, salvageValue, MAX_PARTY, MAX_TIER,
+  powerOf, salvageValue, MAX_PARTY, MAX_TIER, idleGain, WX_ORDER,
 } from '@xiyou/shared';
 import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf } from './store.js';
-import { cultivate, uncultivate, learn, setLoadout, refine, forge } from './forge.js';
+import { cultivate, uncultivate, learn, train, setLoadout, refine, forge } from './forge.js';
 import { Run } from './run.js';
 
 /**
@@ -212,15 +212,31 @@ export function onMessage(s: Session, raw: string): void {
       break;
     }
 
+    case 'idle': {
+      // 挂机收益：按上次领取到现在的时间结算（有上限），领完重新计时
+      const now = Date.now();
+      const gain = idleGain(p.maxTier, now - p.idleSince);
+      const each = gain[WX_ORDER[0]];
+      if (each <= 0) { s.send({ t: 'err', msg: '还没攒下什么，过一会儿再来' }); return; }
+      WX_ORDER.forEach(wx => { p.energy[wx] += gain[wx]; });
+      p.idleSince = now;
+      markDirty(p);
+      s.sendProfile();
+      s.send({ t: 'toast', msg: `领取挂机收益 · 五行能量各 +${each}` });
+      break;
+    }
+
     case 'cultivate':
     case 'uncultivate':
     case 'learn':
+    case 'train':
     case 'loadout':
     case 'forge':
     case 'refine': {
       const r = msg.t === 'cultivate' ? cultivate(p, msg.wx)
         : msg.t === 'uncultivate' ? uncultivate(p, msg.wx)
         : msg.t === 'learn' ? learn(p, msg.skill)
+        : msg.t === 'train' ? train(p, msg.skill)
         : msg.t === 'loadout' ? setLoadout(p, msg.skills)
         : msg.t === 'forge' ? forge(p, msg.tier, msg.amounts)
         : refine(p, msg.id);

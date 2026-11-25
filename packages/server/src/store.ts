@@ -31,6 +31,8 @@ export interface Profile {
   loadout: SkillId[];
   maxTier: number;
   best: Record<number, number>;
+  /** 挂机收益从什么时候开始攒 */
+  idleSince: number;
   created: number;
   seen: number;
 }
@@ -139,7 +141,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, weapon: null, stash: [],
-      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, loadout: [], maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
+      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, loadout: [], maxTier: 1, best: {}, idleSince: Date.now(), created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
@@ -147,6 +149,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if ((p as any).equip) dirty.add(did);
   migrate(p);
   p.best ??= {};
+  p.idleSince = Number(p.idleSince) || Date.now();
   p.seen = Date.now();
   cache.set(did, p);
   return p;
@@ -165,6 +168,7 @@ export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
     energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, maxTier: p.maxTier, best: p.best,
+    idleSince: p.idleSince, now: Date.now(),
   };
 }
 

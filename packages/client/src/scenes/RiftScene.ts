@@ -3,7 +3,7 @@ import {
   Wuxing, WUXING_NAMES, GearItem, itemColor, itemCss, PlayerStats, RunPlayerInfo,
   RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
-  wxMult, attackInterval, skillCd, skillLevel, SKILLS, SKILL_ORDER, SK, SkillId,
+  wxMult, attackInterval, skillCd, skillLevel, SKILLS, SKILL_ORDER, SK, SkillId, skillRadius, bladeCount,
   computeStats, powerOf, WeaponForm, formOf, UNARMED_FORM, Energy, energyTotal, emptyEnergy, WX_ORDER,
   QI_START, qiGain, ORB_MAGNET, ORB_PICK,
 } from '@xiyou/shared';
@@ -18,7 +18,8 @@ import { sfx } from '../systems/audio/Sfx.js';
 import { SANS, WX_CSS } from '../ui/kit.js';
 import { DamageText } from '../systems/fx/DamageText.js';
 import { Avatar } from '../systems/avatar/Avatar.js';
-import { SkillShader } from '../systems/fx/SkillShader.js';
+import { SkillShader, Live } from '../systems/fx/SkillShader.js';
+import { ensureCharAnims } from '../systems/idle/IdleBattle.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 const FIRE_TINT = 0xff6a3c;
@@ -104,6 +105,8 @@ interface Tele {
   start: number;
   fill: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
   edge: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+  /** 着色器版的预警（有它时 fill / edge 不显示） */
+  sh: Live | null;
 }
 
 interface EBolt {
@@ -113,6 +116,7 @@ interface EBolt {
   life: number;
   img: Phaser.GameObjects.Image;
   core: Phaser.GameObjects.Image;
+  sh: Live | null;
 }
 
 interface MyBolt {
@@ -376,22 +380,7 @@ export class RiftScene extends Phaser.Scene {
   // ───────────────────────── 搭建 ─────────────────────────
 
   private createAnims(): void {
-    const keys = [PLAYER_ATLAS, ...Object.values(MONSTER_ATLAS_MAP)];
-    for (const atlas of keys) {
-      if (!this.textures.exists(atlas)) continue;
-      for (const anim of ['idle', 'run', 'atk', 'hurt', 'magic', 'die']) {
-        const key = `${atlas}_${anim}`;
-        if (this.anims.exists(key)) continue;
-        const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-        for (let i = 0; i < 6; i++) {
-          const f = `character_${anim}_${i}`;
-          if (this.textures.get(atlas).has(f)) frames.push({ key: atlas, frame: f });
-        }
-        if (frames.length) {
-          this.anims.create({ key, frames, frameRate: anim === 'idle' ? 8 : 12, repeat: anim === 'idle' || anim === 'run' ? -1 : 0 });
-        }
-      }
-    }
+    ensureCharAnims(this, [PLAYER_ATLAS, ...Object.values(MONSTER_ATLAS_MAP)]);
   }
 
   private createMe(): void {
@@ -494,7 +483,7 @@ export class RiftScene extends Phaser.Scene {
     this.enemies.delete(en.id);
     this.teles = this.teles.filter(t => {
       if (t.a.id !== en.id) return true;
-      t.fill.destroy(); t.edge.destroy();
+      t.fill.destroy(); t.edge.destroy(); this.shader.stop(t.sh);
       return false;
     });
     const destroy = () => {
@@ -579,7 +568,7 @@ export class RiftScene extends Phaser.Scene {
       // 冻住：脚下一团寒光，持续到解冻
       this.teles = this.teles.filter(t => {
         if (t.a.id !== id) return true;
-        t.fill.destroy(); t.edge.destroy();
+        t.fill.destroy(); t.edge.destroy(); this.shader.stop(t.sh);
         return false;
       });
       const ice = this.add.image(en.x, en.y - 10, 'fx_glow').setTint(0x8fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(en.scale * 2.2).setAlpha(0.75).setDepth(FX_DEPTH - 9);
@@ -588,7 +577,7 @@ export class RiftScene extends Phaser.Scene {
     }
     this.teles = this.teles.filter(t => {
       if (t.a.id !== id) return true;
-      t.fill.destroy(); t.edge.destroy();
+      t.fill.destroy(); t.edge.destroy(); this.shader.stop(t.sh);
       return false;
     });
     this.fx.ring(en.x, en.y, 120, 0xffe9a8, 360);
@@ -654,7 +643,20 @@ export class RiftScene extends Phaser.Scene {
       fill = this.add.image(a.x, y, 'fx_disc').setTint(a.shape === 'bolt' ? 0xff8a3c : TELE_COLOR).setScale(full * 0.05).setAlpha(0.5).setDepth(TELE_DEPTH);
       edge = this.add.image(a.x, y, 'fx_ring').setTint(TELE_EDGE).setScale(full * 1.06).setDepth(TELE_DEPTH + 1);
     }
-    this.teles.push({ a, start: now, end: now + a.windup, fill, edge });
+    // 着色器版预警：细环、刻度、流动的箭纹；原来的色块只在着色器不可用时显示
+    let sh: Live | null = null;
+    if (this.shader.enabled) {
+      const color = a.shape === 'bolt' ? 0xff9a4a : 0xff4a30;
+      if (a.shape === 'lunge') {
+        const rot = Math.atan2(a.dy, a.dx);
+        sh = this.shader.play('warnLane', a.x + a.dx * a.len / 2, a.y + a.dy * a.len / 2, a.len, a.windup, TELE_DEPTH, rot, undefined, { sizeY: a.r, color });
+      } else {
+        sh = this.shader.play('warnCircle', fill.x, fill.y, (a.shape === 'bolt' ? Math.max(62, a.r) : a.r) * 2.22, a.windup, TELE_DEPTH, 0, undefined, { color });
+      }
+      fill.setVisible(false);
+      edge.setVisible(false);
+    }
+    this.teles.push({ a, start: now, end: now + a.windup, fill, edge, sh });
 
     if (en) {
       const atlas = MONSTER_ATLAS_MAP[en.def.atlas];
@@ -686,6 +688,7 @@ export class RiftScene extends Phaser.Scene {
       if (now < t.end) return true;
       t.fill.destroy();
       t.edge.destroy();
+      this.shader.stop(t.sh);
       if (t.a.shape !== 'bolt') this.resolveStrike(t.a);
       return false;
     });
@@ -694,7 +697,8 @@ export class RiftScene extends Phaser.Scene {
   /** 预警结束的瞬间：自己在范围内就挨打（遁 / 御 在这里判定） */
   private resolveStrike(a: EnemyAttack): void {
     if (a.shape === 'circle') {
-      this.fx.ring(a.x, a.y, a.r, TELE_EDGE, 260, 0.6);
+      if (this.shader.enabled) this.shader.play('impact', a.x, a.y, a.r * 2.3, 340, TELE_DEPTH + 1, 0, undefined, { color: WX_TINT[a.wx] });
+      else this.fx.ring(a.x, a.y, a.r, TELE_EDGE, 260, 0.6);
       if (a.r >= 160) { sfx.slam(); this.fx.shake(0.004, 120); }
     }
     if (this.down || this.ended) return;
@@ -715,7 +719,14 @@ export class RiftScene extends Phaser.Scene {
     const tint = WX_TINT[b.wx];
     const img = this.add.image(b.x, b.y, 'fx_glow').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(0.42).setDepth(FX_DEPTH - 6);
     const core = this.add.image(b.x, b.y, 'fx_dot').setTint(0xffffff).setScale(2).setDepth(FX_DEPTH - 5);
-    this.ebolts.push({ b, x: b.x, y: b.y, life: b.life, img, core });
+    const eb: EBolt = { b, x: b.x, y: b.y, life: b.life, img, core, sh: null };
+    // 着色器版弹道：亮芯拖尾焰
+    if (this.shader.enabled) {
+      eb.sh = this.shader.play('wisp', b.x, b.y, 130, b.life, FX_DEPTH - 6, Math.atan2(b.vy, b.vx), () => eb, { color: tint });
+      img.setVisible(false);
+      core.setVisible(false);
+    }
+    this.ebolts.push(eb);
   }
 
   private updateEBolts(dt: number): void {
@@ -735,6 +746,7 @@ export class RiftScene extends Phaser.Scene {
         if (hit) this.fx.burst(o.x, o.y, WX_TINT[o.b.wx], 8);
         o.img.destroy();
         o.core.destroy();
+        this.shader.stop(o.sh);
         return false;
       }
       return true;
@@ -775,6 +787,8 @@ export class RiftScene extends Phaser.Scene {
     this.hp = Math.max(0, this.hp - amt);
     this.hpDirty = true;
     this.me.hurt();
+    // 身上留一道爪痕
+    this.shader.play('claw', this.x, this.y - 45, 170, 300, FX_DEPTH - 2, Math.PI / 2 + (Math.random() - 0.5) * 1.2, undefined, { color: WX_TINT[wx] });
     this.dmgText.show(this.x, this.y - 120, `-${amt}`, mult > 1 ? 0xff4d4d : 0xff8a80, mult > 1 ? 36 : 28, 60, 700);
     sfx.playerHurt(mult > 1);
     this.fx.shake(mult > 1 ? 0.007 : 0.004, 110);
@@ -1040,13 +1054,14 @@ export class RiftScene extends Phaser.Scene {
   }
 
   /** 技能的画面表现：着色器是主体，贴图粒子、震屏、音效是点缀；着色器不可用时只剩后者 */
-  private drawSkill(id: SkillId, x: number, y: number, mine: boolean, who?: { x: number; y: number }): void {
-    const area = 1 + (mine ? this.stats.area : 0) / 100;
+  private drawSkill(id: SkillId, x: number, y: number, mine: boolean, who?: { x: number; y: number }, lv: number = this.skillLv[id]): void {
+    // 范围随熟练度成长；同伴的技能按对方开局时的熟练度画
+    const R = skillRadius(id, lv, mine ? this.stats : { area: 0 });
     const sh = this.shader;
     const lite = !sh.enabled;
     switch (id) {
       case 'ring': {
-        const r = FIRE.ringRadius * area;
+        const r = R;
         sh.play('fire', x, y, r * 2.25, 820, FX_DEPTH - 7);
         if (lite) { this.fx.ring(x, y, r, FIRE_TINT, 460, 0.1); this.fx.ring(x, y, r * 0.75, 0xffd27a, 380, 0.1); }
         this.fx.radial(x, y, r, FIRE_TINT, mine ? 26 : 12);
@@ -1055,7 +1070,7 @@ export class RiftScene extends Phaser.Scene {
         break;
       }
       case 'meteor': {
-        const r = FIRE.meteorRadius * area;
+        const r = R;
         const mark = this.add.image(x, y, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
         this.tweens.add({ targets: mark, alpha: 0.7, duration: 200 });
         const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
@@ -1077,14 +1092,15 @@ export class RiftScene extends Phaser.Scene {
       }
       case 'blades': {
         // 剑气从头顶散开，再分袭最近的几只
-        const targets = [...this.enemies.values()].filter(e => e.hp > 0 && (e.x - x) ** 2 + (e.y - y) ** 2 < (SK.blades.range + 60) ** 2)
-          .sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - (b.x - x) ** 2 - (b.y - y) ** 2).slice(0, SK.blades.count);
+        const targets = [...this.enemies.values()].filter(e => e.hp > 0 && (e.x - x) ** 2 + (e.y - y) ** 2 < (R + 60) ** 2)
+          .sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - (b.x - x) ** 2 - (b.y - y) ** 2).slice(0, bladeCount(lv));
+        const blades = bladeCount(lv);
         this.fx.flashGlow(x, y - 60, 150, 0xfff3c0, 260, 0.8);
         if (lite) this.fx.ring(x, y, 160, 0xf2e6c2, 300, 0.2);
-        for (let i = 0; i < SK.blades.count; i++) {
+        for (let i = 0; i < blades; i++) {
           const en = targets.length ? targets[i % targets.length] : null;
           this.time.delayedCall(60 + i * 70, () => {
-            const ang0 = (i / SK.blades.count) * Math.PI * 2;
+            const ang0 = (i / blades) * Math.PI * 2;
             const ex = en?.spr.active ? en.x : x + Math.cos(ang0) * 300;
             const ey = en?.spr.active ? en.y - 40 : y + Math.sin(ang0) * 300;
             const sx = x, sy = y - 70;
@@ -1103,7 +1119,7 @@ export class RiftScene extends Phaser.Scene {
         break;
       }
       case 'frost': {
-        const r = SK.frost.radius * area;
+        const r = R;
         sh.play('frost', x, y, r * 2.25, 1500, FX_DEPTH - 8);
         if (lite) { this.fx.ring(x, y, r, 0x8fd8ff, 480, 0.1); this.fx.ring(x, y, r * 0.6, 0xffffff, 380, 0.1); }
         this.fx.radial(x, y, r, 0x8fd8ff, mine ? 22 : 10);
@@ -1112,7 +1128,7 @@ export class RiftScene extends Phaser.Scene {
         break;
       }
       case 'bloom': {
-        const r = SK.bloom.radius * area;
+        const r = R;
         const at = who ?? { x, y };
         sh.play('bloom', x, y, r * 2.25, 1300, FX_DEPTH - 8, 0, who ? () => at : mine ? () => ({ x: this.x, y: this.y }) : undefined);
         if (lite) this.fx.ring(x, y, r, 0x6ee7a0, 520, 0.15);
@@ -1122,7 +1138,7 @@ export class RiftScene extends Phaser.Scene {
         break;
       }
       case 'bastion': {
-        const r = SK.bastion.radius * area;
+        const r = R;
         // 震地一下，然后护罩跟着人走到时间结束
         this.fx.ring(x, y, r, 0xe3b23c, 420, 0.15);
         this.fx.radial(x, y, r, 0xe3b23c, mine ? 22 : 10);
@@ -1142,9 +1158,9 @@ export class RiftScene extends Phaser.Scene {
     if (p === this.myIdx) return;
     const mt = this.mates.get(p);
     mt?.spr.play('cast');
-    this.drawSkill(id, x, y, false, mt);
+    this.drawSkill(id, x, y, false, mt, skillLevel(mt?.info.skills?.[id]));
     // 同伴的回春：自己在范围内也回一口
-    if (id === 'bloom' && (this.x - x) ** 2 + (this.y - y) ** 2 < SK.bloom.radius ** 2) this.healBy(SK.bloom.mateHeal);
+    if (id === 'bloom' && (this.x - x) ** 2 + (this.y - y) ** 2 < skillRadius('bloom', skillLevel(mt?.info.skills?.bloom), { area: 0 }) ** 2) this.healBy(SK.bloom.mateHeal);
   }
 
   // ───────────────────────── 五行能量 ─────────────────────────
