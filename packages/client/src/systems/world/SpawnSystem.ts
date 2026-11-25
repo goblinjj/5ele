@@ -6,6 +6,7 @@ import {
   ENEMY_SCALE, ELITE_SCALE, BOSS_SCALE, STAT_SCALE,
 } from '../../config/worldConfig.js';
 import { Fx } from '../fx/Fx.js';
+import { versioned } from '../../config/assetVersion.js';
 
 export const MONSTER_ATLAS_MAP: Record<string, string> = {
   '树妖':   'monster_tree_demon',
@@ -64,7 +65,7 @@ export class SpawnSystem {
   static preloadAtlases(scene: Phaser.Scene): void {
     Object.entries(MONSTER_ATLAS_PATHS).forEach(([key, paths]) => {
       if (!scene.textures.exists(key)) {
-        scene.load.atlas(key, paths.image, paths.json);
+        scene.load.atlas(key, versioned(paths.image), versioned(paths.json));
       }
     });
   }

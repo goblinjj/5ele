@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { uiConfig } from '../config/uiConfig.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig.js';
 import { SpawnSystem } from '../systems/world/SpawnSystem.js';
+import { versioned } from '../config/assetVersion.js';
 import { HERO_ATLAS } from '../systems/avatar/Avatar.js';
 
 const PLAYER_ATLAS = 'player_spirit';
@@ -36,7 +37,7 @@ export class BootScene extends Phaser.Scene {
     });
 
     this.load.atlas(PLAYER_ATLAS, 'assets/player/灵体残骸/atlas.png', 'assets/player/灵体残骸/atlas.json');
-    this.load.atlas(HERO_ATLAS, 'assets/hero/atlas.webp', 'assets/hero/atlas.json');
+    this.load.atlas(HERO_ATLAS, versioned('assets/hero/atlas.webp'), versioned('assets/hero/atlas.json'));
     SpawnSystem.preloadAtlases(this);
   }
 
