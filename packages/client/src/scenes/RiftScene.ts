@@ -3,7 +3,7 @@ import {
   Wuxing, WUXING_NAMES, GearItem, itemColor, itemCss, PlayerStats, RunPlayerInfo,
   RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn, SkillCode,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
-  wxMult, withCdr, attackInterval, meteorCd,
+  wxMult, attackInterval, skillCd, skillLevel, SKILLS, SkillId,
   computeStats, powerOf, WeaponForm, formOf, UNARMED_FORM, Energy, energyTotal, emptyEnergy, WX_ORDER,
   QI_START, qiGain, ORB_MAGNET, ORB_PICK,
 } from '@xiyou/shared';
@@ -203,6 +203,8 @@ export class RiftScene extends Phaser.Scene {
   /** 兵器的出手方式 */
   form: WeaponForm = UNARMED_FORM;
   private weapon: GearItem | null = null;
+  /** 开局时的技能熟练度；-1 = 没学会 */
+  skillLv: Record<SkillId, number> = { ring: -1, meteor: -1 };
   down = false;
   /** 完美闪避赐予的必暴出手 */
   critCharges = 0;
@@ -280,6 +282,7 @@ export class RiftScene extends Phaser.Scene {
     this.qi = Math.min(this.stats.qiMax, QI_START);
     this.weapon = mine.weapon ?? null;
     this.form = formOf(this.weapon);
+    this.skillLv = { ring: skillLevel(mine.skills?.ring), meteor: skillLevel(mine.skills?.meteor) };
     this.down = false;
     this.critCharges = 0;
     this.cdBolt = 400; this.cdRing = 0; this.cdMeteor = 0; this.cdDodge = 0; this.cdGuard = 0;
@@ -948,6 +951,22 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
+  /** 技能冷却总长（HUD 也用） */
+  cdOf(id: SkillId): number {
+    return skillCd(id, this.stats, this.skillLv[id]);
+  }
+
+  /** 学会了才放得出 */
+  private knows(id: SkillId): boolean {
+    if (this.skillLv[id] >= 0) return true;
+    const now = this.time.now;
+    if (now - this.lackT > 900) {
+      this.lackT = now;
+      this.fx.floatText(this.x, this.y - 150, `尚未学会${SKILLS[id].name} · 回营地修习`, '#9fd8ff', 26, 60, 1000);
+    }
+    return false;
+  }
+
   /** 灵力够不够放；不够就提示一声（别刷屏） */
   private spendQi(cost: number): boolean {
     if (this.qi >= cost) { this.qi -= cost; return true; }
@@ -961,8 +980,8 @@ export class RiftScene extends Phaser.Scene {
   }
 
   private castRing(): void {
-    if (this.cdRing > 0 || this.down || !this.spendQi(FIRE.ringCost)) return;
-    this.cdRing = withCdr(FIRE.ringCd, this.stats);
+    if (this.cdRing > 0 || this.down || !this.knows('ring') || !this.spendQi(FIRE.ringCost)) return;
+    this.cdRing = this.cdOf('ring');
     net.send({ t: 'cast', s: 'A', x: Math.round(this.x), y: Math.round(this.y) });
     this.drawRing(this.x, this.y, FIRE.ringRadius * (1 + this.stats.area / 100), true);
     this.castAnim = 380;
@@ -979,7 +998,7 @@ export class RiftScene extends Phaser.Scene {
 
   /** 焚天：落向妖异最密集处 */
   private castMeteor(): void {
-    if (this.cdMeteor > 0 || this.down || !this.spendQi(FIRE.meteorCost)) return;
+    if (this.cdMeteor > 0 || this.down || !this.knows('meteor') || !this.spendQi(FIRE.meteorCost)) return;
     let best: CEnemy | null = null;
     let bestN = -1;
     const R2 = FIRE.meteorRange ** 2;
@@ -991,7 +1010,7 @@ export class RiftScene extends Phaser.Scene {
     }
     const tx = best ? best.x : this.x + this.facing * 300;
     const ty = best ? best.y : this.y;
-    this.cdMeteor = meteorCd(this.stats);
+    this.cdMeteor = this.cdOf('meteor');
     net.send({ t: 'cast', s: 'B', x: Math.round(tx), y: Math.round(ty) });
     this.drawMeteor(tx, ty, true);
     this.castAnim = 420;

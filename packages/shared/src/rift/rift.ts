@@ -58,6 +58,47 @@ export const FIRE = {
   burnMs: 4000,
 } as const;
 
+// ───────────────────────── 技能：修习与熟练 ─────────────────────────
+
+/**
+ * 技能不是天生就会的：要用对应的五行能量修习才学得会。
+ * 学会之后用得越多越熟练——每升一级熟练度，伤害更高、冷却更短。
+ */
+export type SkillId = 'ring' | 'meteor';
+export interface SkillDef {
+  id: SkillId;
+  name: string;
+  wuxing: Wuxing;
+  /** 修习所需的本行能量 */
+  learn: number;
+  desc: string;
+}
+export const SKILLS: Record<SkillId, SkillDef> = {
+  ring:   { id: 'ring',   name: '燎原', wuxing: Wuxing.FIRE, learn: 40,  desc: '以自身为圆心放出火环，灼烧周围的妖异' },
+  meteor: { id: 'meteor', name: '焚天', wuxing: Wuxing.FIRE, learn: 120, desc: '召一颗陨火砸向妖异最密集处' },
+};
+export const SKILL_ORDER: SkillId[] = ['ring', 'meteor'];
+/** 存档里记的是每个技能用过多少次；没有这一项 = 还没学会 */
+export type SkillBook = Partial<Record<SkillId, number>>;
+
+export const SKILL_MAX_LEVEL = 10;
+export const SKILL_RANKS = ['初学', '入门', '小成', '熟练', '精通', '大成', '圆融', '通玄', '化境', '登峰', '造极'] as const;
+/** 熟练到 level 级累计要用多少次 */
+export function skillNeed(level: number): number {
+  return 8 * level * level;
+}
+export function skillLevel(uses: number | undefined): number {
+  if (uses === undefined) return -1;
+  return Math.min(SKILL_MAX_LEVEL, Math.floor(Math.sqrt(Math.max(0, uses) / 8)));
+}
+/** 每级熟练度：伤害 +12%，冷却 -3% */
+export function skillDmgMult(level: number): number {
+  return 1 + 0.12 * Math.max(0, level);
+}
+export function skillCdMult(level: number): number {
+  return 1 - 0.03 * Math.max(0, level);
+}
+
 // ───────────────────────── 能量与灵力 ─────────────────────────
 
 /**
@@ -108,8 +149,9 @@ export function withCdr(ms: number, s: Pick<PlayerStats, 'cdr'>): number {
 export function attackInterval(form: { interval: number }, s: Pick<PlayerStats, 'aspd'>): number {
   return form.interval / (1 + s.aspd / 100);
 }
-export function meteorCd(s: Pick<PlayerStats, 'cdr'>): number {
-  return withCdr(FIRE.meteorCd, s);
+/** 技能冷却：属性里的冷却缩减 × 熟练度 */
+export function skillCd(id: SkillId, s: Pick<PlayerStats, 'cdr'>, level: number): number {
+  return withCdr(id === 'ring' ? FIRE.ringCd : FIRE.meteorCd, s) * skillCdMult(level);
 }
 
 // ───────────────────────── 五行克制 ─────────────────────────
@@ -189,6 +231,8 @@ export interface ProfileView {
   maxTier: number;
   /** 各层最快通关（毫秒） */
   best: Record<number, number>;
+  /** 学会的技能与各自用过的次数 */
+  skills: SkillBook;
 }
 
 export interface RoomPlayerView {
@@ -216,6 +260,8 @@ export interface RunPlayerInfo {
   /** 兵器与修为（用于外显） */
   weapon: GearItem | null;
   cult: Energy;
+  /** 开局时的技能熟练度（局内不变） */
+  skills: SkillBook;
 }
 
 /**
@@ -272,8 +318,11 @@ export type C2S =
   | { t: 'equip'; id: string }
   /** 化去兵器，返还同属能量 */
   | { t: 'salvage'; ids: string[] }
-  /** 修炼：某一行升一重 */
+  /** 修炼：某一行升一重；散功：放弃这一行，返还部分能量 */
   | { t: 'cultivate'; wx: Wuxing }
+  | { t: 'uncultivate'; wx: Wuxing }
+  /** 修习一门技能 */
+  | { t: 'learn'; skill: SkillId }
   /** 精炼兵器：尝试升一阶（可能失败） */
   | { t: 'refine'; id: string }
   /** 凝练兵器：投入的五行能量 */

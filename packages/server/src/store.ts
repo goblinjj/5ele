@@ -2,7 +2,7 @@ import { promises as fs, existsSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import {
   GearItem, ProfileView, Wuxing, computeStats, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
-  kindOf, salvageValue, MAX_CULT,
+  kindOf, salvageValue, MAX_CULT, MAX_CULT_KINDS, cultSpent, SkillBook, SKILLS,
 } from '@xiyou/shared';
 
 /**
@@ -25,6 +25,8 @@ export interface Profile {
   /** 五行能量与五行修为 */
   energy: Energy;
   cult: Energy;
+  /** 学会的技能与各自用过的次数 */
+  skills: SkillBook;
   maxTier: number;
   best: Record<number, number>;
   created: number;
@@ -79,6 +81,19 @@ function migrate(raw: any): void {
     raw.energy[wx] = Math.max(0, Math.round(Number(raw.energy[wx]) || 0));
     raw.cult[wx] = Math.max(0, Math.min(MAX_CULT, Math.round(Number(raw.cult[wx]) || 0)));
   });
+  // 现在最多同修两行：留修得最高的两行，其余的把投入的能量全数退回
+  const kinds = WX_ORDER.filter(wx => raw.cult[wx] > 0).sort((a, b) => raw.cult[b] - raw.cult[a]);
+  for (const wx of kinds.slice(MAX_CULT_KINDS)) {
+    raw.energy[wx] += cultSpent(raw.cult[wx]);
+    raw.cult[wx] = 0;
+  }
+  // 技能要自己修习；只保留认得的技能
+  const skills: SkillBook = {};
+  for (const id of Object.keys(SKILLS) as (keyof typeof SKILLS)[]) {
+    const n = raw.skills?.[id];
+    if (n !== undefined && n !== null) skills[id] = Math.max(0, Math.floor(Number(n) || 0));
+  }
+  raw.skills = skills;
 }
 
 if (!existsSync(PLAYER_DIR)) mkdirSync(PLAYER_DIR, { recursive: true });
@@ -117,7 +132,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, weapon: null, stash: [],
-      energy: emptyEnergy(), cult: emptyEnergy(), maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
+      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
@@ -142,7 +157,7 @@ export function markDirty(p: Profile): void {
 export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
-    energy: p.energy, cult: p.cult, maxTier: p.maxTier, best: p.best,
+    energy: p.energy, cult: p.cult, skills: p.skills, maxTier: p.maxTier, best: p.best,
   };
 }
 

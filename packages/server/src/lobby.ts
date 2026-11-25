@@ -4,7 +4,7 @@ import {
   powerOf, salvageValue, MAX_PARTY, MAX_TIER,
 } from '@xiyou/shared';
 import { Profile, loadProfile, markDirty, viewOf, validDid, cleanName, statsOf } from './store.js';
-import { cultivate, refine, forge } from './forge.js';
+import { cultivate, uncultivate, learn, refine, forge } from './forge.js';
 import { Run } from './run.js';
 
 /**
@@ -213,9 +213,15 @@ export function onMessage(s: Session, raw: string): void {
     }
 
     case 'cultivate':
+    case 'uncultivate':
+    case 'learn':
     case 'forge':
     case 'refine': {
-      const r = msg.t === 'cultivate' ? cultivate(p, msg.wx) : msg.t === 'forge' ? forge(p, msg.tier, msg.amounts) : refine(p, msg.id);
+      const r = msg.t === 'cultivate' ? cultivate(p, msg.wx)
+        : msg.t === 'uncultivate' ? uncultivate(p, msg.wx)
+        : msg.t === 'learn' ? learn(p, msg.skill)
+        : msg.t === 'forge' ? forge(p, msg.tier, msg.amounts)
+        : refine(p, msg.id);
       if (!r.ok) { s.send({ t: 'err', msg: r.msg }); return; }
       markDirty(p);
       s.sendProfile();

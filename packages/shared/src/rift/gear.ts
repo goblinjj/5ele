@@ -197,11 +197,11 @@ export function itemColor(item: GearItem): number {
 /**
  * 精炼：+1 ~ +10，消耗与兵器同属的能量。
  *   - 每次消耗固定（只看兵器的层数，不随阶数涨）
- *   - 兵器的全部数值随阶数指数增长：每阶 ×1.15，+10 约为 4 倍
+ *   - 兵器的全部数值随阶数指数增长：每阶 ×1.25，+10 约为 9.3 倍
  *   - 阶数越高越容易失败；失败时能量照扣、阶数不变
  */
 export const MAX_GRADE = 10;
-export const GRADE_GROWTH = 1.15;
+export const GRADE_GROWTH = 1.25;
 export function gradeMult(item: Pick<GearItem, 'grade'>): number {
   return Math.pow(GRADE_GROWTH, item.grade ?? 0);
 }
@@ -296,39 +296,47 @@ export interface CultDef {
 
 /** 每一重修为带来的加成（数值见 computeStats） */
 export const CULT: Record<Wuxing, CultDef> = {
-  [Wuxing.METAL]: { wuxing: Wuxing.METAL, name: '锋锐', desc: '攻击 +4%　暴击 +0.4%' },
-  [Wuxing.WOOD]:  { wuxing: Wuxing.WOOD,  name: '生机', desc: '生命 +6%　每秒回血 +0.4' },
-  [Wuxing.WATER]: { wuxing: Wuxing.WATER, name: '流转', desc: '冷却 -1%　灵力上限 +4　移速 +0.5%' },
-  [Wuxing.FIRE]:  { wuxing: Wuxing.FIRE,  name: '炽烈', desc: '暴伤 +4%　灼烧 +5%　技能范围 +1%' },
-  [Wuxing.EARTH]: { wuxing: Wuxing.EARTH, name: '厚重', desc: '减伤 +1.2%　生命 +2%' },
+  [Wuxing.METAL]: { wuxing: Wuxing.METAL, name: '锋锐', desc: '攻击 +10%　暴击 +0.8%' },
+  [Wuxing.WOOD]:  { wuxing: Wuxing.WOOD,  name: '生机', desc: '生命 +15%　每秒回血 +1.2' },
+  [Wuxing.WATER]: { wuxing: Wuxing.WATER, name: '流转', desc: '冷却 -1.5%　灵力上限 +10　移速 +1%' },
+  [Wuxing.FIRE]:  { wuxing: Wuxing.FIRE,  name: '炽烈', desc: '暴伤 +10%　灼烧 +12%　技能范围 +2%' },
+  [Wuxing.EARTH]: { wuxing: Wuxing.EARTH, name: '厚重', desc: '减伤 +1.8%　生命 +8%' },
 };
 
 export const MAX_CULT = 40;
-/** 相生约束：一行的修为最多比「生它的那一行」高这么多重 */
-export const CULT_GAP = 5;
+/** 一个人最多同修几行 */
+export const MAX_CULT_KINDS = 2;
+/** 散功时返还已投入能量的比例 */
+export const CULT_REFUND = 0.7;
 
 /** 从 level 重升到下一重所需的本行能量 */
 export function cultCost(level: number): number {
   return Math.round(10 + 8 * level + 1.2 * level * level);
 }
-/** 生我者：谁生这一行 */
-export function motherOf(wx: Wuxing): Wuxing {
-  return WX_ORDER.find(o => WUXING_GENERATES[o] === wx)!;
+/** 修到 level 重一共投入了多少 */
+export function cultSpent(level: number): number {
+  let n = 0;
+  for (let i = 0; i < level; i++) n += cultCost(i);
+  return n;
 }
-/** 能否再升一重；不能时给出原因 */
-export function cultBlock(cult: Energy, energy: Energy, wx: Wuxing): '' | 'max' | 'mother' | 'energy' {
+/** 已经在修的几行 */
+export function cultKinds(cult: Energy): Wuxing[] {
+  return WX_ORDER.filter(wx => (cult[wx] ?? 0) > 0);
+}
+/** 能否再升一重；不能时给出原因（slots = 已同修两行，这一行修不了） */
+export function cultBlock(cult: Energy, energy: Energy, wx: Wuxing): '' | 'max' | 'slots' | 'energy' {
   const lv = cult[wx] ?? 0;
   if (lv >= MAX_CULT) return 'max';
-  if (lv >= (cult[motherOf(wx)] ?? 0) + CULT_GAP) return 'mother';
+  if (lv <= 0 && cultKinds(cult).length >= MAX_CULT_KINDS) return 'slots';
   if ((energy[wx] ?? 0) < cultCost(lv)) return 'energy';
   return '';
 }
 
-/** 境界：五行修为总和每 20 重一个大境界 */
+/** 境界：修为总和每 8 重一个大境界（同修两行，满 80 重） */
 export const REALMS = ['凡胎', '炼气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'] as const;
 export const REALM_COLORS = [0x9fb3c8, 0x9fd8ff, 0x4ade80, 0xffe066, 0xffa31a, 0xff6a4c, 0xc084fc, 0xff4fd8, 0xfff3a0, 0xffffff] as const;
 export function realmIndex(cult: Energy): number {
-  return Math.min(REALMS.length - 1, Math.floor(energyTotal(cult) / 20));
+  return Math.min(REALMS.length - 1, Math.floor(energyTotal(cult) / 8));
 }
 export function realmOf(cult: Energy): string {
   return REALMS[realmIndex(cult)];
@@ -376,18 +384,18 @@ export function computeStats(weapon: GearItem | null | undefined, path: Wuxing |
   const c = (wx: Wuxing) => Math.max(0, Math.min(MAX_CULT, cult[wx] ?? 0));
   const metal = c(Wuxing.METAL), wood = c(Wuxing.WOOD), water = c(Wuxing.WATER), fire = c(Wuxing.FIRE), earth = c(Wuxing.EARTH);
   return {
-    attack: Math.round((BASE_ATTACK + sum.atk) * (1 + (sum.atkPct + metal * 4) / 100)),
-    maxHp: Math.round(BASE_HP * (1 + (wood * 6 + earth * 2) / 100)),
+    attack: Math.round((BASE_ATTACK + sum.atk) * (1 + (sum.atkPct + metal * 10) / 100)),
+    maxHp: Math.round(BASE_HP * (1 + (wood * 15 + earth * 8) / 100)),
     aspd: Math.min(150, sum.aspd),
-    crit: Math.min(75, 5 + sum.crit + metal * 0.4),
-    critDmg: 50 + sum.critDmg + fire * 4,
-    area: Math.min(120, sum.area + fire),
-    move: water * 0.5,
-    dr: Math.min(60, earth * 1.2),
-    cdr: Math.min(50, water),
-    burn: sum.burn + fire * 5,
-    regen: BASE_REGEN + wood * 0.4,
-    qiMax: BASE_QI + water * 4,
+    crit: Math.min(75, 5 + sum.crit + metal * 0.8),
+    critDmg: 50 + sum.critDmg + fire * 10,
+    area: Math.min(120, sum.area + fire * 2),
+    move: Math.min(60, water),
+    dr: Math.min(70, earth * 1.8),
+    cdr: Math.min(60, water * 1.5),
+    burn: sum.burn + fire * 12,
+    regen: BASE_REGEN + wood * 1.2,
+    qiMax: BASE_QI + water * 10,
     carry: BASE_CARRY + CARRY_PER_LEVEL * (metal + wood + water + fire + earth),
   };
 }

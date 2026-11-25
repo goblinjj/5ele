@@ -8,7 +8,7 @@ import {
   REVIVE_RADIUS, REVIVE_MS,
   MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  withCdr, attackInterval, meteorCd,
+  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty } from './store.js';
@@ -50,6 +50,8 @@ interface RunPlayer extends RunMember {
   orbs: Map<number, Orb>;
   /** 本局吸纳的五行能量 */
   gained: Energy;
+  /** 开局时的技能熟练度；-1 = 没学会 */
+  skillLv: Record<SkillId, number>;
   lastRing: number;
   lastMeteor: number;
   lastParry: number;
@@ -144,12 +146,13 @@ export class Run {
         qi: Math.min(m.stats.qiMax, QI_START),
         orbs: new Map(),
         gained: emptyEnergy(),
+        skillLv: { ring: skillLevel(m.profile.skills.ring), meteor: skillLevel(m.profile.skills.meteor) },
         lastRing: -1e9, lastMeteor: -1e9, lastParry: -1e9, lastPDodge: -1e9,
         crits: 0,
       };
     });
 
-    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, weapon: p.profile.weapon, cult: p.profile.cult }));
+    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, weapon: p.profile.weapon, cult: p.profile.cult, skills: { ...p.profile.skills } }));
     this.players.forEach(p => p.send({ t: 'runStart', tier, you: p.id, players: info }));
     // 开局给几群妖异，不用干等
     for (let i = 0; i < 3; i++) this.spawnPack(i === 0 ? 820 : 1000);
@@ -659,22 +662,34 @@ export class Run {
     if (p.down || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const area = 1 + p.stats.area / 100;
     if (s === 'A') {
+      const lv = p.skillLv.ring;
+      if (lv < 0) return;
       // 客户端冷却到点就会放，服务器这边留 15% 容差
-      if (this.now - p.lastRing < withCdr(FIRE.ringCd, p.stats) * 0.85) return;
+      if (this.now - p.lastRing < skillCd('ring', p.stats, lv) * 0.85) return;
       if (!this.spendQi(p, FIRE.ringCost)) return;
       p.lastRing = this.now;
+      this.practice(p, 'ring');
       const cx = dist2(x, y, p.x, p.y) < 250 ** 2 ? x : p.x;
       const cy = dist2(x, y, p.x, p.y) < 250 ** 2 ? y : p.y;
       this.broadcast({ t: 'cast', p: p.idx, s: 'A', x: Math.round(cx), y: Math.round(cy) });
-      this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult);
+      this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult * skillDmgMult(lv));
     } else if (s === 'B') {
-      if (this.now - p.lastMeteor < meteorCd(p.stats) * 0.85) return;
+      const lv = p.skillLv.meteor;
+      if (lv < 0) return;
+      if (this.now - p.lastMeteor < skillCd('meteor', p.stats, lv) * 0.85) return;
       if (dist2(x, y, p.x, p.y) > (FIRE.meteorRange + 300) ** 2) return;
       if (!this.spendQi(p, FIRE.meteorCost)) return;
       p.lastMeteor = this.now;
+      this.practice(p, 'meteor');
       this.broadcast({ t: 'cast', p: p.idx, s: 'B', x: Math.round(x), y: Math.round(y) });
-      this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult));
+      this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult * skillDmgMult(lv)));
     }
+  }
+
+  /** 用一次，熟练一分（记在存档里，下一局生效） */
+  private practice(p: RunPlayer, id: SkillId): void {
+    p.profile.skills[id] = (p.profile.skills[id] ?? 0) + 1;
+    markDirty(p.profile);
   }
 
   private ring(p: RunPlayer, x: number, y: number, r: number, mult: number, ignite: boolean = true): void {

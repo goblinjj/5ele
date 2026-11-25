@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD,
-  withCdr, meteorCd, WUXING_NAMES, Wuxing, energyTotal,
+  WUXING_NAMES, Wuxing, energyTotal, SKILL_RANKS,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
 import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
@@ -35,6 +35,7 @@ interface RoundBtn {
   /** 灵力消耗（0 = 不耗灵力） */
   cost: number;
   costText?: Phaser.GameObjects.Text;
+  parts: Phaser.GameObjects.GameObject[];
 }
 
 /**
@@ -116,6 +117,14 @@ export class RiftHUDScene extends Phaser.Scene {
     this.btnGuard = this.roundButton(W - 300, H - 140, 60, '御', 0xffe9a8, 40, () => inputManager.pressGuard());
     this.btnRing = this.roundButton(W - 300, H - 320, 60, '燎原', 0xff6a3c, 30, () => inputManager.pressSkill(0), FIRE.ringCost);
     this.btnMeteor = this.roundButton(W - 150, H - 400, 60, '焚天', 0xffb36b, 30, () => inputManager.pressSkill(1), FIRE.meteorCost);
+    // 没学会的技能不出按钮；学会的在上方标熟练度
+    for (const [b, id] of [[this.btnRing, 'ring'], [this.btnMeteor, 'meteor']] as const) {
+      const lv = this.rift.skillLv[id];
+      if (lv < 0) { b.parts.forEach(o => (o as any).setVisible(false)); (b.parts.find(o => o.input) as any)?.disableInteractive(); continue; }
+      const rank = this.add.text(b.x, b.y - b.r - 14, SKILL_RANKS[lv], { fontFamily: SERIF, fontSize: '19px', fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+      b.parts.push(rank);
+      this.controls.push(rank);
+    }
   }
 
   private roundButton(x: number, y: number, r: number, text: string, color: number, size: number, onPress: () => void, cost: number = 0): RoundBtn {
@@ -132,7 +141,7 @@ export class RiftHUDScene extends Phaser.Scene {
     const costText = cost > 0
       ? this.add.text(x, y + r + 16, `灵力 ${cost}`, { fontFamily: SANS, fontSize: '19px', fontStyle: 'bold', color: hex(QI_COLOR), stroke: '#000', strokeThickness: 4 }).setOrigin(0.5)
       : undefined;
-    if (costText) this.controls.push(costText);
+    const parts: Phaser.GameObjects.GameObject[] = costText ? [costText] : [];
     const label = this.add.text(x, y, text, { fontFamily: SERIF, fontSize: `${size}px`, fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
     const cd = this.add.graphics();
     const cdText = this.add.text(x, y, '', { fontFamily: SERIF, fontSize: `${Math.round(size * 0.85)}px`, fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setVisible(false);
@@ -143,8 +152,9 @@ export class RiftHUDScene extends Phaser.Scene {
       glow.setAlpha(0.9);
       this.tweens.add({ targets: glow, alpha: 0, duration: 260 });
     });
-    this.controls.push(bg, glow, label, cd, cdText, hit);
-    return { x, y, r, label, cd, cdText, cost, costText };
+    parts.push(bg, glow, label, cd, cdText, hit);
+    this.controls.push(...parts);
+    return { x, y, r, label, cd, cdText, cost, costText, parts };
   }
 
   private setCd(b: RoundBtn, remain: number, total: number): void {
@@ -263,8 +273,8 @@ export class RiftHUDScene extends Phaser.Scene {
     // 冷却
     this.setCd(this.btnDodge, r.cdDodge, DODGE.cooldown);
     this.setCd(this.btnGuard, r.cdGuard, GUARD.cooldown);
-    this.setCd(this.btnRing, r.cdRing, withCdr(FIRE.ringCd, r.stats));
-    this.setCd(this.btnMeteor, r.cdMeteor, meteorCd(r.stats));
+    if (r.skillLv.ring >= 0) this.setCd(this.btnRing, r.cdRing, r.cdOf('ring'));
+    if (r.skillLv.meteor >= 0) this.setCd(this.btnMeteor, r.cdMeteor, r.cdOf('meteor'));
   }
 
   private drawMinimap(): void {

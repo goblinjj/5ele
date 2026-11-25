@@ -1,5 +1,6 @@
 import {
-  Wuxing, WX_ORDER, WUXING_NAMES, CULT, cultCost, cultBlock, motherOf, CULT_GAP,
+  Wuxing, WX_ORDER, WUXING_NAMES, CULT, cultCost, cultBlock, cultSpent, cultKinds, CULT_REFUND, MAX_CULT_KINDS,
+  SKILLS, SkillId,
   refineCost, refineRate, MAX_GRADE, GearItem, Energy, MAX_TIER,
   forgeBase, forgeRarity, forgeOutcome, generateItem, RARITY_NAMES,
 } from '@xiyou/shared';
@@ -17,9 +18,8 @@ export function cultivate(p: Profile, wx: Wuxing): Result {
   const lv = p.cult[wx];
   const block = cultBlock(p.cult, p.energy, wx);
   if (block === 'max') return { ok: false, msg: `${WUXING_NAMES[wx]}行已修至圆满` };
-  if (block === 'mother') {
-    const m = motherOf(wx);
-    return { ok: false, msg: `${WUXING_NAMES[m]}生${WUXING_NAMES[wx]}：${WUXING_NAMES[wx]}行最多高出${WUXING_NAMES[m]}行 ${CULT_GAP} 重，先修${WUXING_NAMES[m]}行` };
+  if (block === 'slots') {
+    return { ok: false, msg: `最多同修 ${MAX_CULT_KINDS} 行（已修${cultKinds(p.cult).map(k => WUXING_NAMES[k]).join('、')}），要改修先散功` };
   }
   if (block === 'energy') return { ok: false, msg: `${WUXING_NAMES[wx]}行能量不足（${p.energy[wx]}/${cultCost(lv)}）` };
   p.energy[wx] -= cultCost(lv);
@@ -63,4 +63,24 @@ export function forge(p: Profile, tier: number, raw: unknown): Result {
   // 空手时直接握在手里
   if (!p.weapon) p.weapon = it; else p.stash.push(it);
   return { ok: true, msg: `凝成 ${RARITY_NAMES[it.rarity]}·${it.name}` };
+}
+
+/** 散功：放弃一行的修为，返还一部分投入的能量，腾出位置改修别的 */
+export function uncultivate(p: Profile, wx: Wuxing): Result {
+  if (!WX_ORDER.includes(wx) || p.cult[wx] <= 0) return { ok: false, msg: '这一行没有修为' };
+  const back = Math.floor(cultSpent(p.cult[wx]) * CULT_REFUND);
+  p.cult[wx] = 0;
+  p.energy[wx] += back;
+  return { ok: true, msg: `${WUXING_NAMES[wx]}行散功 · 返还 ${back} 点能量` };
+}
+
+/** 修习技能：消耗技能所属那一行的能量 */
+export function learn(p: Profile, id: SkillId): Result {
+  const def = SKILLS[id];
+  if (!def) return { ok: false, msg: '没有这门技能' };
+  if (p.skills[id] !== undefined) return { ok: false, msg: `已经学会${def.name}` };
+  if (p.energy[def.wuxing] < def.learn) return { ok: false, msg: `${WUXING_NAMES[def.wuxing]}行能量不足（${p.energy[def.wuxing]}/${def.learn}）` };
+  p.energy[def.wuxing] -= def.learn;
+  p.skills[id] = 0;
+  return { ok: true, msg: `学会了 ${def.name}` };
 }
