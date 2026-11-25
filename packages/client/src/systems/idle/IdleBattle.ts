@@ -108,7 +108,7 @@ export class IdleBattle {
     const def = MONSTERS[Math.floor(Math.random() * MONSTERS.length)];
     const atlas = MONSTER_ATLAS_MAP[def.atlas];
     if (!atlas || !this.scene.textures.exists(atlas)) return;
-    const y = this.y + Phaser.Math.Between(-34, 30);
+    const y = this.y + Phaser.Math.Between(-150, 120);
     const x = this.right + 90;
     const spr = this.scene.add.sprite(x, y - FOOT, atlas, 'character_idle_0').setScale(SCALE).setFlipX(true).setDepth(y);
     if (this.scene.anims.exists(`${atlas}_run`)) spr.play(`${atlas}_run`);

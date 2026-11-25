@@ -35,13 +35,15 @@ const TIER_COLORS = [0, 0x9fd8ff, 0x6fb6ff, 0x4ade80, 0x9be36a, 0xffe066, 0xffa3
 
 /** 挂机战斗的舞台：残魂站的位置 */
 const STAGE_X = 200;
-const STAGE_Y = 440;
+const STAGE_Y = 680;
+/** 挂机收益栏的上沿 */
+const IDLE_Y = 1080;
 
 const CULT_ORDER: Wuxing[] = [Wuxing.WOOD, Wuxing.FIRE, Wuxing.EARTH, Wuxing.METAL, Wuxing.WATER];
 
 /**
  * 营地：挂机界面。残魂在上方自动清剿游荡的妖异（演出），挂机收益按时间累计、手动领取；
- * 下面是五行能量、三个入口（修炼 / 兵器 / 技能）和进秘境
+ * 大半屏留给挂机演出，底下只有收益栏、五行能量和一排四个入口（修炼 / 兵器 / 技能 / 秘境），秘境的选项在弹出面板里
  */
 export class CampScene extends Phaser.Scene {
   private dyn!: Phaser.GameObjects.Container;
@@ -56,7 +58,7 @@ export class CampScene extends Phaser.Scene {
   private forgeAmt: Energy = emptyEnergy();
   private forgeTier = 0;
   /** 当前打开的面板：存档更新后原样重开，面板里的数字才会跟着变 */
-  private panel: 'cult' | 'arms' | 'skills' | null = null;
+  private panel: 'cult' | 'arms' | 'skills' | 'rift' | null = null;
   private fx!: Fx;
   private idle!: IdleBattle;
   private idleTime: Phaser.GameObjects.Text | null = null;
@@ -79,7 +81,7 @@ export class CampScene extends Phaser.Scene {
 
     // 人形预览：穿什么显示什么
     this.add.image(STAGE_X, STAGE_Y, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.5, 0.5).setAlpha(0.22);
-    this.avatar = new Avatar(this, STAGE_X, STAGE_Y, null, 1.8).setDepth(STAGE_Y).setVisible(false);
+    this.avatar = new Avatar(this, STAGE_X, STAGE_Y, null, 2).setDepth(STAGE_Y).setVisible(false);
     // 挂机战斗：妖异从右边走来，被自动打散，能量飞进收益栏
     this.fx = new Fx(this);
     this.shaderFx = new SkillShader(this);
@@ -153,13 +155,13 @@ export class CampScene extends Phaser.Scene {
       this.drawPathSelect();
       return;
     }
-    this.drawHeader(p);
-    if (net.room) this.drawRoom(p, net.room);
-    else this.drawRiftPanel(p);
+    this.drawHeader(p, !net.room);
+    if (net.room) { if (this.panel === 'rift') this.closePopup(); this.drawRoom(p, net.room); }
     // 面板开着：按新存档重画
     if (this.popup && this.panel === 'cult') this.showCultPanel();
     else if (this.popup && this.panel === 'arms') this.showArms();
     else if (this.popup && this.panel === 'skills') this.showSkills();
+    else if (this.popup && this.panel === 'rift') this.showRift();
   }
 
   // ───────────────────────── 入道 ─────────────────────────
@@ -202,7 +204,7 @@ export class CampScene extends Phaser.Scene {
   }
 
   /** 主界面：名号、境界、战力、人物、五行能量，和三个入口 */
-  private drawHeader(p: ProfileView): void {
+  private drawHeader(p: ProfileView, full: boolean = true): void {
     const d = this.dyn;
     const stats = this.stats(p);
     const name = this.add.text(36, 34, `${p.name} ✎`, { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: '#f0e6d3' })
@@ -218,12 +220,14 @@ export class CampScene extends Phaser.Scene {
     // 手里的兵器：一行
     const it = p.weapon;
     const form = formOf(it);
-    d.add(this.add.text(W / 2, 506, `${it ? displayName(it) : '空手'} · ${form.melee ? '近战' : it ? '远程' : '中距离'}${form.move}`, {
+    // 组队房间占着下半屏时，只留顶栏和挂机演出
+    if (!full) return;
+    d.add(this.add.text(W / 2, IDLE_Y - 46, `${it ? displayName(it) : '空手'} · ${form.melee ? '近战' : it ? '远程' : '中距离'}${form.move}`, {
       fontFamily: SERIF, fontSize: '24px', color: it ? RARITY_CSS[it.rarity] : '#8b949e',
     }).setOrigin(0.5, 0));
 
     // 挂机收益：按时间累计，手动领取
-    const bx = 36, by = 552, bw = W - 72, bh = 84;
+    const bx = 36, by = IDLE_Y, bw = W - 72, bh = 84;
     const g = this.add.graphics();
     g.fillStyle(0x0d1117, 0.92);
     g.fillRoundedRect(bx, by, bw, bh, 18);
@@ -241,8 +245,8 @@ export class CampScene extends Phaser.Scene {
     // 五行能量：一行五个数
     CULT_ORDER.forEach((wx, i) => {
       const x = W / 2 + (i - 2) * 132;
-      d.add(this.add.text(x - 6, 678, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5));
-      d.add(this.add.text(x + 2, 680, `${p.energy[wx]}`, { fontFamily: SANS, fontSize: '26px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0, 0.5));
+      d.add(this.add.text(x - 6, IDLE_Y + 128, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5));
+      d.add(this.add.text(x + 2, IDLE_Y + 130, `${p.energy[wx]}`, { fontFamily: SANS, fontSize: '26px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0, 0.5));
     });
 
     // 三个入口：能做点什么的时候亮起来
@@ -255,13 +259,15 @@ export class CampScene extends Phaser.Scene {
       { label: '修 炼', sub: kinds.length ? kinds.map(wx => `${WUXING_NAMES[wx]} ${p.cult[wx]} 重`).join(' · ') : '尚未修炼', hot: canCult, open: () => this.showCultPanel() },
       { label: '兵 器', sub: it ? `兵匣 ${p.stash.length} 件` : '可凝练兵器', hot: canForge, open: () => this.showArms() },
       { label: '技 能', sub: (p.loadout ?? []).length ? (p.loadout ?? []).map(id => SKILLS[id].name).join(' · ') : '尚未修习', hot: canLearn, open: () => this.showSkills() },
+      { label: '秘 境', sub: TIER_NAMES[this.tier], hot: false, open: () => this.showRift() },
     ];
+    // 底下一排四个小入口，其余空间都留给挂机演出
     entries.forEach((e, i) => {
-      const x = W / 2 + (i - 1) * 222;
-      d.add(button(this, x, 772, 204, 92, e.label, e.open, { fontSize: 34 }));
-      d.add(this.add.text(x, 826, e.sub, { fontFamily: SANS, fontSize: '19px', color: '#8b949e' }).setOrigin(0.5, 0));
+      const x = W / 2 + (i - 1.5) * 168, y = IDLE_Y + 240;
+      d.add(button(this, x, y, 154, 82, e.label, e.open, { fontSize: 30, color: i === 3 ? 0x58a6ff : undefined }));
+      d.add(this.add.text(x, y + 50, e.sub, { fontFamily: SANS, fontSize: '17px', color: '#8b949e', align: 'center', wordWrap: { width: 160, useAdvancedWrap: true } }).setOrigin(0.5, 0));
       if (e.hot) {
-        const dot = this.add.circle(x + 86, 738, 9, 0xff5a3c).setStrokeStyle(2, 0x000000, 0.8);
+        const dot = this.add.circle(x + 64, y - 34, 8, 0xff5a3c).setStrokeStyle(2, 0x000000, 0.8);
         this.tweens.add({ targets: dot, scale: 1.35, duration: 600, yoyo: true, repeat: -1 });
         d.add(dot);
       }
@@ -281,7 +287,7 @@ export class CampScene extends Phaser.Scene {
     if (this.idleTime.text !== a) this.idleTime.setText(a).setColor(full ? '#ffe066' : '#d4a853');
     if (this.idleAmt.text !== b) this.idleAmt.setText(b);
     // 底边一条进度：攒到上限为止
-    const bx = 36, by = 552, bw = W - 72, bh = 84;
+    const bx = 36, by = IDLE_Y, bw = W - 72, bh = 84;
     this.idleBar.clear();
     this.idleBar.fillStyle(full ? 0xffe066 : GOLD, 0.9);
     this.idleBar.fillRoundedRect(bx + 14, by + bh - 9, Math.max(4, (bw - 28) * (ms / IDLE_CAP_MS)), 4, 2);
@@ -291,7 +297,7 @@ export class CampScene extends Phaser.Scene {
   private flyOrb(wx: Wuxing, x: number, y: number): void {
     const orb = this.add.image(x, y, 'fx_glow').setTint(WX_TINT[wx]).setBlendMode(Phaser.BlendModes.ADD).setScale(0.22).setDepth(4000);
     this.tweens.add({
-      targets: orb, x: 150 + Math.random() * 200, y: 594, scale: 0.1, duration: 620, ease: 'Cubic.easeIn', delay: 160,
+      targets: orb, x: 150 + Math.random() * 200, y: IDLE_Y + 42, scale: 0.1, duration: 620, ease: 'Cubic.easeIn', delay: 160,
       onComplete: () => {
         orb.destroy();
         if (this.idleTime?.active) this.tweens.add({ targets: this.idleTime, scale: 1.06, duration: 90, yoyo: true });
@@ -556,29 +562,30 @@ export class CampScene extends Phaser.Scene {
     this.dyn.add(g);
   }
 
-  private drawRiftPanel(p: ProfileView): void {
-    const d = this.dyn;
-    const top = 900;
-    this.drawPanelBg(top);
-    d.add(this.add.text(W / 2, top + 26, '秘 境', { fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5, 0));
-
-    const ty = top + 150;
+  /** 秘境面板：选哪一重天、独自进还是组队 */
+  private showRift(): void {
+    const p = net.profile;
+    if (!p) return;
+    const { c: d, top } = this.openPopup(600);
+    this.panel = 'rift';
+    d.add(this.add.text(W / 2, top + 30, '秘 境', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
     const setTier = (t: number) => {
       this.tier = Math.max(1, Math.min(p.maxTier, t));
       localStorage.setItem('5ele_tier', String(this.tier));
       this.refresh();
+      this.showRift();
     };
     // 要去哪一重天：点开秘境图选
     const best = p.best[this.tier];
-    this.tierCard(d, ty, this.tier, best ? `最快 ${fmtTime(best)}` : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
+    this.tierCard(d, top + 180, this.tier, best ? `最快 ${fmtTime(best)}` : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
 
-    const by = top + 330;
+    const by = top + 340;
     d.add(button(this, W / 2, by, W - 120, 110, '独自进入', () => {
       sfx.unlock();
       net.send({ t: 'create', tier: this.tier });
       net.send({ t: 'start' });
     }, { fontSize: 36 }));
-    d.add(button(this, W / 2 - 160, by + 150, 280, 96, '开房组队', () => { sfx.unlock(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
+    d.add(button(this, W / 2 - 160, by + 150, 280, 96, '开房组队', () => { sfx.unlock(); this.closePopup(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
     d.add(button(this, W / 2 + 160, by + 150, 280, 96, '加入房间', () => { sfx.unlock(); this.showKeypad(); }, { fontSize: 30, color: 0x58a6ff }));
   }
 
