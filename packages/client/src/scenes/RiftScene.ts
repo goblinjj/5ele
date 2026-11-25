@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import {
   Wuxing, WUXING_NAMES, GearItem, itemColor, itemCss, PlayerStats, RunPlayerInfo,
-  RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn, SkillCode,
+  RIFT_SIZE, RIFT_CENTER, MONSTERS, MonsterDef, MonsterTier, SpawnInfo, EnemyAttack, EnemyBoltSpawn,
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
-  wxMult, attackInterval, skillCd, skillLevel, SKILLS, SkillId,
+  wxMult, attackInterval, skillCd, skillLevel, SKILLS, SKILL_ORDER, SK, SkillId,
   computeStats, powerOf, WeaponForm, formOf, UNARMED_FORM, Energy, energyTotal, emptyEnergy, WX_ORDER,
   QI_START, qiGain, ORB_MAGNET, ORB_PICK,
 } from '@xiyou/shared';
@@ -18,6 +18,7 @@ import { sfx } from '../systems/audio/Sfx.js';
 import { SANS, WX_CSS } from '../ui/kit.js';
 import { DamageText } from '../systems/fx/DamageText.js';
 import { Avatar } from '../systems/avatar/Avatar.js';
+import { SkillShader } from '../systems/fx/SkillShader.js';
 
 const PLAYER_ATLAS = 'player_spirit';
 const FIRE_TINT = 0xff6a3c;
@@ -204,15 +205,19 @@ export class RiftScene extends Phaser.Scene {
   form: WeaponForm = UNARMED_FORM;
   private weapon: GearItem | null = null;
   /** 开局时的技能熟练度；-1 = 没学会 */
-  skillLv: Record<SkillId, number> = { ring: -1, meteor: -1 };
+  skillLv = {} as Record<SkillId, number>;
+  /** 本局携带的技能（对应界面上的技能键）与各自剩余的冷却 */
+  slots: SkillId[] = [];
+  skillCds: Partial<Record<SkillId, number>> = {};
+  /** 磐石护体的剩余时间 */
+  shieldT = 0;
+  private shader!: SkillShader;
   down = false;
   /** 完美闪避赐予的必暴出手 */
   critCharges = 0;
 
   // 冷却（毫秒，剩余）
   cdBolt = 0;
-  cdRing = 0;
-  cdMeteor = 0;
   cdDodge = 0;
   cdGuard = 0;
 
@@ -282,10 +287,13 @@ export class RiftScene extends Phaser.Scene {
     this.qi = Math.min(this.stats.qiMax, QI_START);
     this.weapon = mine.weapon ?? null;
     this.form = formOf(this.weapon);
-    this.skillLv = { ring: skillLevel(mine.skills?.ring), meteor: skillLevel(mine.skills?.meteor) };
+    this.skillLv = Object.fromEntries(SKILL_ORDER.map(id => [id, skillLevel(mine.skills?.[id])])) as Record<SkillId, number>;
+    this.slots = (mine.loadout ?? []).filter(id => this.skillLv[id] >= 0);
+    this.skillCds = {};
+    this.shieldT = 0;
     this.down = false;
     this.critCharges = 0;
-    this.cdBolt = 400; this.cdRing = 0; this.cdMeteor = 0; this.cdDodge = 0; this.cdGuard = 0;
+    this.cdBolt = 400; this.cdDodge = 0; this.cdGuard = 0;
     const ang = (this.myIdx / Math.max(1, s.players.length)) * Math.PI * 2;
     this.x = RIFT_CENTER + Math.cos(ang) * 90;
     this.y = RIFT_CENTER + Math.sin(ang) * 90;
@@ -311,6 +319,7 @@ export class RiftScene extends Phaser.Scene {
 
     this.fx = new Fx(this);
     this.dmgText = new DamageText(this);
+    this.shader = new SkillShader(this);
     this.backdrop = new WorldBackdrop(this);
     this.createAnims();
     this.createMe();
@@ -341,8 +350,8 @@ export class RiftScene extends Phaser.Scene {
       net.on('dmg', (m: { d: number[] }) => this.onDmg(m.d)),
       net.on('atk', (m: { a: EnemyAttack }) => this.onAttack(m.a)),
       net.on('bolts', (m: { list: EnemyBoltSpawn[] }) => m.list.forEach(b => this.spawnEBolt(b))),
-      net.on('stag', (m: { id: number; ms: number }) => this.onStagger(m.id)),
-      net.on('cast', (m: { p: number; s: SkillCode; x: number; y: number }) => this.onRemoteCast(m.p, m.s, m.x, m.y)),
+      net.on('stag', (m: { id: number; ms: number; f?: 1 }) => this.onStagger(m.id, m.ms, m.f === 1)),
+      net.on('cast', (m: { p: number; s: SkillId; x: number; y: number }) => this.onRemoteCast(m.p, m.s, m.x, m.y)),
       net.on('boss', (m: { id: number }) => this.onBoss(m.id)),
       net.on('down', (m: { p: number }) => this.onDown(m.p)),
       net.on('up', (m: { p: number }) => this.onUp(m.p)),
@@ -563,9 +572,20 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  private onStagger(id: number): void {
+  private onStagger(id: number, ms: number, frozen: boolean): void {
     const en = this.enemies.get(id);
     if (!en) return;
+    if (frozen) {
+      // 冻住：脚下一团寒光，持续到解冻
+      this.teles = this.teles.filter(t => {
+        if (t.a.id !== id) return true;
+        t.fill.destroy(); t.edge.destroy();
+        return false;
+      });
+      const ice = this.add.image(en.x, en.y - 10, 'fx_glow').setTint(0x8fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(en.scale * 2.2).setAlpha(0.75).setDepth(FX_DEPTH - 9);
+      this.tweens.add({ targets: ice, alpha: 0, duration: 300, delay: Math.max(0, ms - 300), onUpdate: () => ice.setPosition(en.x, en.y - 10), onComplete: () => ice.destroy() });
+      return;
+    }
     this.teles = this.teles.filter(t => {
       if (t.a.id !== id) return true;
       t.fill.destroy(); t.edge.destroy();
@@ -749,6 +769,7 @@ export class RiftScene extends Phaser.Scene {
       dmg *= GUARD.blockMult;
       this.fx.ring(this.x, this.y, 110, 0xffe9a8, 240);
     }
+    if (this.shieldT > 0) dmg *= SK.bastion.block;
     const mult = wxMult(wx, this.path);
     const amt = Math.max(1, Math.round(dmg * mult * (1 - this.stats.dr / 100)));
     this.hp = Math.max(0, this.hp - amt);
@@ -951,9 +972,12 @@ export class RiftScene extends Phaser.Scene {
     }
   }
 
-  /** 技能冷却总长（HUD 也用） */
+  /** 技能冷却总长与剩余（HUD 也用） */
   cdOf(id: SkillId): number {
     return skillCd(id, this.stats, this.skillLv[id]);
+  }
+  cdLeft(id: SkillId): number {
+    return this.skillCds[id] ?? 0;
   }
 
   /** 学会了才放得出 */
@@ -979,69 +1003,148 @@ export class RiftScene extends Phaser.Scene {
     return false;
   }
 
-  private castRing(): void {
-    if (this.cdRing > 0 || this.down || !this.knows('ring') || !this.spendQi(FIRE.ringCost)) return;
-    this.cdRing = this.cdOf('ring');
-    net.send({ t: 'cast', s: 'A', x: Math.round(this.x), y: Math.round(this.y) });
-    this.drawRing(this.x, this.y, FIRE.ringRadius * (1 + this.stats.area / 100), true);
-    this.castAnim = 380;
-    this.me.play('cast');
-  }
-
-  private drawRing(x: number, y: number, r: number, mine: boolean): void {
-    this.fx.ring(x, y, r, FIRE_TINT, 460, 0.1);
-    this.fx.ring(x, y, r * 0.75, 0xffd27a, 380, 0.1);
-    this.fx.radial(x, y, r, FIRE_TINT, mine ? 30 : 14);
-    this.fx.flashGlow(x, y, r, FIRE_TINT, 360, mine ? 0.6 : 0.35);
-    if (mine) { sfx.skill(Wuxing.FIRE); this.fx.shake(0.004, 120); }
-  }
-
-  /** 焚天：落向妖异最密集处 */
-  private castMeteor(): void {
-    if (this.cdMeteor > 0 || this.down || !this.knows('meteor') || !this.spendQi(FIRE.meteorCost)) return;
-    let best: CEnemy | null = null;
-    let bestN = -1;
-    const R2 = FIRE.meteorRange ** 2;
-    for (const en of this.enemies.values()) {
-      if ((en.x - this.x) ** 2 + (en.y - this.y) ** 2 > R2) continue;
-      let n = en.tier === 2 ? 4 : en.tier === 1 ? 2 : 0;
-      for (const o of this.enemies.values()) if ((o.x - en.x) ** 2 + (o.y - en.y) ** 2 < 200 ** 2) n++;
-      if (n > bestN) { bestN = n; best = en; }
+  /** 施放一门带在身上的技能：本地立刻给出表现，伤害由服务器结算 */
+  private cast(id: SkillId | undefined): void {
+    if (!id || this.down || this.cdLeft(id) > 0 || !this.knows(id) || !this.spendQi(SKILLS[id].qi)) return;
+    this.skillCds[id] = this.cdOf(id);
+    let tx = this.x, ty = this.y;
+    if (id === 'meteor') {
+      // 焚天：落向妖异最密集处
+      let best: CEnemy | null = null;
+      let bestN = -1;
+      const R2 = FIRE.meteorRange ** 2;
+      for (const en of this.enemies.values()) {
+        if ((en.x - this.x) ** 2 + (en.y - this.y) ** 2 > R2) continue;
+        let n = en.tier === 2 ? 4 : en.tier === 1 ? 2 : 0;
+        for (const o of this.enemies.values()) if ((o.x - en.x) ** 2 + (o.y - en.y) ** 2 < 200 ** 2) n++;
+        if (n > bestN) { bestN = n; best = en; }
+      }
+      tx = best ? best.x : this.x + this.facing * 300;
+      ty = best ? best.y : this.y;
     }
-    const tx = best ? best.x : this.x + this.facing * 300;
-    const ty = best ? best.y : this.y;
-    this.cdMeteor = this.cdOf('meteor');
-    net.send({ t: 'cast', s: 'B', x: Math.round(tx), y: Math.round(ty) });
-    this.drawMeteor(tx, ty, true);
-    this.castAnim = 420;
+    net.send({ t: 'cast', s: id, x: Math.round(tx), y: Math.round(ty) });
+    this.drawSkill(id, tx, ty, true);
+    if (id === 'bloom') this.healBy(SK.bloom.heal);
+    if (id === 'bastion') this.shieldT = SK.bastion.ms;
+    this.castAnim = 400;
     this.me.play('cast');
   }
 
-  private drawMeteor(x: number, y: number, mine: boolean): void {
-    const r = FIRE.meteorRadius * (1 + (mine ? this.stats.area : 0) / 100);
-    const mark = this.add.image(x, y, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
-    this.tweens.add({ targets: mark, alpha: 0.7, duration: 200 });
-    const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
-    this.tweens.add({
-      targets: rock, x, y, duration: FIRE.meteorDelay, ease: 'Quad.easeIn',
-      onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 2),
-      onComplete: () => {
-        rock.destroy();
-        mark.destroy();
-        this.fx.flashGlow(x, y, r * 1.2, 0xffd27a, 420, 0.9);
-        this.fx.ring(x, y, r, FIRE_TINT, 420, 0.2);
-        this.fx.radial(x, y, r, FIRE_TINT, mine ? 34 : 14);
-        if (mine) { sfx.slam(); this.fx.shake(0.008, 180); }
-      },
-    });
-    if (mine) sfx.skill(Wuxing.FIRE);
+  private healBy(pct: number): void {
+    if (this.down) return;
+    const n = Math.ceil(this.stats.maxHp * pct);
+    this.hp = Math.min(this.stats.maxHp, this.hp + n);
+    this.hpDirty = true;
+    this.dmgText.show(this.x, this.y - 130, `+${n}`, 0x6ee7a0, 34, 80, 900);
+    sfx.heal();
   }
 
-  private onRemoteCast(p: number, s: SkillCode, x: number, y: number): void {
+  /** 技能的画面表现：着色器是主体，贴图粒子、震屏、音效是点缀；着色器不可用时只剩后者 */
+  private drawSkill(id: SkillId, x: number, y: number, mine: boolean, who?: { x: number; y: number }): void {
+    const area = 1 + (mine ? this.stats.area : 0) / 100;
+    const sh = this.shader;
+    const lite = !sh.enabled;
+    switch (id) {
+      case 'ring': {
+        const r = FIRE.ringRadius * area;
+        sh.play('fire', x, y, r * 2.25, 820, FX_DEPTH - 7);
+        if (lite) { this.fx.ring(x, y, r, FIRE_TINT, 460, 0.1); this.fx.ring(x, y, r * 0.75, 0xffd27a, 380, 0.1); }
+        this.fx.radial(x, y, r, FIRE_TINT, mine ? 26 : 12);
+        this.fx.flashGlow(x, y, r, FIRE_TINT, 360, lite ? 0.6 : 0.3);
+        if (mine) { sfx.skill(Wuxing.FIRE); this.fx.shake(0.004, 120); }
+        break;
+      }
+      case 'meteor': {
+        const r = FIRE.meteorRadius * area;
+        const mark = this.add.image(x, y, 'fx_ring').setTint(FIRE_TINT).setScale((r * 2) / 256).setAlpha(0).setDepth(TELE_DEPTH);
+        this.tweens.add({ targets: mark, alpha: 0.7, duration: 200 });
+        const rock = this.add.image(x - 220, y - 700, 'fx_glow').setTint(0xffb36b).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setDepth(FX_DEPTH);
+        this.tweens.add({
+          targets: rock, x, y, duration: FIRE.meteorDelay, ease: 'Quad.easeIn',
+          onUpdate: () => this.fx.trail(rock.x, rock.y, FIRE_TINT, 2),
+          onComplete: () => {
+            rock.destroy();
+            mark.destroy();
+            sh.play('blast', x, y, r * 2.9, 760, FX_DEPTH - 6);
+            this.fx.flashGlow(x, y, r * 1.2, 0xffd27a, 420, lite ? 0.9 : 0.5);
+            if (lite) this.fx.ring(x, y, r, FIRE_TINT, 420, 0.2);
+            this.fx.radial(x, y, r, FIRE_TINT, mine ? 30 : 14);
+            if (mine) { sfx.slam(); this.fx.shake(0.008, 180); }
+          },
+        });
+        if (mine) sfx.skill(Wuxing.FIRE);
+        break;
+      }
+      case 'blades': {
+        // 剑气从头顶散开，再分袭最近的几只
+        const targets = [...this.enemies.values()].filter(e => e.hp > 0 && (e.x - x) ** 2 + (e.y - y) ** 2 < (SK.blades.range + 60) ** 2)
+          .sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - (b.x - x) ** 2 - (b.y - y) ** 2).slice(0, SK.blades.count);
+        this.fx.flashGlow(x, y - 60, 150, 0xfff3c0, 260, 0.8);
+        if (lite) this.fx.ring(x, y, 160, 0xf2e6c2, 300, 0.2);
+        for (let i = 0; i < SK.blades.count; i++) {
+          const en = targets.length ? targets[i % targets.length] : null;
+          this.time.delayedCall(60 + i * 70, () => {
+            const ang0 = (i / SK.blades.count) * Math.PI * 2;
+            const ex = en?.spr.active ? en.x : x + Math.cos(ang0) * 300;
+            const ey = en?.spr.active ? en.y - 40 : y + Math.sin(ang0) * 300;
+            const sx = x, sy = y - 70;
+            const ang = Math.atan2(ey - sy, ex - sx);
+            const len = Math.hypot(ex - sx, ey - sy) + 160;
+            sh.play('blade', (sx + ex) / 2, (sy + ey) / 2, len, 300, FX_DEPTH - 5, ang);
+            if (lite) this.fx.slash((sx + ex) / 2, (sy + ey) / 2, ang, len, 0xfff3c0);
+            this.time.delayedCall(150, () => {
+              this.fx.burst(ex, ey, 0xfff3c0, 8);
+              this.fx.slash(ex, ey, ang + 1.2, 150, 0xffffff);
+              if (en?.spr.active && mine) this.hitFeedback(en, Math.cos(ang), Math.sin(ang), 1.4);
+            });
+          });
+        }
+        if (mine) { sfx.skill(Wuxing.METAL); this.fx.shake(0.004, 260); }
+        break;
+      }
+      case 'frost': {
+        const r = SK.frost.radius * area;
+        sh.play('frost', x, y, r * 2.25, 1500, FX_DEPTH - 8);
+        if (lite) { this.fx.ring(x, y, r, 0x8fd8ff, 480, 0.1); this.fx.ring(x, y, r * 0.6, 0xffffff, 380, 0.1); }
+        this.fx.radial(x, y, r, 0x8fd8ff, mine ? 22 : 10);
+        this.fx.flashGlow(x, y, r, 0x8fd8ff, 420, lite ? 0.6 : 0.3);
+        if (mine) { sfx.skill(Wuxing.WATER); this.fx.shake(0.003, 140); }
+        break;
+      }
+      case 'bloom': {
+        const r = SK.bloom.radius * area;
+        const at = who ?? { x, y };
+        sh.play('bloom', x, y, r * 2.25, 1300, FX_DEPTH - 8, 0, who ? () => at : mine ? () => ({ x: this.x, y: this.y }) : undefined);
+        if (lite) this.fx.ring(x, y, r, 0x6ee7a0, 520, 0.15);
+        this.fx.ember(x, y, 0x6ee7a0, mine ? 20 : 10, r * 0.7);
+        this.fx.flashGlow(x, y - 30, 160, 0x6ee7a0, 500, 0.5);
+        if (mine) sfx.skill(Wuxing.WOOD);
+        break;
+      }
+      case 'bastion': {
+        const r = SK.bastion.radius * area;
+        // 震地一下，然后护罩跟着人走到时间结束
+        this.fx.ring(x, y, r, 0xe3b23c, 420, 0.15);
+        this.fx.radial(x, y, r, 0xe3b23c, mine ? 22 : 10);
+        const follow = mine ? () => ({ x: this.x, y: this.y - 30 }) : who ? () => ({ x: who.x, y: who.y - 30 }) : undefined;
+        sh.play('bastion', x, y - 30, 250, SK.bastion.ms, FX_DEPTH - 4, 0, follow);
+        if (lite && mine) {
+          const dome = this.add.image(x, y - 30, 'fx_ring').setTint(0xe3b23c).setBlendMode(Phaser.BlendModes.ADD).setScale(0.85).setAlpha(0.8).setDepth(FX_DEPTH - 4);
+          this.tweens.add({ targets: dome, alpha: 0.35, duration: 500, yoyo: true, repeat: Math.floor(SK.bastion.ms / 1000) - 1, onUpdate: () => dome.setPosition(this.x, this.y - 30), onComplete: () => dome.destroy() });
+        }
+        if (mine) { sfx.skill(Wuxing.EARTH); sfx.slam(); this.fx.shake(0.006, 160); }
+        break;
+      }
+    }
+  }
+
+  private onRemoteCast(p: number, id: SkillId, x: number, y: number): void {
     if (p === this.myIdx) return;
-    this.mates.get(p)?.spr.play('cast');
-    if (s === 'A') this.drawRing(x, y, FIRE.ringRadius, false);
-    else if (s === 'B') this.drawMeteor(x, y, false);
+    const mt = this.mates.get(p);
+    mt?.spr.play('cast');
+    this.drawSkill(id, x, y, false, mt);
+    // 同伴的回春：自己在范围内也回一口
+    if (id === 'bloom' && (this.x - x) ** 2 + (this.y - y) ** 2 < SK.bloom.radius ** 2) this.healBy(SK.bloom.mateHeal);
   }
 
   // ───────────────────────── 五行能量 ─────────────────────────
@@ -1120,8 +1223,8 @@ export class RiftScene extends Phaser.Scene {
   update(_t: number, rawDelta: number): void {
     const dt = Math.min(50, rawDelta);
     this.cdBolt = Math.max(0, this.cdBolt - dt);
-    this.cdRing = Math.max(0, this.cdRing - dt);
-    this.cdMeteor = Math.max(0, this.cdMeteor - dt);
+    for (const id of this.slots) this.skillCds[id] = Math.max(0, (this.skillCds[id] ?? 0) - dt);
+    this.shieldT = Math.max(0, this.shieldT - dt);
     this.cdDodge = Math.max(0, this.cdDodge - dt);
     this.cdGuard = Math.max(0, this.cdGuard - dt);
     this.invuln = Math.max(0, this.invuln - dt);
@@ -1147,6 +1250,7 @@ export class RiftScene extends Phaser.Scene {
     this.updateEBolts(dt);
     this.updateMyBolts(dt);
     this.updateOrbs(dt);
+    this.shader.update(dt);
     this.backdrop.update(dt);
   }
 
@@ -1163,8 +1267,8 @@ export class RiftScene extends Phaser.Scene {
     const guard = inputManager.consumeGuard();
     if (this.down) { this.moveX = 0; this.moveY = 0; return; }
 
-    if (pressed[0]) this.castRing();
-    if (pressed[1]) this.castMeteor();
+    if (pressed[0]) this.cast(this.slots[0]);
+    if (pressed[1]) this.cast(this.slots[1]);
 
     if (dash && this.cdDodge <= 0) {
       let dx = mx, dy = my;

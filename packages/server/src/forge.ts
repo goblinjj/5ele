@@ -1,6 +1,6 @@
 import {
   Wuxing, WX_ORDER, WUXING_NAMES, CULT, cultCost, cultBlock, cultSpent, cultKinds, CULT_REFUND, MAX_CULT_KINDS,
-  SKILLS, SkillId,
+  SKILLS, SkillId, LOADOUT_MAX,
   refineCost, refineRate, MAX_GRADE, GearItem, Energy, MAX_TIER,
   forgeBase, forgeRarity, forgeOutcome, generateItem, RARITY_NAMES,
 } from '@xiyou/shared';
@@ -82,5 +82,19 @@ export function learn(p: Profile, id: SkillId): Result {
   if (p.energy[def.wuxing] < def.learn) return { ok: false, msg: `${WUXING_NAMES[def.wuxing]}行能量不足（${p.energy[def.wuxing]}/${def.learn}）` };
   p.energy[def.wuxing] -= def.learn;
   p.skills[id] = 0;
+  // 还有空位就直接带上
+  if (p.loadout.length < LOADOUT_MAX) p.loadout.push(id);
   return { ok: true, msg: `学会了 ${def.name}` };
+}
+
+/** 选择带进秘境的技能：只能带学会的，最多 LOADOUT_MAX 门 */
+export function setLoadout(p: Profile, raw: unknown): Result {
+  if (!Array.isArray(raw)) return { ok: false, msg: '无效的技能配置' };
+  const out: SkillId[] = [];
+  for (const id of raw) {
+    if (SKILLS[id as SkillId] && p.skills[id as SkillId] !== undefined && !out.includes(id)) out.push(id);
+  }
+  if (out.length > LOADOUT_MAX) return { ok: false, msg: `最多携带 ${LOADOUT_MAX} 门技能，先卸下一门` };
+  p.loadout = out;
+  return { ok: true };
 }

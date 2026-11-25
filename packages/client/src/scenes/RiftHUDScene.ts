@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   TIER_NAMES, PROGRESS_GOAL, FIRE, DODGE, GUARD,
-  WUXING_NAMES, Wuxing, energyTotal, SKILL_RANKS,
+  WUXING_NAMES, Wuxing, energyTotal, SKILL_RANKS, SKILLS, SkillId,
 } from '@xiyou/shared';
 import { WX_TINT } from '../config/worldConfig.js';
 import { applyRenderScale, isLowQuality } from '../config/gameConfig.js';
@@ -46,8 +46,7 @@ export class RiftHUDScene extends Phaser.Scene {
   private joystick!: VirtualJoystick;
   private btnDodge!: RoundBtn;
   private btnGuard!: RoundBtn;
-  private btnRing!: RoundBtn;
-  private btnMeteor!: RoundBtn;
+  private skillBtns: { b: RoundBtn; id: SkillId }[] = [];
   private gfx!: Phaser.GameObjects.Graphics;
   private mini!: Phaser.GameObjects.Graphics;
   private topText!: Phaser.GameObjects.Text;
@@ -115,16 +114,16 @@ export class RiftHUDScene extends Phaser.Scene {
     this.joystick = new VirtualJoystick(this, 176, H - 250, 92, H * 0.40);
     this.btnDodge = this.roundButton(W - 128, H - 200, 74, '遁', 0x9fd8ff, 46, () => inputManager.pressDash());
     this.btnGuard = this.roundButton(W - 300, H - 140, 60, '御', 0xffe9a8, 40, () => inputManager.pressGuard());
-    this.btnRing = this.roundButton(W - 300, H - 320, 60, '燎原', 0xff6a3c, 30, () => inputManager.pressSkill(0), FIRE.ringCost);
-    this.btnMeteor = this.roundButton(W - 150, H - 400, 60, '焚天', 0xffb36b, 30, () => inputManager.pressSkill(1), FIRE.meteorCost);
-    // 没学会的技能不出按钮；学会的在上方标熟练度
-    for (const [b, id] of [[this.btnRing, 'ring'], [this.btnMeteor, 'meteor']] as const) {
-      const lv = this.rift.skillLv[id];
-      if (lv < 0) { b.parts.forEach(o => (o as any).setVisible(false)); (b.parts.find(o => o.input) as any)?.disableInteractive(); continue; }
-      const rank = this.add.text(b.x, b.y - b.r - 14, SKILL_RANKS[lv], { fontFamily: SERIF, fontSize: '19px', fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+    // 技能键：带了几门就出几个，上方标熟练度
+    const spots = [[W - 300, H - 320], [W - 150, H - 400]];
+    this.skillBtns = this.rift.slots.slice(0, spots.length).map((id, i) => {
+      const def = SKILLS[id];
+      const b = this.roundButton(spots[i][0], spots[i][1], 60, def.name, WX_TINT[def.wuxing], 30, () => inputManager.pressSkill(i), def.qi);
+      const rank = this.add.text(b.x, b.y - b.r - 14, SKILL_RANKS[Math.max(0, this.rift.skillLv[id])], { fontFamily: SERIF, fontSize: '19px', fontStyle: 'bold', color: '#ffe066', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
       b.parts.push(rank);
       this.controls.push(rank);
-    }
+      return { b, id };
+    });
   }
 
   private roundButton(x: number, y: number, r: number, text: string, color: number, size: number, onPress: () => void, cost: number = 0): RoundBtn {
@@ -239,7 +238,7 @@ export class RiftHUDScene extends Phaser.Scene {
     if (qiP > 0.01) g.fillRoundedRect(30, 168, hpw * qiP, 16, 6);
     // 两个技能的门槛刻度
     g.fillStyle(0x000000, 0.55);
-    for (const c of [FIRE.ringCost, FIRE.meteorCost]) g.fillRect(30 + hpw * Math.min(1, c / r.stats.qiMax) - 1, 166, 2, 20);
+    for (const c of this.skillBtns.map(k => SKILLS[k.id].qi)) g.fillRect(30 + hpw * Math.min(1, c / r.stats.qiMax) - 1, 166, 2, 20);
     setTextIf(this.qiText, `灵力 ${Math.floor(r.qi)} / ${r.stats.qiMax}`);
     WX_ROW.forEach((wx, i) => setTextIf(this.wxTexts[i], `${WUXING_NAMES[wx]} ${r.gained[wx]}`));
     const carried = energyTotal(r.gained);
@@ -273,8 +272,7 @@ export class RiftHUDScene extends Phaser.Scene {
     // 冷却
     this.setCd(this.btnDodge, r.cdDodge, DODGE.cooldown);
     this.setCd(this.btnGuard, r.cdGuard, GUARD.cooldown);
-    if (r.skillLv.ring >= 0) this.setCd(this.btnRing, r.cdRing, r.cdOf('ring'));
-    if (r.skillLv.meteor >= 0) this.setCd(this.btnMeteor, r.cdMeteor, r.cdOf('meteor'));
+    for (const k of this.skillBtns) this.setCd(k.b, r.cdLeft(k.id), r.cdOf(k.id));
   }
 
   private drawMinimap(): void {

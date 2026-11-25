@@ -2,7 +2,7 @@ import { promises as fs, existsSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import {
   GearItem, ProfileView, Wuxing, computeStats, Energy, emptyEnergy, WX_ORDER, WEAPON_KINDS,
-  kindOf, salvageValue, MAX_CULT, MAX_CULT_KINDS, cultSpent, SkillBook, SKILLS,
+  kindOf, salvageValue, MAX_CULT, MAX_CULT_KINDS, cultSpent, SkillBook, SkillId, SKILLS, SKILL_ORDER, LOADOUT_MAX,
 } from '@xiyou/shared';
 
 /**
@@ -27,6 +27,8 @@ export interface Profile {
   cult: Energy;
   /** 学会的技能与各自用过的次数 */
   skills: SkillBook;
+  /** 带进秘境的技能 */
+  loadout: SkillId[];
   maxTier: number;
   best: Record<number, number>;
   created: number;
@@ -94,6 +96,11 @@ function migrate(raw: any): void {
     if (n !== undefined && n !== null) skills[id] = Math.max(0, Math.floor(Number(n) || 0));
   }
   raw.skills = skills;
+  // 携带的技能：只留学会的；从没配过就默认带上最先学会的几门
+  const known = SKILL_ORDER.filter(id => skills[id] !== undefined);
+  raw.loadout = Array.isArray(raw.loadout)
+    ? [...new Set(raw.loadout as SkillId[])].filter(id => known.includes(id)).slice(0, LOADOUT_MAX)
+    : known.slice(0, LOADOUT_MAX);
 }
 
 if (!existsSync(PLAYER_DIR)) mkdirSync(PLAYER_DIR, { recursive: true });
@@ -132,7 +139,7 @@ export function loadProfile(did: string, name?: string): Profile {
   if (!p) {
     p = {
       did, name: cleanName(name), path: null, weapon: null, stash: [],
-      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
+      energy: emptyEnergy(), cult: emptyEnergy(), skills: {}, loadout: [], maxTier: 1, best: {}, created: Date.now(), seen: Date.now(),
     };
     dirty.add(did);
   }
@@ -157,7 +164,7 @@ export function markDirty(p: Profile): void {
 export function viewOf(p: Profile): ProfileView {
   return {
     name: p.name, path: p.path, weapon: p.weapon, stash: p.stash, stashCap: STASH_CAP,
-    energy: p.energy, cult: p.cult, skills: p.skills, maxTier: p.maxTier, best: p.best,
+    energy: p.energy, cult: p.cult, skills: p.skills, loadout: p.loadout, maxTier: p.maxTier, best: p.best,
   };
 }
 

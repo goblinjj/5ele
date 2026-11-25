@@ -6,7 +6,7 @@ import {
   refineCost, refineRate, GRADE_GROWTH, MAX_GRADE, displayName, formOf, UNARMED_FORM, WEAPON_FORMS,
   Energy, emptyEnergy, forgeBase, forgeRarity, forgeNeed, forgeOutcome,
   CULT, MAX_CULT, MAX_CULT_KINDS, CULT_REFUND, cultCost, cultSpent, cultKinds, cultBlock,
-  SKILLS, SKILL_ORDER, SKILL_RANKS, SKILL_MAX_LEVEL, skillLevel, skillNeed, skillDmgMult, skillCdMult, FIRE,
+  SKILLS, SKILL_ORDER, SKILL_RANKS, SKILL_MAX_LEVEL, LOADOUT_MAX, SkillId, skillLevel, skillNeed, skillDmgMult, skillCdMult,
   realmOf, realmIndex, REALM_COLORS, energyTotal,
 } from '@xiyou/shared';
 import { Avatar } from '../systems/avatar/Avatar.js';
@@ -30,7 +30,7 @@ const PAGE = COLS * ROWS;
 const CULT_ORDER: Wuxing[] = [Wuxing.WOOD, Wuxing.FIRE, Wuxing.EARTH, Wuxing.METAL, Wuxing.WATER];
 
 /**
- * 营地：五行修炼、兵器、选秘境、组队
+ * 营地：主界面只有人物、五行能量和进秘境；修炼 / 兵器 / 技能各收在一个面板里
  */
 export class CampScene extends Phaser.Scene {
   private dyn!: Phaser.GameObjects.Container;
@@ -44,6 +44,8 @@ export class CampScene extends Phaser.Scene {
   /** 凝练面板里正在投入的能量 */
   private forgeAmt: Energy = emptyEnergy();
   private forgeTier = 0;
+  /** 当前打开的面板：存档更新后原样重开，面板里的数字才会跟着变 */
+  private panel: 'cult' | 'arms' | 'skills' | null = null;
 
   constructor() {
     super({ key: 'CampScene' });
@@ -58,8 +60,8 @@ export class CampScene extends Phaser.Scene {
     this.add.image(W / 2, H / 2, 'fx_vignette').setDisplaySize(W * 1.3, H * 1.2).setAlpha(0.8);
 
     // 人形预览：穿什么显示什么
-    this.add.image(W / 2, 345, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.3, 0.5).setAlpha(0.25);
-    this.avatar = new Avatar(this, W / 2, 345, null, 1.6).setDepth(5).setVisible(false);
+    this.add.image(W / 2, 440, 'fx_glow').setTint(0x9fd8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.7, 0.6).setAlpha(0.25);
+    this.avatar = new Avatar(this, W / 2, 440, null, 2.2).setDepth(5).setVisible(false);
     this.avatarSig = '';
     this.dyn = this.add.container(0, 0);
     this.popup = null;
@@ -120,10 +122,12 @@ export class CampScene extends Phaser.Scene {
       return;
     }
     this.drawHeader(p);
-    this.drawCult(p);
-    this.drawStash(p);
     if (net.room) this.drawRoom(p, net.room);
     else this.drawRiftPanel(p);
+    // 面板开着：按新存档重画
+    if (this.popup && this.panel === 'cult') this.showCultPanel();
+    else if (this.popup && this.panel === 'arms') this.showArms();
+    else if (this.popup && this.panel === 'skills') this.showSkills();
   }
 
   // ───────────────────────── 入道 ─────────────────────────
@@ -165,6 +169,7 @@ export class CampScene extends Phaser.Scene {
     return powerOf(item === undefined ? this.stats(p) : computeStats(item, p.path, p.cult));
   }
 
+  /** 主界面：名号、境界、战力、人物、五行能量，和三个入口 */
   private drawHeader(p: ProfileView): void {
     const d = this.dyn;
     const stats = this.stats(p);
@@ -175,62 +180,83 @@ export class CampScene extends Phaser.Scene {
       if (n && n.trim()) { localStorage.setItem('5ele_name', n.trim()); net.send({ t: 'name', name: n.trim() }); }
     });
     d.add(name);
-    d.add(this.add.text(36, 82, PATHS[p.path!].name, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
+    d.add(this.add.text(36, 82, `${PATHS[p.path!].name} · ${realmOf(p.cult)}境`, { fontFamily: SERIF, fontSize: '26px', color: WX_CSS[p.path!] }));
     d.add(this.add.text(W - 36, 34, `战力 ${powerOf(stats)}`, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(1, 0));
-    d.add(this.add.text(W - 36, 86, `${realmOf(p.cult)}境 · 修为 ${energyTotal(p.cult)} 重`, {
-      fontFamily: SERIF, fontSize: '24px', color: hex(REALM_COLORS[realmIndex(p.cult)]),
-    }).setOrigin(1, 0));
 
-    // 左侧属性
-    const lines = [
-      `攻击 ${stats.attack}`,
-      `生命 ${stats.maxHp}`,
-      `暴击 ${Math.round(stats.crit)}%`,
-      `暴伤 +${Math.round(stats.critDmg)}%`,
-      `减伤 ${Math.round(stats.dr)}%`,
-      `回血 ${stats.regen.toFixed(1)}/秒`,
-      `冷却 -${Math.round(stats.cdr)}%`,
-      `灵力 ${stats.qiMax}`,
-      `每局带回 ${stats.carry}`,
-    ];
-    d.add(this.add.text(36, 134, lines.join('\n'), { fontFamily: SANS, fontSize: '20px', color: '#8b949e', lineSpacing: 6 }));
-
-    // 右侧：手里的兵器
-    const wx = W - 116, wy = 218;
+    // 人物脚下：手里的兵器
     const it = p.weapon;
-    d.add(gearIcon(this, wx, wy, 132, it, '空手'));
-    if (!it) {
-      d.add(this.add.text(wx, wy + 76, `${UNARMED_FORM.move} · 中距离`, { fontFamily: SANS, fontSize: '20px', color: '#9fd8ff' }).setOrigin(0.5, 0));
-      d.add(this.add.text(wx, wy + 104, '点此凝练兵器', { fontFamily: SERIF, fontSize: '21px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
-      const hit = this.add.rectangle(wx, wy + 30, 200, 210, 0, 0).setInteractive({ useHandCursor: true });
-      hit.on('pointerup', () => this.showForge());
-      d.add(hit);
-    } else {
-      const form = formOf(it);
-      d.add(this.add.text(wx, wy + 76, displayName(it), {
-        fontFamily: SERIF, fontSize: '21px', fontStyle: 'bold', color: RARITY_CSS[it.rarity], align: 'center', wordWrap: { width: 220, useAdvancedWrap: true },
-      }).setOrigin(0.5, 0));
-      d.add(this.add.text(wx, wy + 106, `${form.melee ? '近战' : '远程'} · ${form.move}`, {
-        fontFamily: SANS, fontSize: '20px', color: form.melee ? '#ffb36b' : '#9fd8ff',
-      }).setOrigin(0.5, 0));
-      const hit = this.add.rectangle(wx, wy + 30, 200, 210, 0, 0).setInteractive({ useHandCursor: true });
-      hit.on('pointerup', () => this.showItem(it, 'equip'));
-      d.add(hit);
-    }
+    const form = formOf(it);
+    d.add(this.add.text(W / 2, 528, it ? displayName(it) : '空手', {
+      fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: it ? RARITY_CSS[it.rarity] : '#8b949e',
+    }).setOrigin(0.5, 0));
+    d.add(this.add.text(W / 2, 570, `${form.melee ? '近战' : it ? '远程' : '中距离'} · ${form.move}`, {
+      fontFamily: SANS, fontSize: '22px', color: form.melee ? '#ffb36b' : '#9fd8ff',
+    }).setOrigin(0.5, 0));
+
+    // 五行能量：一行五个数
+    CULT_ORDER.forEach((wx, i) => {
+      const x = W / 2 + (i - 2) * 132;
+      d.add(this.add.text(x - 6, 652, WUXING_NAMES[wx], { fontFamily: SERIF, fontSize: '34px', fontStyle: 'bold', color: WX_CSS[wx], stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5));
+      d.add(this.add.text(x + 2, 654, `${p.energy[wx]}`, { fontFamily: SANS, fontSize: '26px', fontStyle: 'bold', color: '#f0e6d3' }).setOrigin(0, 0.5));
+    });
+
+    // 三个入口：能做点什么的时候亮起来
+    const kinds = cultKinds(p.cult);
+    const canCult = CULT_ORDER.some(wx => cultBlock(p.cult, p.energy, wx) === '');
+    const canLearn = SKILL_ORDER.some(id => p.skills?.[id] === undefined && p.energy[SKILLS[id].wuxing] >= SKILLS[id].learn);
+    const total = CULT_ORDER.reduce((a, wx) => a + p.energy[wx], 0);
+    const canForge = !p.weapon && total >= forgeBase(1);
+    const entries: { label: string; sub: string; hot: boolean; open: () => void }[] = [
+      { label: '修 炼', sub: kinds.length ? kinds.map(wx => `${WUXING_NAMES[wx]} ${p.cult[wx]} 重`).join(' · ') : '尚未修炼', hot: canCult, open: () => this.showCultPanel() },
+      { label: '兵 器', sub: it ? `兵匣 ${p.stash.length} 件` : '可凝练兵器', hot: canForge, open: () => this.showArms() },
+      { label: '技 能', sub: (p.loadout ?? []).length ? (p.loadout ?? []).map(id => SKILLS[id].name).join(' · ') : '尚未修习', hot: canLearn, open: () => this.showSkills() },
+    ];
+    entries.forEach((e, i) => {
+      const x = W / 2 + (i - 1) * 222;
+      d.add(button(this, x, 756, 204, 96, e.label, e.open, { fontSize: 34 }));
+      d.add(this.add.text(x, 814, e.sub, { fontFamily: SANS, fontSize: '19px', color: '#8b949e' }).setOrigin(0.5, 0));
+      if (e.hot) {
+        const dot = this.add.circle(x + 86, 720, 9, 0xff5a3c).setStrokeStyle(2, 0x000000, 0.8);
+        this.tweens.add({ targets: dot, scale: 1.35, duration: 600, yoyo: true, repeat: -1 });
+        d.add(dot);
+      }
+    });
   }
 
   // ───────────────────────── 五行修炼 ─────────────────────────
 
-  private drawCult(p: ProfileView): void {
-    const d = this.dyn;
-    const top = 400;
-    const kinds = cultKinds(p.cult);
-    d.add(this.add.text(36, top, '五行修炼', { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }));
-    d.add(this.add.text(W - 36, top + 6, `最多同修 ${MAX_CULT_KINDS} 行 · 已修 ${kinds.length}/${MAX_CULT_KINDS}`, { fontFamily: SANS, fontSize: '20px', color: '#6e7681' }).setOrigin(1, 0));
+  /** 修炼面板：属性一览 + 五行 */
+  private showCultPanel(): void {
+    const p = net.profile;
+    if (!p) return;
+    const { c, top } = this.openPopup(630);
+    this.panel = 'cult';
+    const stats = this.stats(p);
+    c.add(this.add.text(W / 2, top + 28, '修 炼', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 88, `${realmOf(p.cult)}境 · 修为 ${energyTotal(p.cult)} 重 · 每局带回能量上限 ${stats.carry}`, {
+      fontFamily: SANS, fontSize: '21px', color: hex(REALM_COLORS[realmIndex(p.cult)]),
+    }).setOrigin(0.5, 0));
+    const cells = [
+      `攻击 ${stats.attack}`, `生命 ${stats.maxHp}`, `减伤 ${Math.round(stats.dr)}%`,
+      `暴击 ${Math.round(stats.crit)}%`, `暴伤 +${Math.round(stats.critDmg)}%`, `回血 ${stats.regen.toFixed(1)}/秒`,
+      `冷却 -${Math.round(stats.cdr)}%`, `灵力 ${stats.qiMax}`, `移速 +${Math.round(stats.move)}%`,
+    ];
+    cells.forEach((t, i) => {
+      c.add(this.add.text(84 + (i % 3) * 200, top + 138 + Math.floor(i / 3) * 36, t, { fontFamily: SANS, fontSize: '22px', color: '#c9d1d9' }));
+    });
+    this.drawCult(p, c, top + 262);
+  }
 
-    const cw = 126, gap = (W - 48 - cw * 5) / 4, ch = 286;
+  // ───────────────────────── 五行修炼 ─────────────────────────
+
+  private drawCult(p: ProfileView, d: Phaser.GameObjects.Container, top: number): void {
+    const kinds = cultKinds(p.cult);
+    d.add(this.add.text(60, top, '五行', { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }));
+    d.add(this.add.text(W - 60, top + 6, `最多同修 ${MAX_CULT_KINDS} 行 · 已修 ${kinds.length}/${MAX_CULT_KINDS}`, { fontFamily: SANS, fontSize: '20px', color: '#6e7681' }).setOrigin(1, 0));
+
+    const cw = 118, gap = (W - 108 - cw * 5) / 4, ch = 286;
     CULT_ORDER.forEach((wx, i) => {
-      const x = 24 + cw / 2 + i * (cw + gap);
+      const x = 54 + cw / 2 + i * (cw + gap);
       const y0 = top + 46;
       const lv = p.cult[wx];
       const block = cultBlock(p.cult, p.energy, wx);
@@ -281,7 +307,7 @@ export class CampScene extends Phaser.Scene {
     const lv = p.cult[wx];
     const cost = cultCost(lv);
     const block = cultBlock(p.cult, p.energy, wx);
-    const { c, top } = this.openPopup(700);
+    const { c, top } = this.openPopup(700, () => this.showCultPanel());
     c.add(this.add.text(W / 2, top + 40, `${WUXING_NAMES[wx]}行 · ${CULT[wx].name}`, { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: WX_CSS[wx] }).setOrigin(0.5, 0));
     c.add(this.add.text(W / 2, top + 110, `当前 ${lv} / ${MAX_CULT} 重`, { fontFamily: SERIF, fontSize: '30px', color: '#f0e6d3' }).setOrigin(0.5, 0));
     c.add(this.add.text(W / 2, top + 170, `每修一重\n${CULT[wx].desc.replace(/　/g, '\n')}`, {
@@ -311,63 +337,67 @@ export class CampScene extends Phaser.Scene {
   }
 
   private confirmReset(wx: Wuxing, back: number): void {
-    const { c, top } = this.openPopup(420);
+    const { c, top } = this.openPopup(420, () => this.showCult(wx));
     c.add(this.add.text(W / 2, top + 50, `${WUXING_NAMES[wx]}行散功？`, { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#f85149' }).setOrigin(0.5, 0));
     c.add(this.add.text(W / 2, top + 130, `${WUXING_NAMES[wx]}行修为归零，只返还 ${Math.round(CULT_REFUND * 100)}% 的投入（${back} 点能量）\n之后可以改修别的一行`, {
       fontFamily: SANS, fontSize: '24px', color: '#c9d1d9', align: 'center', lineSpacing: 10, wordWrap: { width: W - 140, useAdvancedWrap: true },
     }).setOrigin(0.5, 0));
     c.add(button(this, W / 2 - 150, top + 330, 250, 84, '再想想', () => this.showCult(wx), { color: 0x8b949e }));
-    c.add(button(this, W / 2 + 150, top + 330, 250, 84, '散功', () => { net.send({ t: 'uncultivate', wx }); this.closePopup(); }, { color: 0xf85149 }));
+    c.add(button(this, W / 2 + 150, top + 330, 250, 84, '散功', () => { net.send({ t: 'uncultivate', wx }); this.showCultPanel(); }, { color: 0xf85149 }));
   }
 
   // ───────────────────────── 技能修习 ─────────────────────────
 
-  /** 技能要用五行能量修习才学得会；用得越多越熟练 */
+  /** 技能要用五行能量修习才学得会；用得越多越熟练；带进秘境的最多两门 */
   private showSkills(): void {
     const p = net.profile;
     if (!p) return;
-    const rowH = 300;
-    const { c, top } = this.openPopup(190 + SKILL_ORDER.length * rowH);
-    c.add(this.add.text(W / 2, top + 30, '技 能', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
-    c.add(this.add.text(W / 2, top + 92, '用五行能量修习；学会后用得越多越熟练，伤害更高、冷却更短', { fontFamily: SANS, fontSize: '20px', color: '#8b949e' }).setOrigin(0.5, 0));
+    const rowH = 178;
+    const { c, top } = this.openPopup(170 + SKILL_ORDER.length * rowH);
+    this.panel = 'skills';
+    const loadout: SkillId[] = p.loadout ?? [];
+    c.add(this.add.text(W / 2, top + 26, '技 能', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
+    c.add(this.add.text(W / 2, top + 86, `用对应的五行能量修习 · 越用越熟练 · 最多携带 ${LOADOUT_MAX} 门（已带 ${loadout.length}）`, { fontFamily: SANS, fontSize: '20px', color: '#8b949e' }).setOrigin(0.5, 0));
     SKILL_ORDER.forEach((id, i) => {
       const def = SKILLS[id];
-      const y0 = top + 150 + i * rowH;
+      const y0 = top + 136 + i * rowH;
       const uses = p.skills?.[id];
       const lv = skillLevel(uses);
       const tint = WX_TINT[def.wuxing];
+      const on = loadout.includes(id);
       const g = this.add.graphics();
-      g.fillStyle(0x05080b, 0.9);
-      g.fillRoundedRect(56, y0, W - 112, rowH - 20, 20);
-      g.lineStyle(2.5, tint, lv >= 0 ? 0.9 : 0.4);
-      g.strokeRoundedRect(56, y0, W - 112, rowH - 20, 20);
+      g.fillStyle(on ? tint : 0x05080b, on ? 0.1 : 0.9);
+      g.fillRoundedRect(52, y0, W - 104, rowH - 14, 18);
+      g.lineStyle(on ? 3 : 2, tint, lv >= 0 ? 0.9 : 0.35);
+      g.strokeRoundedRect(52, y0, W - 104, rowH - 14, 18);
       c.add(g);
-      const qi = id === 'ring' ? FIRE.ringCost : FIRE.meteorCost;
-      c.add(this.add.text(84, y0 + 20, def.name, { fontFamily: SERIF, fontSize: '40px', fontStyle: 'bold', color: WX_CSS[def.wuxing] }));
-      c.add(this.add.text(W - 84, y0 + 30, `${WUXING_NAMES[def.wuxing]}行 · 耗灵力 ${qi}`, { fontFamily: SANS, fontSize: '21px', color: '#8b949e' }).setOrigin(1, 0));
-      c.add(this.add.text(84, y0 + 78, def.desc, { fontFamily: SANS, fontSize: '22px', color: '#c9d1d9', wordWrap: { width: W - 170, useAdvancedWrap: true } }));
+      c.add(this.add.text(76, y0 + 14, def.name, { fontFamily: SERIF, fontSize: '36px', fontStyle: 'bold', color: WX_CSS[def.wuxing] }).setAlpha(lv >= 0 ? 1 : 0.6));
+      c.add(this.add.text(168, y0 + 28, `${WUXING_NAMES[def.wuxing]}行 · 灵力 ${def.qi} · 冷却 ${def.cd / 1000} 秒`, { fontFamily: SANS, fontSize: '19px', color: '#6e7681' }));
+      c.add(this.add.text(76, y0 + 66, def.desc, { fontFamily: SANS, fontSize: '20px', color: '#c9d1d9', wordWrap: { width: W - 330, useAdvancedWrap: true }, lineSpacing: 4 }));
+      const bx = W - 140, by = y0 + 80;
       if (lv < 0) {
         const have = p.energy[def.wuxing];
-        c.add(this.add.text(84, y0 + 130, '尚未学会', { fontFamily: SERIF, fontSize: '26px', color: '#6e7681' }));
-        c.add(button(this, W / 2, y0 + 215, W - 180, 80, `修习 · ${WUXING_NAMES[def.wuxing]}能量 ${have}/${def.learn}`, () => {
-          sfx.shapeOk(def.wuxing);
-          net.send({ t: 'learn', skill: id });
-          this.time.delayedCall(140, () => { if (this.popup) this.showSkills(); });
-        }, { color: tint, disabled: have < def.learn, fontSize: 28 }));
+        c.add(this.add.text(bx, by - 52, `${WUXING_NAMES[def.wuxing]}能量 ${have}/${def.learn}`, { fontFamily: SANS, fontSize: '19px', color: have >= def.learn ? WX_CSS[def.wuxing] : '#6e7681' }).setOrigin(0.5));
+        c.add(button(this, bx, by, 150, 62, '修习', () => { sfx.shapeOk(def.wuxing); net.send({ t: 'learn', skill: id }); }, { color: tint, disabled: have < def.learn, fontSize: 26 }));
       } else {
         const maxed = lv >= SKILL_MAX_LEVEL;
         const lo = skillNeed(lv), hi = skillNeed(lv + 1);
-        c.add(this.add.text(84, y0 + 126, `${SKILL_RANKS[lv]} · 熟练 ${lv} 级`, { fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: '#ffe066' }));
-        c.add(this.add.text(W - 84, y0 + 134, maxed ? `已用 ${uses} 次` : `已用 ${uses} 次 · 再用 ${hi - uses!} 次升级`, { fontFamily: SANS, fontSize: '20px', color: '#8b949e' }).setOrigin(1, 0));
-        const bw = W - 168;
+        c.add(this.add.text(bx, by - 52, `${SKILL_RANKS[lv]} · ${lv} 级`, { fontFamily: SERIF, fontSize: '22px', fontStyle: 'bold', color: '#ffe066' }).setOrigin(0.5));
+        const full = !on && loadout.length >= LOADOUT_MAX;
+        c.add(button(this, bx, by, 150, 62, on ? '卸下' : '携带', () => {
+          if (full) { toast(this, `最多携带 ${LOADOUT_MAX} 门，先卸下一门`, '#f85149'); return; }
+          net.send({ t: 'loadout', skills: on ? loadout.filter(k => k !== id) : [...loadout, id] });
+        }, { color: on ? 0x8b949e : full ? 0x6e7681 : tint, fontSize: 26 }));
+        // 熟练度进度与当前加成
+        const bw = W - 330;
         const pct = maxed ? 1 : Phaser.Math.Clamp((uses! - lo) / (hi - lo), 0, 1);
         g.fillStyle(0x000000, 0.7);
-        g.fillRoundedRect(84, y0 + 178, bw, 14, 7);
+        g.fillRoundedRect(76, y0 + 126, bw, 10, 5);
         g.fillStyle(tint, 1);
-        if (pct > 0.01) g.fillRoundedRect(84, y0 + 178, bw * pct, 14, 7);
-        const now = `伤害 +${Math.round((skillDmgMult(lv) - 1) * 100)}%　冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%`;
-        const next = maxed ? '已臻化境' : `下一级：伤害 +${Math.round((skillDmgMult(lv + 1) - 1) * 100)}%　冷却 -${Math.round((1 - skillCdMult(lv + 1)) * 100)}%`;
-        c.add(this.add.text(84, y0 + 206, `${now}\n${next}`, { fontFamily: SANS, fontSize: '21px', color: '#c9d1d9', lineSpacing: 6 }));
+        if (pct > 0.01) g.fillRoundedRect(76, y0 + 126, bw * pct, 10, 5);
+        c.add(this.add.text(76, y0 + 140, `伤害 +${Math.round((skillDmgMult(lv) - 1) * 100)}% · 冷却 -${Math.round((1 - skillCdMult(lv)) * 100)}%${maxed ? '' : ` · 再用 ${hi - uses!} 次升级`}`, {
+          fontFamily: SANS, fontSize: '17px', color: '#8b949e',
+        }));
       }
     });
   }
@@ -378,41 +408,59 @@ export class CampScene extends Phaser.Scene {
     return [...p.stash].sort((a, b) => b.rarity - a.rarity || b.tier - a.tier || (b.grade ?? 0) - (a.grade ?? 0));
   }
 
-  private drawStash(p: ProfileView): void {
-    const d = this.dyn;
-    const top = 758;
-    d.add(this.add.text(36, top, `兵匣 ${p.stash.length}/${p.stashCap}`, { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: '#d4a853' }));
+  /** 兵器面板：手里的兵器、兵匣、凝练入口 */
+  private showArms(): void {
+    const p = net.profile;
+    if (!p) return;
+    const { c, top } = this.openPopup(760);
+    this.panel = 'arms';
+    c.add(this.add.text(W / 2, top + 28, '兵 器', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
 
+    // 手里的
+    const it = p.weapon;
+    const form = formOf(it);
+    c.add(gearIcon(this, 130, top + 180, 124, it, '空手'));
+    c.add(this.add.text(220, top + 128, it ? displayName(it) : '空手', { fontFamily: SERIF, fontSize: '32px', fontStyle: 'bold', color: it ? RARITY_CSS[it.rarity] : '#8b949e' }));
+    c.add(this.add.text(220, top + 174, `${form.melee ? '近战' : it ? '远程' : '中距离'} · ${form.move}`, { fontFamily: SANS, fontSize: '22px', color: form.melee ? '#ffb36b' : '#9fd8ff' }));
+    c.add(this.add.text(220, top + 206, it ? '点击查看 / 精炼' : '用五行能量凝练出第一件兵器', { fontFamily: SANS, fontSize: '20px', color: '#6e7681' }));
+    if (it) {
+      const hit = this.add.rectangle(W / 2, top + 180, W - 120, 140, 0, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => this.showItem(it, 'equip'));
+      c.add(hit);
+    }
+
+    // 兵匣
+    const st = top + 270;
+    c.add(this.add.text(60, st, `兵匣 ${p.stash.length}/${p.stashCap}`, { fontFamily: SERIF, fontSize: '26px', fontStyle: 'bold', color: '#d4a853' }));
     const items = this.sortedStash(p);
     const pages = Math.max(1, Math.ceil(items.length / PAGE));
     this.page = Math.min(this.page, pages - 1);
-    const gx = (W - COLS * CELL) / 2;
-    const gy = top + 44;
+    const cell = 100;
+    const gx = (W - COLS * cell) / 2;
+    const gy = st + 44;
     const cur = this.power(p);
     for (let i = 0; i < PAGE; i++) {
-      const it = items[this.page * PAGE + i] ?? null;
-      const x = gx + (i % COLS) * CELL + CELL / 2;
-      const y = gy + Math.floor(i / COLS) * CELL + CELL / 2;
-      d.add(gearIcon(this, x, y, CELL - 10, it));
-      if (it) {
+      const one = items[this.page * PAGE + i] ?? null;
+      const x = gx + (i % COLS) * cell + cell / 2;
+      const y = gy + Math.floor(i / COLS) * cell + cell / 2;
+      c.add(gearIcon(this, x, y, cell - 10, one));
+      if (one) {
         // 比手里的强就标一个绿色箭头
-        if (this.power(p, it) > cur) {
-          d.add(this.add.text(x + CELL / 2 - 10, y + CELL / 2 - 22, '▲', { fontFamily: SANS, fontSize: '20px', color: '#3fb950', stroke: '#000', strokeThickness: 4 }).setOrigin(1, 1));
+        if (this.power(p, one) > cur) {
+          c.add(this.add.text(x + cell / 2 - 10, y + cell / 2 - 22, '▲', { fontFamily: SANS, fontSize: '20px', color: '#3fb950', stroke: '#000', strokeThickness: 4 }).setOrigin(1, 1));
         }
-        const hit = this.add.rectangle(x, y, CELL - 6, CELL - 6, 0, 0).setInteractive({ useHandCursor: true });
-        hit.on('pointerup', () => this.showItem(it, 'stash'));
-        d.add(hit);
+        const hit = this.add.rectangle(x, y, cell - 6, cell - 6, 0, 0).setInteractive({ useHandCursor: true });
+        hit.on('pointerup', () => this.showItem(one, 'stash'));
+        c.add(hit);
       }
     }
-    const by = gy + ROWS * CELL + 36;
+    const by = gy + ROWS * cell + 40;
     if (pages > 1) {
-      d.add(button(this, 62, by, 70, 56, '◀', () => { this.page = (this.page + pages - 1) % pages; this.refresh(); }, { fontSize: 24 }));
-      d.add(this.add.text(128, by, `${this.page + 1}/${pages}`, { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5));
-      d.add(button(this, 194, by, 70, 56, '▶', () => { this.page = (this.page + 1) % pages; this.refresh(); }, { fontSize: 24 }));
+      c.add(button(this, 100, by, 70, 56, '◀', () => { this.page = (this.page + pages - 1) % pages; this.showArms(); }, { fontSize: 24 }));
+      c.add(this.add.text(166, by, `${this.page + 1}/${pages}`, { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5));
+      c.add(button(this, 232, by, 70, 56, '▶', () => { this.page = (this.page + 1) % pages; this.showArms(); }, { fontSize: 24 }));
     }
-    const known = SKILL_ORDER.filter(id => p.skills?.[id] !== undefined).length;
-    d.add(button(this, 352, by, 208, 56, `技能 ${known}/${SKILL_ORDER.length}`, () => this.showSkills(), { fontSize: 24, color: 0xff6a4c }));
-    d.add(button(this, W - 130, by, 208, 56, '凝练兵器', () => this.showForge(), { fontSize: 24 }));
+    c.add(button(this, W / 2, top + 760 - 76, W - 160, 88, '凝 练 兵 器', () => this.showForge(), { fontSize: 32 }));
   }
 
   // ───────────────────────── 秘境面板 ─────────────────────────
@@ -428,11 +476,11 @@ export class CampScene extends Phaser.Scene {
 
   private drawRiftPanel(p: ProfileView): void {
     const d = this.dyn;
-    const top = 1090;
+    const top = 900;
     this.drawPanelBg(top);
     d.add(this.add.text(W / 2, top + 26, '秘 境', { fontFamily: SERIF, fontSize: '30px', fontStyle: 'bold', color: '#d4a853' }).setOrigin(0.5, 0));
 
-    const ty = top + 120;
+    const ty = top + 150;
     const setTier = (t: number) => {
       this.tier = Math.max(1, Math.min(p.maxTier, t));
       localStorage.setItem('5ele_tier', String(this.tier));
@@ -444,19 +492,19 @@ export class CampScene extends Phaser.Scene {
     const best = p.best[this.tier];
     d.add(this.add.text(W / 2, ty + 30, best ? `最快 ${fmtTime(best)}` : '尚未通关', { fontFamily: SANS, fontSize: '22px', color: '#8b949e' }).setOrigin(0.5));
 
-    const by = top + 250;
-    d.add(button(this, W / 2, by, W - 120, 100, '独自进入', () => {
+    const by = top + 330;
+    d.add(button(this, W / 2, by, W - 120, 110, '独自进入', () => {
       sfx.unlock();
       net.send({ t: 'create', tier: this.tier });
       net.send({ t: 'start' });
     }, { fontSize: 36 }));
-    d.add(button(this, W / 2 - 160, by + 125, 280, 90, '开房组队', () => { sfx.unlock(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
-    d.add(button(this, W / 2 + 160, by + 125, 280, 90, '加入房间', () => { sfx.unlock(); this.showKeypad(); }, { fontSize: 30, color: 0x58a6ff }));
+    d.add(button(this, W / 2 - 160, by + 150, 280, 96, '开房组队', () => { sfx.unlock(); net.send({ t: 'create', tier: this.tier }); }, { fontSize: 30, color: 0x58a6ff }));
+    d.add(button(this, W / 2 + 160, by + 150, 280, 96, '加入房间', () => { sfx.unlock(); this.showKeypad(); }, { fontSize: 30, color: 0x58a6ff }));
   }
 
   private drawRoom(p: ProfileView, room: RoomView): void {
     const d = this.dyn;
-    const top = 1090;
+    const top = 900;
     this.drawPanelBg(top);
     const host = room.players.find(q => q.host);
     const isHost = host?.id === net.did;
@@ -496,13 +544,15 @@ export class CampScene extends Phaser.Scene {
   private closePopup(): void {
     this.popup?.destroy();
     this.popup = null;
+    this.panel = null;
   }
 
-  private openPopup(height: number): { c: Phaser.GameObjects.Container; top: number } {
+  /** @param back 点面板外的空白处时回到哪里；不给就直接关掉 */
+  private openPopup(height: number, back?: () => void): { c: Phaser.GameObjects.Container; top: number } {
     this.closePopup();
     const c = this.add.container(0, 0).setDepth(1000);
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.7).setInteractive();
-    shade.on('pointerup', () => this.closePopup());
+    shade.on('pointerup', () => (back ? back() : this.closePopup()));
     const top = Math.max(60, (H - height) / 2);
     const g = this.add.graphics();
     g.fillStyle(0x0d1117, 0.98);
@@ -560,7 +610,7 @@ export class CampScene extends Phaser.Scene {
     y += rt.height + 16;
 
     const height = y + 150 + (from === 'stash' ? 220 : 130);
-    const { c, top } = this.openPopup(height);
+    const { c, top } = this.openPopup(height, () => this.showArms());
     c.add(gearIcon(this, W / 2, top + 80, 100, item));
     texts.forEach(t => { t.y += top + 150; c.add(t); });
     if (cmp) { cmp.y += top + 150; c.add(cmp); }
@@ -569,7 +619,7 @@ export class CampScene extends Phaser.Scene {
 
     const by2 = top + height - 70;
     const by1 = by2 - 100;
-    const close = () => this.closePopup();
+    const close = () => this.showArms();
     const refineBtn = (bx: number, bw: number, byy: number) => button(this, bx, byy, bw, 80, '精炼', () => {
       sfx.shapeOk(item.wuxing);
       net.send({ t: 'refine', id: item.id });
@@ -606,7 +656,7 @@ export class CampScene extends Phaser.Scene {
     const rarity: number = forgeRarity(total, tier);
     const again = () => this.showForge(false);
 
-    const { c, top } = this.openPopup(1180);
+    const { c, top } = this.openPopup(1180, () => this.showArms());
     c.add(this.add.text(W / 2, top + 30, '凝 练 兵 器', { fontFamily: SERIF, fontSize: '42px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5, 0));
     c.add(this.add.text(W / 2, top + 92, '投得最多的一行为主，定五行；第二多的为辅，主辅生克定器型', {
       fontFamily: SANS, fontSize: '20px', color: '#8b949e',
@@ -664,7 +714,7 @@ export class CampScene extends Phaser.Scene {
     c.add(button(this, W / 2 + 130, by, 320, 84, '凝 练', () => {
       sfx.shapeOk(out!.main);
       net.send({ t: 'forge', tier, amounts: { ...amt } });
-      this.closePopup();
+      this.showArms();
     }, { disabled: !out || rarity < 0, fontSize: 32 }));
   }
 

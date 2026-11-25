@@ -8,7 +8,7 @@ import {
   REVIVE_RADIUS, REVIVE_MS,
   MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
-  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId,
+  attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
 } from '@xiyou/shared';
 import { Profile, markDirty } from './store.js';
@@ -52,8 +52,9 @@ interface RunPlayer extends RunMember {
   gained: Energy;
   /** 开局时的技能熟练度；-1 = 没学会 */
   skillLv: Record<SkillId, number>;
-  lastRing: number;
-  lastMeteor: number;
+  /** 本局携带的技能，与各自上次施放的时刻 */
+  loadout: SkillId[];
+  lastCast: Partial<Record<SkillId, number>>;
   lastParry: number;
   lastPDodge: number;
   crits: number;
@@ -146,13 +147,15 @@ export class Run {
         qi: Math.min(m.stats.qiMax, QI_START),
         orbs: new Map(),
         gained: emptyEnergy(),
-        skillLv: { ring: skillLevel(m.profile.skills.ring), meteor: skillLevel(m.profile.skills.meteor) },
-        lastRing: -1e9, lastMeteor: -1e9, lastParry: -1e9, lastPDodge: -1e9,
+        skillLv: Object.fromEntries(SKILL_ORDER.map(id => [id, skillLevel(m.profile.skills[id])])) as Record<SkillId, number>,
+        loadout: [...m.profile.loadout],
+        lastCast: {},
+        lastParry: -1e9, lastPDodge: -1e9,
         crits: 0,
       };
     });
 
-    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, weapon: p.profile.weapon, cult: p.profile.cult, skills: { ...p.profile.skills } }));
+    const info: RunPlayerInfo[] = this.players.map(p => ({ id: p.id, name: p.profile.name, path: p.path, stats: p.stats, weapon: p.profile.weapon, cult: p.profile.cult, skills: { ...p.profile.skills }, loadout: p.loadout }));
     this.players.forEach(p => p.send({ t: 'runStart', tier, you: p.id, players: info }));
     // 开局给几群妖异，不用干等
     for (let i = 0; i < 3; i++) this.spawnPack(i === 0 ? 820 : 1000);
@@ -658,31 +661,74 @@ export class Run {
     return true;
   }
 
-  private onCast(p: RunPlayer, s: string, x: number, y: number): void {
+  private onCast(p: RunPlayer, id: SkillId, x: number, y: number): void {
     if (p.down || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const def = SKILLS[id];
+    const lv = def ? p.skillLv[id] : -1;
+    // 要学会、要带在身上
+    if (!def || lv < 0 || !p.loadout.includes(id)) return;
+    // 客户端冷却到点就会放，服务器这边留 15% 容差
+    if (this.now - (p.lastCast[id] ?? -1e9) < skillCd(id, p.stats, lv) * 0.85) return;
+    if (id === 'meteor' && dist2(x, y, p.x, p.y) > (FIRE.meteorRange + 300) ** 2) return;
+    if (!this.spendQi(p, def.qi)) return;
+    p.lastCast[id] = this.now;
+    this.practice(p, id);
+
     const area = 1 + p.stats.area / 100;
-    if (s === 'A') {
-      const lv = p.skillLv.ring;
-      if (lv < 0) return;
-      // 客户端冷却到点就会放，服务器这边留 15% 容差
-      if (this.now - p.lastRing < skillCd('ring', p.stats, lv) * 0.85) return;
-      if (!this.spendQi(p, FIRE.ringCost)) return;
-      p.lastRing = this.now;
-      this.practice(p, 'ring');
-      const cx = dist2(x, y, p.x, p.y) < 250 ** 2 ? x : p.x;
-      const cy = dist2(x, y, p.x, p.y) < 250 ** 2 ? y : p.y;
-      this.broadcast({ t: 'cast', p: p.idx, s: 'A', x: Math.round(cx), y: Math.round(cy) });
-      this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult * skillDmgMult(lv));
-    } else if (s === 'B') {
-      const lv = p.skillLv.meteor;
-      if (lv < 0) return;
-      if (this.now - p.lastMeteor < skillCd('meteor', p.stats, lv) * 0.85) return;
-      if (dist2(x, y, p.x, p.y) > (FIRE.meteorRange + 300) ** 2) return;
-      if (!this.spendQi(p, FIRE.meteorCost)) return;
-      p.lastMeteor = this.now;
-      this.practice(p, 'meteor');
-      this.broadcast({ t: 'cast', p: p.idx, s: 'B', x: Math.round(x), y: Math.round(y) });
-      this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult * skillDmgMult(lv)));
+    const dm = skillDmgMult(lv);
+    // 以自身为圆心的技能：允许客户端位置略有出入
+    const near = dist2(x, y, p.x, p.y) < 250 ** 2;
+    const cx = near ? x : p.x, cy = near ? y : p.y;
+    const tell = (tx: number, ty: number) => this.broadcast({ t: 'cast', p: p.idx, s: id, x: Math.round(tx), y: Math.round(ty) });
+
+    switch (id) {
+      case 'ring':
+        tell(cx, cy);
+        this.ring(p, cx, cy, FIRE.ringRadius * area, FIRE.ringMult * dm);
+        break;
+      case 'meteor':
+        tell(x, y);
+        this.later(FIRE.meteorDelay, () => this.ring(p, x, y, FIRE.meteorRadius * area, FIRE.meteorMult * dm));
+        break;
+      case 'blades': {
+        // 剑气分袭最近的几只，必定暴击；妖异不够就集中补刀
+        tell(cx, cy);
+        const targets = this.enemiesNear(cx, cy, SK.blades.range)
+          .sort((a, b) => dist2(cx, cy, a.x, a.y) - dist2(cx, cy, b.x, b.y)).slice(0, SK.blades.count);
+        if (!targets.length) break;
+        for (let i = 0; i < SK.blades.count; i++) {
+          const e = targets[i % targets.length];
+          this.later(120 + i * 70, () => {
+            if (e.dead) return;
+            const r = this.roll(p, e, SK.blades.mult * dm * (i < targets.length ? 1 : 0.5), false, true);
+            this.damage(p, e, r.amt, r.crit);
+          });
+        }
+        break;
+      }
+      case 'frost':
+        tell(cx, cy);
+        for (const e of this.enemiesNear(cx, cy, SK.frost.radius * area)) {
+          const r = this.roll(p, e, SK.frost.mult * dm, false);
+          this.damage(p, e, r.amt, r.crit);
+          if (e.dead) continue;
+          // 冻结 = 硬直（核心只冻三成时间），打断正在蓄力的招式
+          e.stagger = Math.max(e.stagger, SK.frost.freezeMs * (e.tier === 2 ? 0.3 : 1));
+          e.attack = null;
+          if (e.state === 'windup' || e.state === 'lunge') { e.state = 'recover'; e.timer = 200; }
+          this.broadcast({ t: 'stag', id: e.id, ms: e.stagger, f: 1 });
+        }
+        break;
+      case 'bloom':
+        // 回血由各客户端自己结算（生命是客户端权威），这里只管荆棘
+        tell(cx, cy);
+        this.ring(p, cx, cy, SK.bloom.radius * area, SK.bloom.mult * dm, false);
+        break;
+      case 'bastion':
+        // 减伤同样在客户端结算
+        tell(cx, cy);
+        this.ring(p, cx, cy, SK.bastion.radius * area, SK.bastion.mult * dm, false);
+        break;
     }
   }
 

@@ -42,13 +42,9 @@ export const FIRE = {
   splashRadius: 85,
   splashMult: 0.45,
   /** 燎原：以自身为圆心的火环 */
-  ringCd: 7000,
-  ringCost: 30,
   ringRadius: 300,
   ringMult: 1.7,
   /** 焚天：陨火 */
-  meteorCd: 11000,
-  meteorCost: 50,
   meteorDelay: 650,
   meteorRadius: 230,
   meteorMult: 3.4,
@@ -64,20 +60,36 @@ export const FIRE = {
  * 技能不是天生就会的：要用对应的五行能量修习才学得会。
  * 学会之后用得越多越熟练——每升一级熟练度，伤害更高、冷却更短。
  */
-export type SkillId = 'ring' | 'meteor';
+export type SkillId = 'ring' | 'meteor' | 'blades' | 'frost' | 'bloom' | 'bastion';
 export interface SkillDef {
   id: SkillId;
   name: string;
   wuxing: Wuxing;
   /** 修习所需的本行能量 */
   learn: number;
+  /** 每次施放消耗的灵力与冷却（毫秒） */
+  qi: number;
+  cd: number;
   desc: string;
 }
 export const SKILLS: Record<SkillId, SkillDef> = {
-  ring:   { id: 'ring',   name: '燎原', wuxing: Wuxing.FIRE, learn: 40,  desc: '以自身为圆心放出火环，灼烧周围的妖异' },
-  meteor: { id: 'meteor', name: '焚天', wuxing: Wuxing.FIRE, learn: 120, desc: '召一颗陨火砸向妖异最密集处' },
+  ring:    { id: 'ring',    name: '燎原', wuxing: Wuxing.FIRE,  learn: 40,  qi: 30, cd: 7000,  desc: '以自身为圆心放出火环，灼烧周围的妖异' },
+  meteor:  { id: 'meteor',  name: '焚天', wuxing: Wuxing.FIRE,  learn: 120, qi: 50, cd: 11000, desc: '召一颗陨火砸向妖异最密集处' },
+  blades:  { id: 'blades',  name: '万剑', wuxing: Wuxing.METAL, learn: 80,  qi: 40, cd: 8000,  desc: '剑气分袭最近的 6 只妖异，必定暴击' },
+  frost:   { id: 'frost',   name: '寒潮', wuxing: Wuxing.WATER, learn: 80,  qi: 35, cd: 10000, desc: '寒气席卷四周，冻结妖异 2.2 秒' },
+  bloom:   { id: 'bloom',   name: '回春', wuxing: Wuxing.WOOD,  learn: 80,  qi: 40, cd: 14000, desc: '回复自身 30% 生命，荆棘刺伤四周；附近同伴回复 20%' },
+  bastion: { id: 'bastion', name: '磐石', wuxing: Wuxing.EARTH, learn: 80,  qi: 40, cd: 14000, desc: '震地伤敌，并得磐石护体 4 秒，所受伤害减少 70%' },
 };
-export const SKILL_ORDER: SkillId[] = ['ring', 'meteor'];
+export const SKILL_ORDER: SkillId[] = ['ring', 'meteor', 'blades', 'frost', 'bloom', 'bastion'];
+/** 一局最多携带几门技能 */
+export const LOADOUT_MAX = 2;
+/** 各技能的数值（熟练度另乘伤害倍率） */
+export const SK = {
+  blades:  { count: 6, range: 520, mult: 2.4 },
+  frost:   { radius: 340, mult: 1.0, freezeMs: 2200 },
+  bloom:   { heal: 0.3, mateHeal: 0.2, radius: 300, mult: 0.9 },
+  bastion: { radius: 270, mult: 1.6, ms: 4000, block: 0.3 },
+} as const;
 /** 存档里记的是每个技能用过多少次；没有这一项 = 还没学会 */
 export type SkillBook = Partial<Record<SkillId, number>>;
 
@@ -151,7 +163,7 @@ export function attackInterval(form: { interval: number }, s: Pick<PlayerStats, 
 }
 /** 技能冷却：属性里的冷却缩减 × 熟练度 */
 export function skillCd(id: SkillId, s: Pick<PlayerStats, 'cdr'>, level: number): number {
-  return withCdr(id === 'ring' ? FIRE.ringCd : FIRE.meteorCd, s) * skillCdMult(level);
+  return withCdr(SKILLS[id].cd, s) * skillCdMult(level);
 }
 
 // ───────────────────────── 五行克制 ─────────────────────────
@@ -233,6 +245,8 @@ export interface ProfileView {
   best: Record<number, number>;
   /** 学会的技能与各自用过的次数 */
   skills: SkillBook;
+  /** 带进秘境的技能（最多 LOADOUT_MAX 门） */
+  loadout: SkillId[];
 }
 
 export interface RoomPlayerView {
@@ -260,8 +274,9 @@ export interface RunPlayerInfo {
   /** 兵器与修为（用于外显） */
   weapon: GearItem | null;
   cult: Energy;
-  /** 开局时的技能熟练度（局内不变） */
+  /** 开局时的技能熟练度（局内不变）与携带的技能 */
   skills: SkillBook;
+  loadout: SkillId[];
 }
 
 /**
@@ -307,8 +322,6 @@ export interface SpawnInfo {
   max: number;
 }
 
-/** 玩家技能代号：b 兵器弹道 · A 燎原 · B 焚天 */
-export type SkillCode = 'b' | 'A' | 'B';
 
 export type C2S =
   | { t: 'hello'; did: string; name?: string }
@@ -323,6 +336,8 @@ export type C2S =
   | { t: 'uncultivate'; wx: Wuxing }
   /** 修习一门技能 */
   | { t: 'learn'; skill: SkillId }
+  /** 选择带进秘境的技能 */
+  | { t: 'loadout'; skills: SkillId[] }
   /** 精炼兵器：尝试升一阶（可能失败） */
   | { t: 'refine'; id: string }
   /** 凝练兵器：投入的五行能量 */
@@ -335,10 +350,10 @@ export type C2S =
   /** 位置：x, y, 朝向(±1), 动作(0 站 1 跑 2 遁 3 御) */
   | { t: 'mv'; x: number; y: number; f: number; a: number }
   /** 远程兵器的一发弹道命中 */
-  | { t: 'hit'; s: SkillCode; id: number; x: number; y: number }
+  | { t: 'hit'; s: 'b'; id: number; x: number; y: number }
   /** 近战兵器的一次挥击，扫中的妖异 */
   | { t: 'swing'; ids: number[] }
-  | { t: 'cast'; s: SkillCode; x: number; y: number }
+  | { t: 'cast'; s: SkillId; x: number; y: number }
   | { t: 'hp'; hp: number }
   | { t: 'parry'; id: number }
   | { t: 'pdodge' }
@@ -367,8 +382,9 @@ export type S2C =
   | { t: 'dmg'; d: number[] }
   | { t: 'atk'; a: EnemyAttack }
   | { t: 'bolts'; list: EnemyBoltSpawn[] }
-  | { t: 'stag'; id: number; ms: number }
-  | { t: 'cast'; p: number; s: SkillCode; x: number; y: number }
+  /** 硬直；f = 1 表示是被冻住的 */
+  | { t: 'stag'; id: number; ms: number; f?: 1 }
+  | { t: 'cast'; p: number; s: SkillId; x: number; y: number }
   | { t: 'boss'; id: number }
   | { t: 'down'; p: number }
   | { t: 'up'; p: number }
