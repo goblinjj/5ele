@@ -196,6 +196,9 @@ export function idleGain(maxTier: number, ms: number): Energy {
 
 export const ORB_MAGNET = 230;
 export const ORB_PICK = 46;
+/** 地上的能量没人捡，过这么久就散了；最后一段慢慢淡掉 */
+export const ORB_LIFE_MS = 60000;
+export const ORB_FADE_MS = 12000;
 export function wxIndex(wx: Wuxing): number {
   return WX_ORDER.indexOf(wx);
 }
@@ -456,10 +459,12 @@ export type S2C =
   /** 快照：e = [id,x,y,hp,flags]*，p = [idx,x,y,f,a,hp,max,down]* ；flags: 1 硬直 2 灼烧 */
   | { t: 'snap'; e: number[]; p: (number | string)[]; prog: number; ms: number }
   | { t: 'spawn'; list: SpawnInfo[] }
-  /** 妖异溃散；orbs = 留给你的能量 [能量id, 五行下标, 分量]* */
+  /** 妖异溃散；orbs = 落在地上的能量 [能量id, 五行下标, 分量]*，全队共用，谁离得近谁捡 */
   | { t: 'die'; id: number; by: number; orbs?: number[] }
   /** 补发地上的能量 [能量id, x, y, 五行下标, 分量, 妖异档次]* */
   | { t: 'orbs'; list: number[] }
+  /** 地上的能量没了：被谁捡走（by = 玩家下标），或是放太久散掉了（by = -1） */
+  | { t: 'orbGone'; ids: number[]; by: number }
   /** 灵力校正（服务器拒绝了一次施放时） */
   | { t: 'qi'; v: number }
   | { t: 'dmg'; d: number[] }

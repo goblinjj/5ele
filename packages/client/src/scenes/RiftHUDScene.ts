@@ -193,7 +193,8 @@ export class RiftHUDScene extends Phaser.Scene {
     const g = this.gfx;
     g.clear();
 
-    setTextIf(this.topText, `${TIER_NAMES[r.tier]}  ${fmtTime(r.elapsed)}`);
+    // 不计时：慢慢刷，没有时间限制
+    setTextIf(this.topText, TIER_NAMES[r.tier]);
     // 文字每改一次都要重新栅格化，所以延迟 / 帧率半秒刷新一次
     const now = this.time.now;
     const fps = Math.round(this.game.loop.actualFps);
@@ -339,7 +340,7 @@ export class RiftHUDScene extends Phaser.Scene {
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0, 0.7).setInteractive();
     c.add(shade);
     c.add(this.add.text(W / 2, H * 0.4, '撤离秘境？', { fontFamily: SERIF, fontSize: '46px', fontStyle: 'bold', color: '#ffe9a8' }).setOrigin(0.5));
-    c.add(this.add.text(W / 2, H * 0.4 + 70, '地上的能量会自动收走（不超过带回上限，设了不捡的除外）', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
+    c.add(this.add.text(W / 2, H * 0.4 + 70, (net.room?.players.length ?? 1) > 1 ? '地上的能量会留给还在打的同伴' : '地上的能量会自动收走（不超过带回上限，设了不捡的除外）', { fontFamily: SERIF, fontSize: '26px', color: '#8b949e' }).setOrigin(0.5));
     c.add(button(this, W / 2 - 150, H * 0.55, 240, 90, '继续', () => c.destroy(), { color: 0x8b949e }));
     c.add(button(this, W / 2 + 150, H * 0.55, 240, 90, '撤离', () => { net.send({ t: (net.room?.players.length ?? 1) > 1 ? 'exit' : 'leave' }); this.backToCamp(); }));
   }
@@ -357,7 +358,7 @@ export class RiftHUDScene extends Phaser.Scene {
       fontFamily: SERIF, fontSize: '62px', fontStyle: 'bold', color: m.ok ? '#ffe9a8' : '#f85149', stroke: '#000', strokeThickness: 6,
     }).setOrigin(0.5));
     const lines = [
-      `${TIER_NAMES[m.tier]} · 用时 ${fmtTime(m.ms)}${m.best ? '  新纪录！' : ''}`,
+      TIER_NAMES[m.tier],
       `击杀 ${r.kills}　每分钟 ${m.ms > 0 ? Math.round((r.kills / m.ms) * 60000) : 0}`,
     ];
     if (m.ok && m.tier < 9) lines.push(`已解锁 ${TIER_NAMES[m.tier + 1]}`);

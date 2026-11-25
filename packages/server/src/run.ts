@@ -6,7 +6,7 @@ import {
   PROGRESS_GOAL, PROGRESS_NORMAL, PROGRESS_ELITE,
   FIRE, GUARD, DODGE, PARRY_MULT, STAGGER_MS, STAGGER_BONUS, PERFECT_DODGE_CRITS,
   REVIVE_RADIUS, REVIVE_MS,
-  RIFT_VIEW, PACING, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
+  RIFT_VIEW, PACING, ORB_LIFE_MS, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
   skillBond, attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
@@ -47,7 +47,6 @@ interface RunPlayer extends RunMember {
   /** 局内灵力：吸纳能量获得，放技能消耗 */
   qi: number;
   /** 地上留给这名玩家的能量 */
-  orbs: Map<number, Orb>;
   /** 本局吸纳的五行能量 */
   gained: Energy;
   /** 开局时的技能熟练度；-1 = 没学会 */
@@ -61,6 +60,8 @@ interface RunPlayer extends RunMember {
 }
 
 interface Orb {
+  /** 落地的时刻（局内时间） */
+  born: number;
   x: number;
   y: number;
   wx: Wuxing;
@@ -121,6 +122,8 @@ export class Run {
   private enemies = new Map<number, Enemy>();
   private seq = 0;
   private orbSeq = 0;
+  /** 地上的能量：全队共用，谁先碰到归谁 */
+  private orbs = new Map<number, Orb>();
   private now = 0;
   private tickN = 0;
   private progress = 0;
@@ -152,7 +155,6 @@ export class Run {
         form: formOf(m.profile.weapon),
         atkTokens: 3,
         qi: Math.min(m.stats.qiMax, QI_START),
-        orbs: new Map(),
         gained: emptyEnergy(),
         skillLv: Object.fromEntries(SKILL_ORDER.map(id => [id, skillLevel(m.profile.skills[id])])) as Record<SkillId, number>,
         loadout: [...m.profile.loadout],
@@ -230,9 +232,9 @@ export class Run {
     for (const e of this.enemies.values()) if (!e.dead) list.push(this.spawnInfo(e));
     if (list.length) p.send({ t: 'spawn', list });
     if (this.boss && !this.boss.dead) p.send({ t: 'boss', id: this.boss.id });
-    if (p.orbs.size) {
+    if (this.orbs.size) {
       const orbs: number[] = [];
-      for (const [id, o] of p.orbs) orbs.push(id, o.x, o.y, wxIndex(o.wx), o.n, o.mt);
+      for (const [id, o] of this.orbs) orbs.push(id, o.x, o.y, wxIndex(o.wx), o.n, o.mt);
       p.send({ t: 'orbs', list: orbs });
     }
     p.send({ t: 'qi', v: p.qi });
@@ -246,6 +248,12 @@ export class Run {
     const dt = SERVER_TICK_MS;
     this.now += dt;
     this.tickN++;
+    // 放太久没人捡的能量散掉（比客户端淡出的时间多留一点，免得眼看着还在却捡不到）
+    if (this.tickN % 20 === 0 && this.orbs.size) {
+      const gone: number[] = [];
+      for (const [id, o] of this.orbs) if (this.now - o.born > ORB_LIFE_MS + 2000) gone.push(id);
+      if (gone.length) { gone.forEach(id => this.orbs.delete(id)); this.broadcast({ t: 'orbGone', ids: gone, by: -1 }); }
+    }
 
     // 定时事件（陨火落地等）
     if (this.schedule.length) {
@@ -838,19 +846,15 @@ export class Run {
     this.enemies.delete(e.id);
     by.kills++;
 
-    // 残留的能量：每名玩家各得一份，自己去吸纳。病变核心散成五行各一团
+    // 残留的能量落在地上，全队共用，谁离得近谁捡。病变核心散成五行各一团
     const n = orbValue(this.tier, e.tier);
-    for (const p of this.players) {
-      if (p.left) { continue; }
-      const orbs: number[] = [];
-      const kinds = e.tier === 2 ? WX_ORDER : [e.def.wuxing];
-      for (const wx of kinds) {
-        const id = ++this.orbSeq;
-        p.orbs.set(id, { x: Math.round(e.x), y: Math.round(e.y), wx, n, mt: e.tier });
-        orbs.push(id, wxIndex(wx), n);
-      }
-      p.send({ t: 'die', id: e.id, by: by.idx, orbs });
+    const orbs: number[] = [];
+    for (const wx of e.tier === 2 ? WX_ORDER : [e.def.wuxing]) {
+      const id = ++this.orbSeq;
+      this.orbs.set(id, { born: this.now, x: Math.round(e.x), y: Math.round(e.y), wx, n, mt: e.tier });
+      orbs.push(id, wxIndex(wx), n);
     }
+    this.broadcast({ t: 'die', id: e.id, by: by.idx, orbs });
 
     if (e.tier === 2) {
       this.boss = null;
@@ -872,11 +876,12 @@ export class Run {
 
   /** 吸纳一团能量：入账，并化作灵力 */
   private onOrb(p: RunPlayer, id: number): void {
-    const o = p.orbs.get(id);
+    const o = this.orbs.get(id);
     if (!o || p.profile.skip.includes(o.wx)) return;
     if (dist2(p.x, p.y, o.x, o.y) > 700 ** 2) return;
-    p.orbs.delete(id);
+    this.orbs.delete(id);
     this.bank(p, o);
+    this.broadcast({ t: 'orbGone', ids: [id], by: p.idx });
     p.qi = Math.min(p.stats.qiMax, p.qi + qiGain(p.path, o.wx, o.mt));
   }
 
@@ -890,16 +895,27 @@ export class Run {
   }
 
   private collectAll(p: RunPlayer): void {
-    // 设了不捡的那几行留在地上
-    for (const o of p.orbs.values()) if (!p.profile.skip.includes(o.wx)) this.bank(p, o);
-    p.orbs.clear();
+    // 还有同伴在打：地上的留给他们。只剩自己了才收走（设了不捡的那几行除外）
+    if (this.alivePlayers.some(q => q !== p)) return;
+    for (const o of this.orbs.values()) if (!p.profile.skip.includes(o.wx)) this.bank(p, o);
+    this.orbs.clear();
   }
 
   private finish(ok: boolean): void {
     if (this.ended) return;
     this.stop();
+    // 结算时地上剩下的：各归离得最近的人
+    for (const o of this.orbs.values()) {
+      let best: RunPlayer | null = null, bd = Infinity;
+      for (const q of this.alivePlayers) {
+        if (q.profile.skip.includes(o.wx)) continue;
+        const d = dist2(q.x, q.y, o.x, o.y);
+        if (d < bd) { bd = d; best = q; }
+      }
+      if (best) this.bank(best, o);
+    }
+    this.orbs.clear();
     for (const p of this.alivePlayers) {
-      this.collectAll(p);
       const prof = p.profile;
       let best = false;
       if (ok) {

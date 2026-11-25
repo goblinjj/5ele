@@ -604,7 +604,7 @@ export class CampScene extends Phaser.Scene {
       };
       // 要去哪一重天：点开秘境图选
       const best = p.best[this.tier];
-      this.tierCard(d, top + 180, this.tier, best ? `最快 ${fmtTime(best)}` : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
+      this.tierCard(d, top + 180, this.tier, best ? '已净化' : '尚未通关', () => this.showMap(p.maxTier, this.tier, p.best, setTier));
       const by = top + 340;
       d.add(button(this, W / 2, by, W - 120, 110, '独自进入', () => {
         sfx.unlock();
@@ -716,7 +716,7 @@ export class CampScene extends Phaser.Scene {
       const lx = left ? x - 66 : x + 66;
       const done = !!best[t];
       c.add(this.add.text(lx, y - 16, TIER_NAMES[t], { fontFamily: SERIF, fontSize: '28px', fontStyle: 'bold', color: open ? '#f0e6d3' : '#484f58' }).setOrigin(left ? 1 : 0, 0.5));
-      c.add(this.add.text(lx, y + 18, !open ? `通关${TIER_NAMES[t - 1]}后开启` : done ? `已净化 · 最快 ${fmtTime(best[t])}` : '尚未净化', {
+      c.add(this.add.text(lx, y + 18, !open ? `通关${TIER_NAMES[t - 1]}后开启` : done ? '已净化' : '尚未净化', {
         fontFamily: SANS, fontSize: '19px', color: !open ? '#484f58' : done ? '#d4a853' : '#8b949e',
       }).setOrigin(left ? 1 : 0, 0.5));
       if (open) {

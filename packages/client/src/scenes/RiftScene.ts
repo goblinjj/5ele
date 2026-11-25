@@ -5,7 +5,7 @@ import {
   FIRE, DODGE, GUARD, PLAYER_BASE_SPEED, PICKUP_RADIUS, REVIVE_RADIUS, REVIVE_MS,
   wxMult, attackInterval, skillCd, skillLevel, SKILLS, SKILL_ORDER, SK, SkillId, skillRadius, bladeCount,
   computeStats, powerOf, WeaponForm, formOf, UNARMED_FORM, Energy, energyTotal, emptyEnergy, WX_ORDER,
-  QI_START, qiGain, ORB_MAGNET, ORB_PICK,
+  QI_START, qiGain, ORB_MAGNET, ORB_PICK, ORB_LIFE_MS, ORB_FADE_MS,
 } from '@xiyou/shared';
 import { GAME_HEIGHT, applyRenderScale } from '../config/gameConfig.js';
 import { WX_TINT, PLAYER_SCALE, ENEMY_SCALE, ELITE_SCALE, BOSS_SCALE } from '../config/worldConfig.js';
@@ -149,6 +149,8 @@ interface Orb {
   tx: number;
   ty: number;
   age: number;
+  /** 落地多久了（到时候就散） */
+  life: number;
   speed: number;
   phase: number;
   glow: Phaser.GameObjects.Image;
@@ -275,6 +277,8 @@ export class RiftScene extends Phaser.Scene {
   private mybolts: MyBolt[] = [];
   private orbs = new Map<number, Orb>();
   private mates = new Map<number, Mate>();
+  /** 我已经算进账的能量：万一同伴其实先捡到，好减回去 */
+  private picked = new Map<number, { wx: Wuxing; n: number }>();
 
   constructor() {
     super({ key: 'RiftScene' });
@@ -355,6 +359,7 @@ export class RiftScene extends Phaser.Scene {
       net.on('snap', (m: any) => this.onSnap(m)),
       net.on('spawn', (m: { list: SpawnInfo[] }) => m.list.forEach(s => this.spawnEnemy(s))),
       net.on('die', (m: { id: number; by: number; orbs?: number[] }) => this.onDie(m.id, m.by, m.orbs)),
+      net.on('orbGone', (m: { ids: number[]; by: number }) => this.onOrbGone(m.ids, m.by)),
       net.on('orbs', (m: { list: number[] }) => {
         for (let i = 0; i < m.list.length; i += 6) {
           this.addOrb(m.list[i], WX_ORDER[m.list[i + 3]], m.list[i + 4], m.list[i + 5] as MonsterTier, m.list[i + 1], m.list[i + 2], false);
@@ -1195,7 +1200,7 @@ export class RiftScene extends Phaser.Scene {
     this.orbs.set(id, {
       id, wx, n, mt, x, y,
       tx: Phaser.Math.Clamp(tx, 90, RIFT_SIZE - 90), ty: Phaser.Math.Clamp(ty, 90, RIFT_SIZE - 90),
-      age: pop ? 0 : 1000, speed: 0, phase: Math.random() * 6.28, glow, core,
+      age: pop ? 0 : 1000, life: 0, speed: 0, phase: Math.random() * 6.28, glow, core,
     });
   }
 
@@ -1206,17 +1211,28 @@ export class RiftScene extends Phaser.Scene {
     const canPick = !this.down && !this.ended;
     const magnet2 = ORB_MAGNET ** 2;
     const skip = net.profile?.skip ?? [];
+    // 组队时：带回已满就不跟同伴抢了；谁离得近谁捡
+    const party = this.mates.size > 0;
+    const full = party && energyTotal(this.gained) >= this.stats.carry;
     for (const o of this.orbs.values()) {
       o.age += dt;
+      o.life += dt;
+      if (o.life > ORB_LIFE_MS) { this.orbs.delete(o.id); o.glow.destroy(); o.core.destroy(); continue; }
       // 设了不捡的：留在地上，压暗
       const skipped = skip.includes(o.wx);
       if (o.age < 260) {
         const k = 1 - Math.exp(-dt / 70);
         o.x += (o.tx - o.x) * k;
         o.y += (o.ty - o.y) * k;
-      } else if (canPick && !skipped) {
+      } else if (canPick && !skipped && !full) {
         const dx = this.x - o.x, dy = this.y - 30 - o.y;
         const d2 = dx * dx + dy * dy;
+        // 有同伴离它更近：让给他（已经在往我这儿飞的不算）
+        if (party && o.speed <= 0 && d2 < magnet2) {
+          let closer = false;
+          for (const m of this.mates.values()) if (m.hp > 0 && (m.x - o.x) ** 2 + (m.y - 30 - o.y) ** 2 < d2 - 400) { closer = true; break; }
+          if (closer) { this.drawOrb(o, now, skipped); continue; }
+        }
         if (d2 < ORB_PICK ** 2) { this.collectOrb(o); continue; }
         if (d2 < magnet2 || o.speed > 0) {
           // 一旦被吸住就越飞越快，不会半路掉下
@@ -1228,9 +1244,32 @@ export class RiftScene extends Phaser.Scene {
           if (Math.random() < 0.3) this.fx.trail(o.x, o.y, WX_TINT[o.wx], 1);
         }
       }
-      const bob = o.speed > 0 ? 0 : Math.sin(now / 320 + o.phase) * 5;
-      o.glow.setPosition(o.x, o.y - 14 + bob).setAlpha(skipped ? 0.18 : 0.65 + 0.25 * Math.sin(now / 200 + o.phase));
-      o.core.setPosition(o.x, o.y - 14 + bob);
+      this.drawOrb(o, now, skipped);
+    }
+  }
+
+  /** 能量团的位置与明暗：设了不捡的压暗，快散的时候慢慢淡掉 */
+  private drawOrb(o: Orb, now: number, skipped: boolean): void {
+    const bob = o.speed > 0 ? 0 : Math.sin(now / 320 + o.phase) * 5;
+    const fade = Phaser.Math.Clamp((ORB_LIFE_MS - o.life) / ORB_FADE_MS, 0, 1);
+    o.glow.setPosition(o.x, o.y - 14 + bob).setAlpha((skipped ? 0.18 : 0.65 + 0.25 * Math.sin(now / 200 + o.phase)) * fade);
+    o.core.setPosition(o.x, o.y - 14 + bob).setAlpha(fade);
+  }
+
+  /** 地上的能量没了：被同伴捡走，或放太久散了 */
+  private onOrbGone(ids: number[], by: number): void {
+    for (const id of ids) {
+      const o = this.orbs.get(id);
+      if (o) {
+        this.orbs.delete(id);
+        const parts = [o.glow, o.core];
+        this.tweens.add({ targets: parts, alpha: 0, scale: 0.02, duration: 220, onComplete: () => parts.forEach(q => q.destroy()) });
+        continue;
+      }
+      // 我以为捡到了，其实同伴先一步：把多记的那份减回去
+      const mine = this.picked.get(id);
+      if (mine && by !== this.myIdx) this.gained[mine.wx] = Math.max(0, this.gained[mine.wx] - mine.n);
+      this.picked.delete(id);
     }
   }
 
@@ -1243,6 +1282,8 @@ export class RiftScene extends Phaser.Scene {
     const room = this.stats.carry - energyTotal(this.gained);
     const n = Math.max(0, Math.min(o.n, room));
     this.gained[o.wx] += n;
+    this.picked.set(o.id, { wx: o.wx, n });
+    if (this.picked.size > 80) this.picked.delete(this.picked.keys().next().value as number);
     if (room > 0 && room - n <= 0) {
       (this.scene.get('RiftHUDScene') as any)?.banner?.('能量已满', '再吸纳的只化作灵力 · 提升修为可带回更多', 0xe3b23c);
     }
