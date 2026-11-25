@@ -6,6 +6,11 @@ import { PlayerStats, GearItem, Energy, WX_ORDER } from './gear.js';
  */
 
 export const RIFT_SIZE = 3200;
+/**
+ * 玩家一屏能看到的范围（以人为中心的半宽、半高，世界坐标）。
+ * 对应客户端秘境镜头的缩放（RiftScene 的 RIFT_ZOOM），妖异要刷在这个范围之外。
+ */
+export const RIFT_VIEW = { halfW: 560, halfH: 1220 } as const;
 export const RIFT_CENTER = RIFT_SIZE / 2;
 export const MAX_PARTY = 4;
 /** 服务器模拟频率 / 快照频率 */

@@ -6,7 +6,7 @@ import {
   PROGRESS_GOAL, PROGRESS_NORMAL, PROGRESS_ELITE,
   FIRE, GUARD, DODGE, PARRY_MULT, STAGGER_MS, STAGGER_BONUS, PERFECT_DODGE_CRITS,
   REVIVE_RADIUS, REVIVE_MS,
-  MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
+  RIFT_VIEW, MONSTERS, MonsterDef, MonsterTier, ELITE, BOSS, ENEMY_BOLT_SPEED,
   tierHpMult, tierDmgMult, partyHpMult, wxMult,
   attackInterval, skillCd, skillLevel, skillDmgMult, SkillId, SKILLS, SKILL_ORDER, SK, skillRadius, bladeCount,
   EnemyAttack, EnemyBoltSpawn, SpawnInfo, S2C, C2S, RunPlayerInfo,
@@ -341,7 +341,9 @@ export class Run {
     const k = Math.floor(Math.random() * MONSTERS.length);
     const def = MONSTERS[k];
     const ang = Math.random() * Math.PI * 2;
-    const d = distance ?? rand(820, 1080);
+    // 刷在屏幕外：沿这个方向走出画面要多远，再往外一截，让它们自己走进来
+    const edge = Math.min(RIFT_VIEW.halfW / Math.max(0.001, Math.abs(Math.cos(ang))), RIFT_VIEW.halfH / Math.max(0.001, Math.abs(Math.sin(ang))));
+    const d = distance ?? edge + rand(90, 260);
     const cx = clampW(anchor.x + Math.cos(ang) * d);
     const cy = clampW(anchor.y + Math.sin(ang) * d);
     const size = { swift: [5, 7], caster: [3, 4], charger: [3, 4], brute: [2, 3], slammer: [2, 3] }[def.kind];

@@ -52,6 +52,9 @@ interface Mob {
   stop: number;
   speed: number;
   dead: boolean;
+  /** 离下一次出手还有多久；正在播哪段动作 */
+  atkT: number;
+  anim: string;
 }
 
 const SCALE = ENEMY_SCALE;
@@ -59,6 +62,11 @@ const SCALE = ENEMY_SCALE;
 const FOOT = 307 * SCALE * 0.36;
 /** 残魂走路的速度（像素/秒） */
 const WALK = 170;
+/** 演出用的血量：妖异每下打掉多少、每秒回多少、倒下后躺多久 */
+const HP_MAX = 100;
+const MOB_DMG = 11;
+const REGEN = 1.5;
+const DOWN_MS = 3500;
 
 export interface IdleBounds { left: number; top: number; right: number; bottom: number }
 
@@ -84,6 +92,14 @@ export class IdleBattle {
   /** 场上没有妖异时闲逛去的地方 */
   private roam: { x: number; y: number } | null = null;
   private roamT = 0;
+  private hp = HP_MAX;
+  /** 倒下后离复活还有多久 */
+  private downT = 0;
+  /** 刚复活的无敌时间 */
+  private invuln = 0;
+  /** 出招硬直：动作放完之前不走动 */
+  private lockT = 0;
+  private bar: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene, avatar: Avatar, fx: Fx, shader: SkillShader, bounds: IdleBounds, onDrop: (wx: Wuxing, x: number, y: number) => void) {
     this.scene = scene;
@@ -95,6 +111,7 @@ export class IdleBattle {
     this.y = (bounds.top + bounds.bottom) / 2;
     this.onDrop = onDrop;
     ensureCharAnims(scene, Object.values(MONSTER_ATLAS_MAP));
+    this.bar = scene.add.graphics().setDepth(4500);
     this.place();
   }
 
@@ -119,6 +136,9 @@ export class IdleBattle {
     if (!v) {
       this.mobs.forEach(m => { m.spr.destroy(); m.shadow.destroy(); });
       this.mobs = [];
+      this.hp = HP_MAX; this.downT = 0; this.lockT = 0;
+      this.avatar.setDown(false);
+      this.bar.clear();
     }
   }
 
@@ -147,10 +167,13 @@ export class IdleBattle {
     const shadow = this.scene.add.image(x, y, 'fx_shadow').setScale(SCALE * 3).setDepth(y - 1);
     this.mobs.push({
       def, spr, shadow, x, y,
-      hp: this.form.melee && this.form.kind !== '刃' ? 2 : 3,
-      stop: 46 + Math.random() * 30,
-      speed: def.speed * 0.5,
+      hp: this.form.melee && this.form.kind !== '刃' ? 6 : 7,
+      // 施法的妖异隔着一段距离出手，其余的贴上来打
+      stop: def.kind === 'caster' ? 190 + Math.random() * 50 : 46 + Math.random() * 30,
+      speed: def.speed * 0.62,
       dead: false,
+      atkT: 200 + Math.random() * 400,
+      anim: 'run',
     });
   }
 
@@ -185,6 +208,7 @@ export class IdleBattle {
     this.avatar.setFacing(dir);
     const ang = Math.atan2(t.y - this.y, t.x - this.x);
     const sx = this.x + dir * 18, sy = this.y - 62;
+    this.lockT = 340;
     if (form.melee) {
       this.avatar.play(form.arc > 0 ? 'slash' : 'attack');
       const r = form.range * 0.45;
@@ -215,6 +239,7 @@ export class IdleBattle {
     const kind = SHADER_OF[id];
     const tint = WX_TINT[SKILLS[id].wuxing];
     this.avatar.play('cast');
+    this.lockT = 460;
     const cx = this.x, cy = this.y - 30;
     if (id === 'blades') {
       near.forEach((m, i) => this.scene.time.delayedCall(i * 70, () => {
@@ -236,6 +261,8 @@ export class IdleBattle {
 
   /** 残魂自己找事做：追最近的妖异，够得着就停下来打；没妖异就四处走走 */
   private moveHero(sec: number): void {
+    // 招式没收完不走动
+    if (this.lockT > 0) { this.avatar.setMoving(0); return; }
     const live = this.mobs.filter(m => !m.dead);
     let tx = this.x, ty = this.y, stopAt = 6;
     if (live.length) {
@@ -265,27 +292,107 @@ export class IdleBattle {
     this.place();
   }
 
+  private setAnim(m: Mob, anim: string): void {
+    if (m.anim === anim) return;
+    m.anim = anim;
+    const key = `${MONSTER_ATLAS_MAP[m.def.atlas]}_${anim}`;
+    if (this.scene.anims.exists(key)) m.spr.play(key, true);
+  }
+
+  /** 妖异贴上来就动手：抬手，片刻后打中 */
+  private mobAttack(m: Mob): void {
+    m.atkT = 1100 + Math.random() * 700;
+    const caster = m.def.kind === 'caster';
+    this.setAnim(m, caster ? 'magic' : 'atk');
+    if (caster) {
+      const bolt = this.scene.add.image(m.x, m.y - FOOT, 'fx_glow').setTint(WX_TINT[m.def.wuxing]).setBlendMode(Phaser.BlendModes.ADD).setScale(0.12).setDepth(FX_DEPTH - 6);
+      this.scene.tweens.add({ targets: bolt, x: this.x, y: this.y - 50, duration: 300, delay: 200, onComplete: () => bolt.destroy() });
+    }
+    this.scene.time.delayedCall(caster ? 500 : 260, () => {
+      if (m.dead || !m.spr.active || this.downT > 0 || this.invuln > 0 || !this.active) return;
+      if (!caster && this.dist(m) > m.stop + 40) return;
+      this.hp -= MOB_DMG;
+      this.avatar.hurt();
+      this.fx.burst(this.x, this.y - 50, 0xff6b6b, 3);
+      if (this.hp <= 0) this.fall();
+    });
+    this.scene.time.delayedCall(620, () => { if (!m.dead && m.spr.active && (m.anim === 'atk' || m.anim === 'magic')) this.setAnim(m, 'idle'); });
+  }
+
+  private fall(): void {
+    this.hp = 0;
+    this.downT = DOWN_MS;
+    this.lockT = 0;
+    this.avatar.setMoving(0);
+    this.avatar.setDown(true);
+    this.fx.burst(this.x, this.y - 40, 0x9fd8ff, 10);
+  }
+
+  /** 躺够了重新凝聚：满血起身，把围着的妖异震开 */
+  private revive(): void {
+    this.hp = HP_MAX;
+    this.invuln = 1500;
+    this.avatar.setDown(false);
+    this.fx.flashGlow(this.x, this.y - 40, 150, 0x9fd8ff, 420, 0.5);
+    this.fx.ring(this.x, this.y, 150, 0x9fd8ff, 420, 0.12);
+    for (const m of this.mobs) {
+      if (m.dead) continue;
+      const d = this.dist(m) || 1;
+      if (d < 170) { m.x += (m.x - this.x) / d * (170 - d); m.y += (m.y - this.y) / d * (170 - d); }
+    }
+  }
+
+  private drawBar(): void {
+    this.bar.clear();
+    if (this.hp >= HP_MAX && this.downT <= 0) return;
+    const w = 64, x = this.x - w / 2, y = this.y - 150;
+    this.bar.fillStyle(0x000000, 0.65).fillRect(x - 2, y - 2, w + 4, 9);
+    if (this.downT > 0) this.bar.fillStyle(0x9fd8ff, 0.9).fillRect(x, y, w * (1 - this.downT / DOWN_MS), 5);
+    else this.bar.fillStyle(0x3fb950, 1).fillRect(x, y, w * Math.max(0, this.hp / HP_MAX), 5);
+  }
+
   update(dt: number): void {
     if (!this.active) return;
     const sec = dt / 1000;
     this.mobs = this.mobs.filter(m => m.spr.active);
-    this.moveHero(sec);
+    this.lockT = Math.max(0, this.lockT - dt);
+    this.invuln = Math.max(0, this.invuln - dt);
+    const down = this.downT > 0;
+    if (down) {
+      this.downT -= dt;
+      if (this.downT <= 0) this.revive();
+    } else {
+      this.hp = Math.min(HP_MAX, this.hp + REGEN * sec);
+      this.moveHero(sec);
+    }
     for (const m of this.mobs) {
       if (m.dead) continue;
       const dx = this.x - m.x, dy = this.y - m.y, d = Math.hypot(dx, dy) || 1;
-      if (d > m.stop) {
+      if (down) {
+        // 残魂倒下了：妖异在原地晃着
+        if (m.anim !== 'atk' && m.anim !== 'magic') this.setAnim(m, 'idle');
+      } else if (m.anim === 'atk' || m.anim === 'magic') {
+        // 出手的动作没放完，站着不动
+      } else if (d > m.stop + 4) {
         const step = Math.min(d - m.stop, m.speed * sec);
         m.x += dx / d * step; m.y += dy / d * step;
+        if (m.anim !== 'atk' && m.anim !== 'magic') this.setAnim(m, 'run');
+      } else {
+        if (m.anim === 'run') this.setAnim(m, 'idle');
+        m.atkT -= dt;
+        if (m.atkT <= 0) this.mobAttack(m);
       }
       m.spr.setPosition(m.x, m.y - FOOT).setFlipX(dx < 0).setDepth(m.y);
       m.shadow.setPosition(m.x, m.y).setDepth(m.y - 1);
     }
+    this.drawBar();
 
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
-      this.spawnT = 700 + Math.random() * 800;
-      if (this.mobs.filter(m => !m.dead).length < 7) this.spawn();
+      this.spawnT = 450 + Math.random() * 650;
+      if (this.mobs.filter(m => !m.dead).length < 9) this.spawn();
     }
+    if (down) return;
     this.skillT -= dt;
     if (this.skillT <= 0) this.skillT = this.castSkill() ? 6500 : 700;
     this.atkT -= dt;

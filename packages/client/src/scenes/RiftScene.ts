@@ -24,6 +24,9 @@ import { ensureCharAnims } from '../systems/idle/IdleBattle.js';
 const PLAYER_ATLAS = 'player_spirit';
 /** 秘境镜头相对界面的缩放 */
 const RIFT_ZOOM = 0.74;
+/** 出招后的硬直（毫秒）：普通出手 / 施法 */
+const ATTACK_LOCK = 320;
+const CAST_LOCK = 460;
 const FIRE_TINT = 0xff6a3c;
 const TELE_COLOR = 0xff2a1a;
 const TELE_EDGE = 0xffd0c0;
@@ -247,6 +250,8 @@ export class RiftScene extends Phaser.Scene {
   private dodgeWin = 0;
   private pdDone = false;
   private guardT = 0;
+  /** 出招硬直：动作放完之前不能走动（御和遁可以打断） */
+  private lockT = 0;
   private guardStart = -1e9;
   private animState = '';
   private castAnim = 0;
@@ -304,6 +309,7 @@ export class RiftScene extends Phaser.Scene {
     this.x = RIFT_CENTER + Math.cos(ang) * 90;
     this.y = RIFT_CENTER + Math.sin(ang) * 90;
     this.facing = 1;
+    this.lockT = 0;
     this.dashT = 0; this.invuln = 0; this.guardT = 0; this.guardStart = -1e9;
     this.enemies = new Map();
     this.teles = [];
@@ -659,6 +665,13 @@ export class RiftScene extends Phaser.Scene {
       fill.setVisible(false);
       edge.setVisible(false);
     }
+    // 圆形的出手预警不画了：妖异自己有抬手的动作，看动作躲。冲锋的直线预警还留着（冲出去之前看不出往哪冲）
+    if (a.shape !== 'lunge') {
+      fill.setVisible(false);
+      edge.setVisible(false);
+      this.shader.stop(sh);
+      sh = null;
+    }
     this.teles.push({ a, start: now, end: now + a.windup, fill, edge, sh });
 
     if (en) {
@@ -666,9 +679,11 @@ export class RiftScene extends Phaser.Scene {
       const anim = en.def.kind === 'caster' || a.shape === 'bolt' ? 'magic' : 'atk';
       if (atlas && this.anims.exists(`${atlas}_${anim}`)) {
         en.spr.play(`${atlas}_${anim}`, true);
-        en.spr.anims.timeScale = Math.max(0.5, 500 / (a.windup + 120));
+        // 动作的发力点落在预警结束的那一刻：整段动作比前摇略长一点，收招留在后面
+        const ms = en.spr.anims.currentAnim ? en.spr.anims.currentAnim.duration : 600;
+        en.spr.anims.timeScale = ms / (a.windup + 160);
         en.anim = anim;
-        en.atkUntil = now + a.windup + 300;
+        en.atkUntil = now + a.windup + 160;
       }
       if (a.dx !== 0) en.spr.setFlipX(a.dx < 0);
       this.fx.stretchTo(en.spr, en.scale, 0.9, 1.1, a.windup);
@@ -821,7 +836,8 @@ export class RiftScene extends Phaser.Scene {
 
   /** 兵器自动出手：器型决定是近战挥击还是远程弹道 */
   private updateAutoAttack(): void {
-    if (this.cdBolt > 0 || this.down) return;
+    // 站定了才出手；翻滚和格挡时也不出手
+    if (this.cdBolt > 0 || this.down || this.dashT > 0 || this.guardT > 0 || Math.hypot(this.moveX, this.moveY) > 0.1) return;
     const form = this.form;
     // 近战要算上妖异的身体，否则贴着核心也够不着
     let target: CEnemy | null = null;
@@ -833,6 +849,7 @@ export class RiftScene extends Phaser.Scene {
     }
     if (!target) return;
     this.cdBolt = attackInterval(form, this.stats);
+    this.lockT = Math.min(ATTACK_LOCK, this.cdBolt);
     if (this.critCharges > 0) this.critCharges--;
     this.facing = target.x < this.x ? -1 : 1;
     this.me.setFacing(this.facing);
@@ -1044,6 +1061,7 @@ export class RiftScene extends Phaser.Scene {
     if (id === 'bloom') this.healBy(SK.bloom.heal);
     if (id === 'bastion') this.shieldT = SK.bastion.ms;
     this.castAnim = 400;
+    this.lockT = CAST_LOCK;
     this.me.play('cast');
   }
 
@@ -1296,6 +1314,7 @@ export class RiftScene extends Phaser.Scene {
       this.dashVx = dx * DODGE.speed;
       this.dashVy = dy * DODGE.speed;
       this.dashT = DODGE.duration;
+      this.breakAction();
       this.invuln = DODGE.invuln;
       this.dodgeWin = DODGE.invuln;
       this.pdDone = false;
@@ -1305,10 +1324,15 @@ export class RiftScene extends Phaser.Scene {
     }
     if (guard && this.cdGuard <= 0) {
       this.guardT = GUARD.duration;
+      this.breakAction();
       this.guardStart = this.time.now;
       this.cdGuard = GUARD.cooldown;
       sfx.guard();
     }
+
+    // 出招硬直里摇杆不管用
+    this.lockT = Math.max(0, this.lockT - dt);
+    if (this.lockT > 0 && this.dashT <= 0) { mx = 0; my = 0; }
 
     const sec = dt / 1000;
     if (this.dashT > 0) {
@@ -1326,6 +1350,13 @@ export class RiftScene extends Phaser.Scene {
     this.moveX = mx;
     this.moveY = my;
     if (Math.abs(mx) > 0.1 && this.castAnim <= 0) this.facing = mx < 0 ? -1 : 1;
+  }
+
+  /** 御和遁打断正在放的招式：硬直取消，动作收掉 */
+  private breakAction(): void {
+    this.lockT = 0;
+    this.castAnim = 0;
+    this.me.play('none');
   }
 
   private regen(dt: number): void {
